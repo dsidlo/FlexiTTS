@@ -1,0 +1,13 @@
+[project]
+name = "flexitts"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.13"
+dependencies = [
+    "huggingface-hub>=0.34.0",
+    "litellm>=1.81.1",
+    "qwen-tts",
+]
+
+[tool.uv.sources]
+qwen-tts = { path = "Qwen3-TTS" }

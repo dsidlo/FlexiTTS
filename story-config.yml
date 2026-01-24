@@ -1,0 +1,42 @@
+global:
+  # This is the root directory for the story project
+  story-dir: ./Story-Entanglement/
+  # Place character voice references here
+  voices: refs/
+  # Place the Markdown format of original story chapters here
+  chapters: story-chapters/
+  # AI XML breakdown of story chapters by character is saved here
+  story-xml: story-xml/
+  # Logs are saved here
+  logs: logs/
+  story-audio: story-audio/
+  # Generated character voice clips for the story are saved here
+  clips: story-audio/clips/
+characters:
+  - name: narrator
+    voice-sample: dgs-voice.wav
+  - name: Hendrix
+    voice-sample: Hendricks-voice.wav
+  - name: Ayana
+    voice-sample: Ayana-voice.wav
+  - name: Yamato
+    voice-sample: Yamato-voice.wav
+  - name: Juko
+    voice-sample: Juko-voice.wav
+  # Supported Speakers: ['aiden', 'dylan', 'eric', 'ono_anna', 'ryan', 'serena', 'sohee', 'uncle_fu', 'vivian']
+  - name: Hayden
+    custom-voice:
+      language: English
+      speaker: Aiden
+      instruct: "Deep manly voice with a rough texture"
+  - name: Yakuza-1
+    custom-voice:
+      language: English
+      speaker: Uncle_Fu
+      instruct: "Wicked, Sneering"
+      sox-effects: pitch -400   echo 0.8 0.88 60 0.4 120 0.3   reverb
+dialog-effects:
+  - name: cave
+    sox-effects: pitch -400   echo 0.8 0.88 60 0.4 120 0.3   reverb
+
+
