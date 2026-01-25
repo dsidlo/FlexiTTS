@@ -112,7 +112,7 @@ Visuals are synthesized that fit a given scene in the story.
 </story>
 </example_output>
 ** Follow these instuctions percisely **
-Given the following story text, first, identify the characters involved by name. Also taking note of the appropriate emotional derived from the content of the text.
+Given the following story text, first, identify the characters involved by name. Also taking note of the appropriate emotional derived from the content of the text. The emotional_tone may describe timbre, prosody and speaking rate.
 1. Then update the text with embedded matching opening and closing tags for the dialog that is said by a given character.
 2. The format of the character dialog tags looks like: 
      <dialog character="character_name" emotion="emotional_tone" dlgseq=1> 
