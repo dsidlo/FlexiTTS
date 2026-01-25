@@ -24,15 +24,16 @@ def get_schema():
                 "additionalProperties": False,
                 "required": ["story-dir", "voices", "chapters", "story-xml", "logs", "story-audio", "clips"]
             },
-            "llm-xml-formatter": {
+            "llm-xml-generator": {
                 "type": "array",
                 "items": {
                     "type": "object",
                     "properties": {
-                        "default-model": {"type": "string"},
+                        "default-llm": {"type": "string"},
+                        "llm": {"type": "string"},
+                        "model": {"type": "string"},
                         "api_key": {"type": "string"},
                         "api_base": {"type": "string"},
-                        "model": {"type": "string"},
                         "temperature": {"type": "number"},
                         "max_tokens": {"type": "integer"},
                         "rpm": {"type": "integer"},
@@ -79,7 +80,7 @@ def get_schema():
             }
         },
         "additionalProperties": False,
-        "required": ["global", "llm-xml-formatter", "dialog-effects", "characters"]
+        "required": ["global", "llm-xml-generator", "dialog-effects", "characters"]
     }
 
 def find_line_number(path, data_lines):

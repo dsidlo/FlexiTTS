@@ -17,6 +17,7 @@
     - Clean up the Markdown file's paragraphs with a blank line between each paragraph.
   - If you have voice samples, place them into the voice-samples: directory (refs/)
   - Configure story-config.yaml with your desired settings.
+    - For ideal security, place you API key into your ~/.env file and use the notaion `api_key: os.environ/<api-key-variable-name>`. Don't place your actual API key string in story_config.yml where possible.
     - ** Run the validate_config.py to ensure that there are no issues with the story_config.yml file. 
   - Working through one chapter at time...
     - Run `python chapter_to_xml.py <>.md`

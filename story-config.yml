@@ -12,17 +12,19 @@ global:
   story-audio: story-audio/
   # Generated character voice clips for the story are saved here
   clips: story-audio/clips/
-llm-xml-formatter:
+llm-xml-generator:
   # Configuration for the LLM XML formatter
   # Set to true to enable XML formatting
   # The LLM key is read from your ~/.env file
-  - default-model: xai/grok-4-fast-reasoning
+  - default-llm: grok
+    model: xai/grok-4-fast-reasoning
     api_key: os.environ/XAI_API_KEY
     api_base: https://api.x.ai/v1
   # optional rate limits
   # rpm: 200
   # timeout: 120
-  - model: openai/gemma-3-12b
+  - llm: lm-studio
+    model: openai/gemma-3-12b
     api_base: https://localhost:8000/v1
     temperature: 0.3
     max_tokens: 400
