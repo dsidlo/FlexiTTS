@@ -10,6 +10,10 @@
 - Run `uv init`
 - Run `uv sync`
 
+## Examples of generated audio
+
+- Listen to "story-audio/04-Manus Labs.wav"
+
 ## Basic Workflow
 - **Input**: Provide a story as a Markdown text (.md) file
   - Place Markdown file into the story-chapters directory as .md file
