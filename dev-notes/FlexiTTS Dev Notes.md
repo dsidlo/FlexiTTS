@@ -349,7 +349,7 @@ Read the documentation on Qwen3-TTS. in the Qwen3-TTS/ directory (Github repo cl
 
 ### configuration: named dialog-effects: for <<dialog|narration ...post-effects=<dialog-effects-name>> tags
 - `dialog-effects` defines named audio effects applied to narration and dialog tags via the post-effect attribute, such as pitch shifting, echo, and reverb. These effects are layered on top of a characters dialog which itself may have been post processed. 
-- Config Example:
+- Config Example dialog-effects:
   - ```yaml
     dialog-effects:
       - name: cave
@@ -365,5 +365,34 @@ Read the documentation on Qwen3-TTS. in the Qwen3-TTS/ directory (Github repo cl
     	  the board, and the game was far from over.
     	</narration>
     ``` 
+- Config Examples for narrator:, voice-sample: and custom-voice: and dialog-effects: character attributes
+  - ```xml
+      - name: Hendrix-echo
+        voice-sample: Hendricks-voice.wav
+        dialog-effects: cave
+      - name: Ayana-echo
+        voice-sample: Ayana-voice.wav
+        sox-effects: pitch -400   echo 0.8 0.88 60 0.4 120 0.3   reverb
+      - name: Hayden-echo
+        custom-voice:
+          language: English
+          speaker: Aiden
+          instruct: "Deep manly voice with a rough texture"
+        dialog-effects: cave
+      - name: Yakuza-1
+        custom-voice:
+          language: English
+          speaker: Uncle_Fu
+          instruct: "Wicked, Sneering"
+        sox-effects: pitch -400   echo 0.8 0.88 60 0.4 120 0.3   reverb
+      - name: Yakuza-1
+        custom-voice:
+          language: English
+          speaker: Uncle_Fu
+          instruct: "Wicked, Sneering"
+        dialog-effects: cave
+    ```
 
-Modify 
+Modify @chapter_xml_to_audio.py to apply post-effects on character dialog, such that the named dialog-effects are applied to character dialog clips first, then if the <<dialog>> tag contains a named post-effects attribute, then that is also applied to the dialog clip.
+The process of applying the effect is to use sox to apply the clip to a temp-<random_test>.wav file, then the original wav file is removed, and the temp wav file is renamed with the original file's full filename.
+Thus, a max number of 2 effects operations are possible, one for the character's attributes, and one for the dialog's attributes.

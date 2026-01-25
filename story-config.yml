@@ -12,6 +12,23 @@ global:
   story-audio: story-audio/
   # Generated character voice clips for the story are saved here
   clips: story-audio/clips/
+llm-xml-formatter:
+  # Configuration for the LLM XML formatter
+  # Set to true to enable XML formatting
+  # The LLM key is read from your ~/.env file
+  - default-model: xai/grok-4-fast-reasoning
+    api_key: os.environ/XAI_API_KEY
+    api_base: https://api.x.ai/v1
+  # optional rate limits
+  # rpm: 200
+  # timeout: 120
+  - model: openai/gemma-3-12b
+    api_base: https://localhost:8000/v1
+    temperature: 0.3
+    max_tokens: 400
+dialog-effects:
+  - name: cave
+    sox-effects: pitch -400   echo 0.8 0.88 60 0.4 120 0.3   reverb
 characters:
   - name: narrator
     voice-sample: dgs-voice.wav
@@ -23,20 +40,37 @@ characters:
     voice-sample: Yamato-voice.wav
   - name: Juko
     voice-sample: Juko-voice.wav
-  # Supported Speakers: ['aiden', 'dylan', 'eric', 'ono_anna', 'ryan', 'serena', 'sohee', 'uncle_fu', 'vivian']
+  # Supported Qwen3-TTS Speakers:
+  # ['aiden', 'dylan', 'eric', 'ono_anna', 'ryan', 'serena', 'sohee', 'uncle_fu', 'vivian']
   - name: Hayden
     custom-voice:
       language: English
       speaker: Aiden
       instruct: "Deep manly voice with a rough texture"
+  # Examples
+  - name: Hendrix-echo
+    voice-sample: Hendricks-voice.wav
+    dialog-effects: cave
+  - name: Ayana-echo
+    voice-sample: Ayana-voice.wav
+    sox-effects: pitch -400   echo 0.8 0.88 60 0.4 120 0.3   reverb
+  - name: Hayden-echo
+    custom-voice:
+      language: English
+      speaker: Aiden
+      instruct: "Deep manly voice with a rough texture"
+    dialog-effects: cave
   - name: Yakuza-1
     custom-voice:
       language: English
       speaker: Uncle_Fu
       instruct: "Wicked, Sneering"
-      sox-effects: pitch -400   echo 0.8 0.88 60 0.4 120 0.3   reverb
-dialog-effects:
-  - name: cave
     sox-effects: pitch -400   echo 0.8 0.88 60 0.4 120 0.3   reverb
+  - name: Yakuza-2
+    custom-voice:
+      language: English
+      speaker: Uncle_Fu
+      instruct: "Wicked, Sneering"
+    dialog-effects: cave
 
 

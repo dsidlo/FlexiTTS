@@ -5,6 +5,9 @@ import yaml
 import torch
 import numpy as np
 import soundfile as sf
+import subprocess
+import random
+import string
 from pathlib import Path
 from xml.etree import ElementTree as ET
 from typing import Dict, List, Optional, Tuple, Any
@@ -28,6 +31,7 @@ class Utterance:
     emotion: str
     text: str
     kind: str # 'dialog' or 'narration'
+    post_effects: Optional[str] = None
 
 def normalize_ws(s: str) -> str:
     if not s:
@@ -35,6 +39,43 @@ def normalize_ws(s: str) -> str:
     s = s.replace("\r", " ").replace("\n", " ")
     s = re.sub(r"\s+", " ", s).strip()
     return s
+
+def apply_sox_effects(input_path: Path, effects_str: str, dry_run: bool = False):
+    """
+    Apply sox effects to a wav file.
+    The process is to use sox to apply the clip to a temp-<random_test>.wav file,
+    then the original wav file is removed, and the temp wav file is renamed with
+    the original file's full filename.
+    """
+    if not effects_str:
+        return
+
+    random_str = ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
+    temp_path = input_path.parent / f"temp-{random_str}.wav"
+    
+    # Split effects_str while respecting potential quotes (though simple split might work for most)
+    # Sox expects effects as separate arguments.
+    effects_cmd = effects_str.split()
+    
+    cmd = ["sox", str(input_path), str(temp_path)] + effects_cmd
+    
+    if dry_run:
+        print(f"    [Dry-run] Would run: {' '.join(cmd)}")
+        return
+
+    try:
+        subprocess.run(cmd, check=True, capture_output=True)
+        # Remove original and rename temp
+        input_path.unlink()
+        temp_path.rename(input_path)
+    except subprocess.CalledProcessError as e:
+        print(f"Error applying sox effects: {e.stderr.decode()}")
+        if temp_path.exists():
+            temp_path.unlink()
+    except Exception as e:
+        print(f"Unexpected error applying sox effects: {e}")
+        if temp_path.exists():
+            temp_path.unlink()
 
 def parse_xml(xml_path: Path) -> List[Utterance]:
     tree = ET.parse(xml_path)
@@ -55,6 +96,7 @@ def parse_xml(xml_path: Path) -> List[Utterance]:
             if node.tag in ("dialog", "narration"):
                 dlgseq = node.attrib.get("dlgseq", "000").zfill(3)
                 emotion = node.attrib.get("emotion", "neutral")
+                post_effects = node.attrib.get("post-effects")
                 
                 if node.tag == "dialog":
                     speaker = node.attrib.get("character", "unknown")
@@ -72,7 +114,8 @@ def parse_xml(xml_path: Path) -> List[Utterance]:
                     speaker=speaker,
                     emotion=emotion,
                     text=text,
-                    kind=node.tag
+                    kind=node.tag,
+                    post_effects=post_effects
                 ))
                 
     return utterances
@@ -150,6 +193,11 @@ def main():
     char_configs = {}
     for char_info in config.get("characters", []):
         char_configs[char_info["name"].lower()] = char_info
+    
+    # Get dialog-effects from config
+    dialog_effects_cfg = {}
+    for eff in config.get("dialog-effects", []):
+        dialog_effects_cfg[eff["name"]] = eff.get("sox-effects")
     
     # Setup Qwen3-TTS
     if not args.dry_run:
@@ -285,6 +333,26 @@ def main():
                         sf.write(str(out_path), wav, sr)
                     else:
                         print(f"    [Dry-run] Would save clip to {out_path}")
+                    
+                    # Apply post-effects
+                    # Effect 1: Character-specific effects
+                    char_effects = char_cfg.get("sox-effects")
+                    if not char_effects and "dialog-effects" in char_cfg:
+                        named_eff = char_cfg["dialog-effects"]
+                        char_effects = dialog_effects_cfg.get(named_eff)
+                    if char_effects:
+                        print(f"    Applying character effects to {filename}...")
+                        apply_sox_effects(out_path, char_effects, args.dry_run)
+                    
+                    # Effect 2: Dialog-specific effects from XML
+                    if utt.post_effects:
+                        xml_effects = dialog_effects_cfg.get(utt.post_effects)
+                        if xml_effects:
+                            print(f"    Applying XML post-effects '{utt.post_effects}' to {filename}...")
+                            apply_sox_effects(out_path, xml_effects, args.dry_run)
+                        else:
+                            print(f"    Warning: Named dialog-effect '{utt.post_effects}' not found in config.")
+
                     all_generated_clips.append((utt, out_path, i))
                 
         except Exception as e:
