@@ -39,6 +39,12 @@
   3. AI augmentation for emotion and context
 - **Output**: Audio file with human-like voice and effects
 
+## A note on using voice-clone and instructing emotions.
+- Currently when using voice-clone (referencing a sampled voice), does not have a parameter for instructing emotions. This is a limitation of the current implementation in Qwen3-TTS and may require further development to address.
+  - To overcome this, you either use custom-voice mode, or use voice-samples with various emotional states. But more work needs to be done to extend the character configuration to support more nuanced emotion control.
+    - A change to the character configuration to support more nuanced emotion control.
+    - A change to the Story to XML LLM prompt to support more nuanced emotion control, based on voice samples available for a given character.
+
 ## Possible Future Enhancements
 
 - **Web Interface**: Develop a web-based interface for managing chapters, editing XML, and generating audio.

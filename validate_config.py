@@ -54,6 +54,14 @@ def get_schema():
                     "required": ["name", "sox-effects"]
                 }
             },
+            "story-audio-post-process": {
+                "type": "object",
+                "properties": {
+                    "sox-effects": {"type": "string"}
+                },
+                "additionalProperties": False,
+                "required": ["sox-effects"]
+            },
             "characters": {
                 "type": "array",
                 "items": {
@@ -80,7 +88,7 @@ def get_schema():
             }
         },
         "additionalProperties": False,
-        "required": ["global", "llm-xml-generator", "dialog-effects", "characters"]
+        "required": ["global", "llm-xml-generator", "dialog-effects", "story-audio-post-process", "characters"]
     }
 
 def find_line_number(path, data_lines):

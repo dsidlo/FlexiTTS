@@ -10,7 +10,7 @@ def load_config(config_path="story-config.yml"):
     with open(config_path, 'r') as f:
         return yaml.safe_load(f)
 
-def get_prompt_template(notes_path="dev-notes/FlexiTTS Dev Notes.md"):
+def get_prompt_template(notes_path="./FlexiTTS-AI-Prompt-Chapter-to-XML.md"):
     with open(notes_path, 'r') as f:
         content = f.read()
     
@@ -21,13 +21,13 @@ def get_prompt_template(notes_path="dev-notes/FlexiTTS Dev Notes.md"):
     
     start_index = content.find(start_marker)
     if start_index == -1:
-        raise ValueError("Could not find prompt template in dev notes.")
+        raise ValueError("Could not find prompt template.")
     
     start_index += len(start_marker)
     end_index = content.find(end_marker, start_index)
     
     if end_index == -1:
-        raise ValueError("Could not find end of prompt template in dev notes.")
+        raise ValueError("Could not find end of prompt template.")
         
     template = content[start_index:end_index].strip()
     return template

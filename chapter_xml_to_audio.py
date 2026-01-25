@@ -344,7 +344,7 @@ def main():
                         print(f"    Applying character effects to {filename}...")
                         apply_sox_effects(out_path, char_effects, args.dry_run)
                     
-                    # Effect 2: Dialog-specific effects from XML
+    # Effect 2: Dialog-specific effects from XML
                     if utt.post_effects:
                         xml_effects = dialog_effects_cfg.get(utt.post_effects)
                         if xml_effects:
@@ -357,6 +357,10 @@ def main():
                 
         except Exception as e:
             print(f"Error generating audio for {character}: {e}")
+
+    # Get story-audio-post-process effects
+    post_process_cfg = config.get("story-audio-post-process", {})
+    post_process_effects = post_process_cfg.get("sox-effects")
 
     # Requirement 5.1 says: "The audio files should be placed into the 'story-audio:' directory path, 
     # and should use the same name as the original .xml file but the suffix of the file name should change to .wav"
@@ -394,9 +398,15 @@ def main():
             final_wav_path = story_audio_dir / (xml_path.stem + ".wav")
             sf.write(str(final_wav_path), final_audio, final_sr)
             print(f"Final audio saved to {final_wav_path}")
+            
+            if post_process_effects:
+                print(f"Applying story-audio-post-process effects to {final_wav_path.name}...")
+                apply_sox_effects(final_wav_path, post_process_effects, args.dry_run)
         elif args.dry_run:
             final_wav_path = story_audio_dir / (xml_path.stem + ".wav")
             print(f"    [Dry-run] Would save final audio to {final_wav_path}")
+            if post_process_effects:
+                print(f"    [Dry-run] Would apply story-audio-post-process effects to {final_wav_path.name}")
 
 if __name__ == "__main__":
     main()

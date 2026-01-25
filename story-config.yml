@@ -25,49 +25,80 @@ llm-xml-generator:
   # timeout: 120
   - llm: lm-studio
     model: openai/gemma-3-12b
-    api_base: https://localhost:8000/v1
+    api_base: http://localhost:1234/v1
     temperature: 0.3
-    max_tokens: 400
+    # max_tokens: 400
 dialog-effects:
   - name: cave
     sox-effects: pitch -400   echo 0.8 0.88 60 0.4 120 0.3   reverb
+story-audio-post-process:
+    # The following sox effects are applied after the final full chapter audio file has been created.
+    sox-effects: normalize
 characters:
+  # Supported Qwen3-TTS Custom-Voice Speakers:
+  # ['aiden', 'dylan', 'eric', 'ono_anna', 'ryan', 'serena', 'sohee', 'uncle_fu', 'vivian']
+  #   Vivian: Bright, slightly edgy young female voice.                    | Chinese
+  #   Serena: Warm, gentle young female voice.                             | Chinese
+  # Uncle_Fu: Seasoned male voice with a low, mellow timbre.               | Chinese
+  #    Dylan: Youthful Beijing male voice with a clear, natural timbre.    | Chinese (Beijing Dialect)
+  #     Eric: Lively Chengdu male voice with a slightly husky brightness.  | Chinese (Sichuan Dialect)
+  #     Ryan: Dynamic male voice with strong rhythmic drive.               | English
+  #    Aiden: Sunny American male voice with a clear midrange.             | English
+  # Ono_Anna: Playful Japanese female voice with a light, nimble timbre.   | Japanese
+  #    Sohee: Warm Korean female voice with rich emotion.                  | Korean
   - name: narrator
     voice-sample: dgs-voice.wav
+    sox-effects: gain +4
+  - name: narrator-cv
+    custom-voice:
+      language: English
+      speaker: ryan
+      instruct: "Deep manly voice. Speach is moderately fast, slightly hushed."
+    sox-effects: treble -5 5000 0.7 compand 0.3,1 6:-70,-60,-20 -4 -90 0.1 gain -3
   - name: Hendrix
-    voice-sample: Hendricks-voice.wav
+    custom-voice:
+      language: English
+      speaker: ryan
+      instruct: "Deep manly voice with a rough texture. Speach is calm and calculating, moderately fast."
+    sox-effects: overdrive 15 30 gain -8
+  - name: Yamato
+    custom-voice:
+      language: English
+      speaker: ryan
+      instruct: "An mature man. Speech is gruff and abrupt with a hit of frustration."
+    sox-effects: pitch -250 equalizer 1800 +4 1.8 equalizer 3200 +3 2.2 bass +2 120 gain -n -1.5
   - name: Ayana
     voice-sample: Ayana-voice.wav
-  - name: Yamato
-    voice-sample: Yamato-voice.wav
   - name: Juko
     voice-sample: Juko-voice.wav
-  # Supported Qwen3-TTS Speakers:
-  # ['aiden', 'dylan', 'eric', 'ono_anna', 'ryan', 'serena', 'sohee', 'uncle_fu', 'vivian']
   - name: Hayden
     custom-voice:
       language: English
       speaker: Aiden
       instruct: "Deep manly voice with a rough texture"
-  # Examples
+  - name: Yakuza-1
+    custom-voice:
+      language: English
+      speaker: Uncle_Fu
+      instruct: "Wicked, Sneering"
+    sox-effects: pitch -400   echo 0.8 0.88 60 0.4 120 0.3 reverb gain +3
+  # Examples Voice Configurations
+  - name: Hendrix-vc
+    voice-sample: Hendricks-voice.wav
+  - name: Yamato-vc
+    voice-sample: Yamato-voice.wav
   - name: Hendrix-echo
     voice-sample: Hendricks-voice.wav
     dialog-effects: cave
   - name: Ayana-echo
     voice-sample: Ayana-voice.wav
-    sox-effects: pitch -400   echo 0.8 0.88 60 0.4 120 0.3   reverb
+    sox-effects: pitch -400   echo 0.8 0.88 60 0.4 120 0.3 reverb
   - name: Hayden-echo
     custom-voice:
       language: English
       speaker: Aiden
       instruct: "Deep manly voice with a rough texture"
     dialog-effects: cave
-  - name: Yakuza-1
-    custom-voice:
-      language: English
-      speaker: Uncle_Fu
-      instruct: "Wicked, Sneering"
-    sox-effects: pitch -400   echo 0.8 0.88 60 0.4 120 0.3   reverb
   - name: Yakuza-2
     custom-voice:
       language: English
