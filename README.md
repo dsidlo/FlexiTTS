@@ -61,6 +61,7 @@ The idea with FlexiTTS (Flexi-tus) is to create a simple flexible text to audio-
     * Used to generate the required XML representation of the original Chapter document augmented with tags indicating dialogs for the Narrator and other Characters.
 
 ## Setup
+
 - Run `git clone https://github.com/QwenLM/Qwen3-TTS.git`
 - Run `uv init --python 3.12`
 - Run `uv sync`
