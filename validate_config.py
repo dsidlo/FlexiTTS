@@ -26,6 +26,7 @@ def get_schema():
             },
             "llm-xml-generator": {
                 "type": "array",
+                "minItems": 1,
                 "items": {
                     "type": "object",
                     "properties": {
@@ -44,11 +45,16 @@ def get_schema():
             },
             "dialog-effects": {
                 "type": "array",
+                "minItems": 1,
                 "items": {
                     "type": "object",
                     "properties": {
                         "name": {"type": "string"},
-                        "sox-effects": {"type": "string"}
+                        "sox-effects": {
+                            "type": "array",
+                            "minItems": 1,
+                            "items": {"type": "string"}
+                        }
                     },
                     "additionalProperties": False,
                     "required": ["name", "sox-effects"]
@@ -57,20 +63,33 @@ def get_schema():
             "story-audio-post-process": {
                 "type": "object",
                 "properties": {
-                    "sox-effects": {"type": "string"}
+                    "sox-effects": {
+                        "type": "array",
+                        "minItems": 1,
+                        "items": {"type": "string"}
+                    }
                 },
                 "additionalProperties": False,
                 "required": ["sox-effects"]
             },
             "characters": {
                 "type": "array",
+                "minItems": 1,
                 "items": {
                     "type": "object",
                     "properties": {
                         "name": {"type": "string"},
                         "voice-sample": {"type": "string"},
-                        "dialog-effects": {"type": "string"},
-                        "sox-effects": {"type": "string"},
+                        "dialog-effects": {
+                            "type": "array",
+                            "minItems": 1,
+                            "items": {"type": "string"}
+                        },
+                        "sox-effects": {
+                            "type": "array",
+                            "minItems": 1,
+                            "items": {"type": "string"}
+                        },
                         "custom-voice": {
                             "type": "object",
                             "properties": {
@@ -260,15 +279,19 @@ def validate_config(file_path):
         
         for i, char in enumerate(data.get("characters", [])):
             # Check top-level dialog-effects in character
-            char_effect = char.get("dialog-effects")
-            if char_effect and char_effect not in defined_effects:
-                print(f"Validation error in {file_path}:")
-                print(f"Message: Named dialog-effect '{char_effect}' used by character '{char['name']}' is not defined.")
-                path = ["characters", i, "dialog-effects"]
-                line_no = find_line_number(path, lines)
-                print(f"Location: {'.'.join(map(str, path))} (around line {line_no})")
-                print_context(lines, line_no - 1)
-                success = False
+            char_effects = char.get("dialog-effects", [])
+            if isinstance(char_effects, str):
+                char_effects = [char_effects]
+            
+            for j, effect_name in enumerate(char_effects):
+                if effect_name not in defined_effects:
+                    print(f"Validation error in {file_path}:")
+                    print(f"Message: Named dialog-effect '{effect_name}' used by character '{char['name']}' is not defined.")
+                    path = ["characters", i, "dialog-effects", j]
+                    line_no = find_line_number(path, lines)
+                    print(f"Location: {'.'.join(map(str, path))} (around line {line_no})")
+                    print_context(lines, line_no - 1)
+                    success = False
 
         if not success:
             return False
@@ -296,6 +319,26 @@ def validate_config(file_path):
         line_no = find_line_number(search_path, lines)
         print(f"Location: {'.'.join(map(str, search_path))} (around line {line_no})")
         print_context(lines, line_no - 1)
+
+        # Check for mis-indented array entries if the array is empty or None
+        is_empty_array = (e.validator == 'minItems' and e.instance == [])
+        is_none = (e.validator == 'type' and e.instance is None and (isinstance(e.validator_value, str) and e.validator_value == 'array' or isinstance(e.validator_value, list) and 'array' in e.validator_value))
+        
+        if is_empty_array or is_none:
+            # The next line after the empty/null array might contain a mis-indented item
+            if line_no < len(lines):
+                # Search forward for the next non-comment, non-empty line
+                for i in range(line_no, len(lines)):
+                    next_line = lines[i]
+                    stripped = next_line.lstrip()
+                    if not stripped or stripped.startswith('#'):
+                        continue
+                    if stripped.startswith('- '):
+                        print("\nPossible mis-indented array entry found on next line:")
+                        print(f"{i+1:4} -> {next_line.rstrip()}")
+                        print("Check the indentation of the above line.")
+                    break
+        
         return False
 
 

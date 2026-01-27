@@ -187,7 +187,7 @@ See: [FlexiTTS AI Prompt: Chapter to XML](file://FlexiTTS-AI-Prompt-Chapter-to-X
 </story>
 ```
 
-## AI Prompts for Program Generation
+## AI Prompts for Program Generation of Chapter to XML
 
 ### chapter_to_xml.py
 
@@ -280,9 +280,135 @@ Read the documentation on Qwen3-TTS. in the Qwen3-TTS/ directory (Github repo cl
         dialog-effects: cave
     ```
 
+#### AI prompt for chapter_xml_to_audio.py
 Modify @chapter_xml_to_audio.py to apply post-effects on character dialog, such that the named dialog-effects are applied to character dialog clips first, then if the <<dialog>> tag contains a named post-effects attribute, then that is also applied to the dialog clip.
 The process of applying the effect is to use sox to apply the clip to a temp-<random_test>.wav file, then the original wav file is removed, and the temp wav file is renamed with the original file's full filename.
 Thus, a max number of 2 effects operations are possible, one for the character's attributes, and one for the dialog's attributes.
 
-## story_config.yml Validation
+## story_config.yml Validation (verify_config.py)
+
+### AI Prompt for Config Validation (verify_config.py)
+I have updated @file:story-config.yml . Please update @file:validate_config.py to verify the new @file:story-config.yml file, using the current @file:story-config.yml as the latest standard template. I have added the following new attributes... 
+
+\<Change to look out for...\>
+
+Please update @file:validate_config.py appropriately.
+Run some tests to validate the changes.
+
+## How do existing audiobook creators tools isolate various TTS tools?
+
+### Questiom
+How do existing popular open source book to audio systems run multiple TTS tools such the tool environments don't interfere with each others python setups? Do they run the various TTS tools as docker services?
+
+### Response
+Many popular open-source systems for converting books or text to audio (such as audiobook generators or voice assistants adaptable for reading long-form content) support multiple TTS engines to provide flexibility in voice quality, languages, and performance. These systems often need to manage environment isolation because TTS libraries (e.g., those based on PyTorch, TensorFlow, or specific audio backends) frequently have conflicting dependencies, such as different versions of Python, NumPy, Torch, or CUDA requirements. Below, I'll outline how some notable examples handle this, based on their architectures and setups.
+
+### Common Approaches to Isolation
+- **Virtual Environments (venvs):** Many Python-based projects use isolated virtual environments to separate dependencies. This allows running different TTS tools via subprocess calls or scripts without global conflicts. For instance, if one TTS requires Python 3.8 and another needs 3.10, separate venvs can be activated as needed.
+- **Docker Containers:** This is a prevalent method for stronger isolation, especially in distributed or production setups. Each TTS engine can run in its own container with tailored dependencies, OS packages, and runtimes. Containers communicate via APIs or networks (e.g., using Docker Compose for orchestration). This prevents interference at the system level and simplifies deployment across hardware.
+- **Other Methods:** Some use conditional imports (loading only the selected TTS at runtime) or optional dependencies in `requirements.txt` to minimize conflicts within a single app. For heavier isolation, tools like pipx can install TTS CLI apps in their own envs.
+
+### Examples of Popular Open-Source Systems
+Here are details from well-known projects that support multiple TTS engines and are used for text-to-audio conversion (including books/ebooks):
+
+1. **Rhasspy (Offline Voice Assistant for Text-to-Speech, Adaptable for Audiobooks):**
+   - **Supported TTS Engines:** eSpeak, Flite, PicoTTS, NanoTTS, MaryTTS, OpenTTS (which integrates Mozilla TTS), Google WaveNet, Larynx, Home Assistant TTS, and custom command/remote/dummy options.
+   - **How Multiple TTS Are Run:** Users configure a primary TTS engine in a profile, but the system supports switching via configuration. Each engine is implemented as a separate Hermes-compatible component (a protocol for voice services). When text needs to be spoken (e.g., reading a book chapter), Rhasspy invokes the selected engine and pipes the audio to an output system. For book-to-audio use, scripts or integrations can feed ebook text sequentially.
+   - **Environment Management:** Rhasspy primarily uses Docker containers for isolation, especially for complex engines like MaryTTS (runs in `synesthesiam/marytts` container), OpenTTS (`synesthesiam/opentts`), and Mozilla TTS (via separate container). This avoids Python dependency conflicts (e.g., different Torch versions) by encapsulating each engine's runtime. Docker Compose orchestrates multi-container setups, with services communicating over internal networks (e.g., HTTP endpoints). Simpler local engines (like eSpeak) run directly on the host, but Docker is recommended for the full system to prevent interference. No explicit use of venvs is mentioned, as Docker provides broader isolation.
+
+2. **ebook2audiobook (Ebook-to-Audiobook Converter):**
+   - **Supported TTS Engines:** XTTSv2 (from Coqui), Piper-TTS, Bark, VITS, Fairseq, Tacotron2, YourTTS, and others, with support for voice cloning and over 1,158 languages.
+   - **How Multiple TTS Are Run:** The tool allows selecting a specific TTS engine per conversion run via a command-line flag (e.g., `--tts_engine xtts`). It converts ebooks (EPUB, PDF, etc.) to audiobooks with chapters and metadata. For multiple engines in a workflow, users can script sequential runs or use variants for different voices/models.
+   - **Environment Management:** The project relies heavily on Docker for isolation, providing pre-built images for various hardware (CPU, CUDA, ROCm, XPU, Jetson). Separate Docker variants exist for specific TTS engines (e.g., one for Piper-TTS and another for XTTS), ensuring each has its own self-contained environment without shared dependencies. This setup avoids conflicts, as each container can have tailored Python versions and libs. Docker Compose files handle orchestration, with volume mounts for input/output files. While the core script can run natively, Docker is emphasized for reliability and to prevent setup issues.
+
+3. **Chatterbox-Audiobook (TTS for Audiobooks and Podcasts):**
+   - **Supported TTS Engines:** Primarily advanced models like those from Coqui or similar (not explicitly multi-engine, but supports multi-voice narration and cloning).
+   - **How Multiple TTS Are Run:** Focused on single-engine use with multi-voice capabilities (e.g., assigning voices to characters). It processes books in chunks for long-form audio.
+   - **Environment Management:** Uses Python virtual environments (venv) for dependency isolation, activated via scripts. No Docker in the core setup, but community forks (e.g., Docker images for Chatterbox-TTS) wrap it in containers for scalability. This venv approach keeps deps separate from the system but may require manual management for adding other engines.
+
+### Do They Use Docker Services?
+Yes, Docker is a common choice in these systems, especially for running TTS tools as isolated services. For example:
+- In Rhasspy, TTS engines like MaryTTS or Mozilla TTS run as dedicated Docker services, orchestrated with the main app.
+- In ebook2audiobook, separate Docker images per TTS variant act as services, allowing users to spin up the needed one without global interference.
+- This containerized approach is ideal for TTS, as it handles not just Python deps but also system-level requirements (e.g., audio libs, GPU drivers).
+
+If a project doesn't use Docker natively (e.g., simpler ones like epub2tts, which sticks to Coqui TTS in a single venv), users often extend it with custom Dockerfiles for isolation. Overall, for systems integrating multiple TTS, Docker services provide robust, reproducible environments, while venvs suffice for lighter setups. If you're building something similar, starting with Docker Compose can make scaling to multiple TTS straightforward.
+
+## UI Concepts for FlexiTTS
+
+Given the following UI requirement, FlexiTTS becomes, not only an audiobook converter, it also becomes a powerful tool for authoring text and multimedia content.
+
+### Doc Pre-Preparation
+
+Given an e-book, pdf, text file, word, open document format...
+  - extract text
+  - format document into chapters in Markdown format.
+  - separate paragraphs, 2 blank lines between each.
+  - identify tables or unconventional text or sentences.
+    - i.e., I would doodle on my notes, many dollar signs.
+      $$$$$$$$$$$$$$$$$$$, $$$$$$$$$$$$$$$$$$ and so on.
+  - Images and graphs are captured and placed into the Markdown document where they are referenced.
+
+Create a UI to perform this workflow including the manual validation of final Markdown chapter results.
+
+Create a Story object.
+  - Use AI to do a full spoiler summary of the story.
+  - Determine the emotional tone of each chapter.
+
+Use AI to scan the document for all characters, and to product a summary of the characters, their characteristics, and story arc.
+
+### The Character Editor
+
+Character profile objects are created for each character.
+  - Character Voice
+  - Character Images
+  - Character Summary
+  - Character Story Arc
+
+Things that one should be able to do within the Character editor.
+  - Update any part of the Chacter's profile
+    - Update Character's voice
+    - Update Character's images
+    - Update Character's summary
+    - Update Character's story arc
+  - Review the Character's dialogs
+    - By Chapter and Section
+    - By Search Query
+    - Modify those Chapters and Sections
+
+#### The Narrator is a character as well.
+
+The Narrator is considered as a character as well.
+
+A note on the Narrator...
+  - I think that in most cases, the Narrator's emotional state should not swing wildly in most cases, as that can be disruptive to the flow of the story for the listener. The Narrator should be objective and allow the listener to create their own emotional experience.
+    - When this is the case for the story, the Narrator's reaction to the story should mainly be pacing. Faster, as action and emotion in the story increase. Slower, with a decrease in action or emotional tone.
+    - The exception is when the Narrator is written in such a way that it is a part of the story, and when it expresses its own feeling to what goes on in it.
+  - These considerations are added to the AI Prompt that guides how the AI assigns emotion instructions for the Narrator. 
+
+### Chapter to XML
+
+Create a UI workflow tool for converting each page to XML format vi AI processing.
+  - The workflow should allow for processing all or a selection of chapters.
+  - The process should allow for the modification of the AI prompt used to convert original text in Markdown format to the XML format that drives the audio, image and animation generation of the story.
+  - Given a Chapter or set of Chapter's on should be able to get the list of Characters involved in those chapters.
+  - One should be able to re-generate the XML of all or some of the chapters.
+  - One should be able to compare the origin text of a Chapter vs its XML representation.
+  - One should be able to modify the text of the original Chapter as well as its XML form.
+    - Or, changes to one document should be allowed to update the other.
+
+### Global Ques
+
+Global Ques help to indicate tasks that should be done or re-executed to update down the line products.
+
+As changes are made to the project, a task que is created to update down the line products.
+
+A one-button wrap-up request can intelligently execute the task que to ensure all down the line products are up to date and "dailies" can be examined to assess progress.
+
+Wrap-up logs indicate when a wrap-up was invoked and the final down the line product that are generated.
+
+### Capturing Incremental Changes
+
+Incremental changes are captured via git for text files.
+Generated products such as digital media would require the availability for mass storage, with rolling deletions to reduce storage requirements.
 
