@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import argparse
 import os
 import re
@@ -12,6 +14,7 @@ from pathlib import Path
 from xml.etree import ElementTree as ET
 from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass
+from chapter_validate_xml import validate_and_fix_xml
 
 # Import Qwen3-TTS
 # Note: Ensure qwen_tts is in the python path or installed
@@ -127,6 +130,9 @@ def parse_xml(xml_path: Path) -> List[Utterance]:
                 
     return utterances
 
+def generate_silence(duration: float, sr: int = 24000) -> np.ndarray:
+    return np.zeros(int(sr * duration))
+
 def main():
     parser = argparse.ArgumentParser(description="Convert XML chapters to audio using Qwen3-TTS")
     parser.add_argument("xml_file", nargs="?", help="Path to the chapter XML file")
@@ -134,6 +140,7 @@ def main():
     parser.add_argument("--section", type=str, help="Only generate/regenerate audio for this section number (e.g., 1 or 001)")
     parser.add_argument("--dlgseq", type=str, help="Only generate/regenerate audio for this dlgseq number (e.g., 1 or 001)")
     parser.add_argument("--create-missing-clips", action="store_true", help="Only generate audio clips that are missing from the clips directory")
+    parser.add_argument("--create-silent-clips", action="store_true", help="Create silent audio clips between clips, naming them with ~silence suffix")
     args = parser.parse_args()
 
     # Load config
@@ -146,6 +153,7 @@ def main():
     story_audio_dir = story_dir / global_cfg.get("story-audio", "story-audio")
     clips_dir = story_dir / global_cfg.get("clips", "clips")
     voices_dir = story_dir / global_cfg.get("voices", "refs")
+    clip_separation = float(global_cfg.get("clip-separation", 0))
     
     if args.xml_file:
         xml_path = Path(args.xml_file)
@@ -167,6 +175,12 @@ def main():
         else:
             print(f"File not found: {xml_path}")
             return
+
+    # Validate XML before processing
+    print(f"Validating {xml_path}...")
+    if not validate_and_fix_xml(str(xml_path)):
+        print(f"Aborting: XML validation failed for {xml_path}")
+        return
 
     print(f"Processing {xml_path}...")
     utterances = parse_xml(xml_path)
@@ -378,6 +392,33 @@ def main():
                                 print(f"    Warning: Named dialog-effect '{named_eff}' not found in config.")
 
                     all_generated_clips.append((utt, out_path, i))
+
+                    # If --create-silent-clips is used and clip_separation > 0, 
+                    # create a silent clip after this utterance clip.
+                    # We only do this for the last segment of an utterance if it was segmented.
+                    if args.create_silent_clips and clip_separation > 0 and i == len(wavs) - 1:
+                        silence_filename = f"chapter_{utt.chapter_num}_{utt.section_num}_{utt.dlgseq}_~silence.wav"
+                        silence_path = chapter_clip_dir / silence_filename
+                        print(f"    Creating silent clip {silence_filename} ({clip_separation}s)...")
+                        if not args.dry_run:
+                            silence_data = generate_silence(clip_separation, sr)
+                            sf.write(str(silence_path), silence_data, sr)
+                        else:
+                            print(f"    [Dry-run] Would save silent clip to {silence_path}")
+                        
+                        # We use a special Utterance-like object or just a marker for sorting
+                        # but for simplicity in current sorting logic, let's create a dummy Utterance
+                        silence_utt = Utterance(
+                            chapter_num=utt.chapter_num,
+                            section_num=utt.section_num,
+                            dlgseq=utt.dlgseq,
+                            speaker="~silence",
+                            emotion="neutral",
+                            text="",
+                            kind="silence"
+                        )
+                        # We give it a high subseq so it sorts after the actual speech segments
+                        all_generated_clips.append((silence_utt, silence_path, 999))
                 
         except Exception as e:
             print(f"Error generating audio for {character}: {e}")
@@ -412,10 +453,19 @@ def main():
                 data, sr = sf.read(str(path))
                 final_sr = sr
                 combined_wav.append(data)
-                # Add a small silence between clips?
-                combined_wav.append(np.zeros(int(sr * 0.5)))
+                
+                # If clip-separation > 0 and NOT using --create-silent-clips,
+                # we add silence buffer here, EXCEPT after the last clip.
+                # If using --create-silent-clips, the silence is already in all_generated_clips.
+                if clip_separation > 0 and not args.create_silent_clips:
+                    # Check if this is the last clip in the sorted list
+                    if (utt, path, subseq) != all_generated_clips[-1]:
+                        combined_wav.append(generate_silence(clip_separation, sr))
             else:
                 print(f"    [Dry-run] Would append {path} to final audio")
+                if clip_separation > 0 and not args.create_silent_clips:
+                    if (utt, path, subseq) != all_generated_clips[-1]:
+                        print(f"    [Dry-run] Would append {clip_separation}s silence")
             
         if combined_wav and not args.dry_run:
             final_audio = np.concatenate(combined_wav)

@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import yaml
 import json
 import sys
@@ -6,109 +8,291 @@ import re
 from jsonschema import validate, ValidationError
 
 def get_schema():
+    # [SCHEMA_MARKER_START]
     # Define the schema based on the current story-config.yml
     return {
         "type": "object",
         "properties": {
-            "global": {
-                "type": "object",
-                "properties": {
-                    "story-dir": {"type": "string"},
-                    "voices": {"type": "string"},
-                    "chapters": {"type": "string"},
-                    "story-xml": {"type": "string"},
-                    "logs": {"type": "string"},
-                    "story-audio": {"type": "string"},
-                    "clips": {"type": "string"}
+                "global": {
+                        "type": "object",
+                        "properties": {
+                                "story-dir": {
+                                        "type": "string"
+                                },
+                                "voices": {
+                                        "type": "string"
+                                },
+                                "chapters": {
+                                        "type": "string"
+                                },
+                                "story-xml": {
+                                        "type": "string"
+                                },
+                                "logs": {
+                                        "type": "string"
+                                },
+                                "story-audio": {
+                                        "type": "string"
+                                },
+                                "clips": {
+                                        "type": "string"
+                                },
+                                "clip-separation": {
+                                        "type": "number"
+                                }
+                        },
+                        "additionalProperties": False,
+                        "required": [
+                                "story-dir",
+                                "voices",
+                                "chapters",
+                                "story-xml",
+                                "logs",
+                                "story-audio",
+                                "clips",
+                                "clip-separation"
+                        ]
                 },
-                "additionalProperties": False,
-                "required": ["story-dir", "voices", "chapters", "story-xml", "logs", "story-audio", "clips"]
-            },
-            "llm-xml-generator": {
-                "type": "array",
-                "minItems": 1,
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "default-llm": {"type": "string"},
-                        "llm": {"type": "string"},
-                        "model": {"type": "string"},
-                        "api_key": {"type": "string"},
-                        "api_base": {"type": "string"},
-                        "temperature": {"type": "number"},
-                        "max_tokens": {"type": "integer"},
-                        "rpm": {"type": "integer"},
-                        "timeout": {"type": "integer"}
-                    },
-                    "additionalProperties": False
-                }
-            },
-            "dialog-effects": {
-                "type": "array",
-                "minItems": 1,
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "name": {"type": "string"},
-                        "sox-effects": {
-                            "type": "array",
-                            "minItems": 1,
-                            "items": {"type": "string"}
-                        }
-                    },
-                    "additionalProperties": False,
-                    "required": ["name", "sox-effects"]
-                }
-            },
-            "story-audio-post-process": {
-                "type": "object",
-                "properties": {
-                    "sox-effects": {
+                "llm-xml-generator": {
                         "type": "array",
                         "minItems": 1,
-                        "items": {"type": "string"}
-                    }
-                },
-                "additionalProperties": False,
-                "required": ["sox-effects"]
-            },
-            "characters": {
-                "type": "array",
-                "minItems": 1,
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "name": {"type": "string"},
-                        "voice-sample": {"type": "string"},
-                        "dialog-effects": {
-                            "type": "array",
-                            "minItems": 1,
-                            "items": {"type": "string"}
-                        },
-                        "sox-effects": {
-                            "type": "array",
-                            "minItems": 1,
-                            "items": {"type": "string"}
-                        },
-                        "custom-voice": {
-                            "type": "object",
-                            "properties": {
-                                "language": {"type": "string"},
-                                "speaker": {"type": "string"},
-                                "instruct": {"type": "string"}
-                            },
-                            "additionalProperties": False,
-                            "required": ["language", "speaker", "instruct"]
+                        "items": {
+                                "type": "object",
+                                "properties": {
+                                        "default-llm": {
+                                                "type": "string"
+                                        },
+                                        "model": {
+                                                "type": "string"
+                                        },
+                                        "api_key": {
+                                                "type": "string"
+                                        },
+                                        "api_base": {
+                                                "type": "string"
+                                        },
+                                        "llm": {
+                                                "type": "string"
+                                        },
+                                        "temperature": {
+                                                "type": "number"
+                                        }
+                                },
+                                "additionalProperties": False,
+                                "required": [
+                                        "api_base",
+                                        "model"
+                                ]
                         }
-                    },
-                    "additionalProperties": False,
-                    "required": ["name"]
+                },
+                "dialog-effects": {
+                        "type": "array",
+                        "minItems": 1,
+                        "items": {
+                                "type": "object",
+                                "properties": {
+                                        "name": {
+                                                "type": "string"
+                                        },
+                                        "sox-effects": {
+                                                "type": "array",
+                                                "minItems": 1,
+                                                "items": {
+                                                        "type": "string"
+                                                }
+                                        }
+                                },
+                                "additionalProperties": False,
+                                "required": [
+                                        "name",
+                                        "sox-effects"
+                                ]
+                        }
+                },
+                "story-audio-post-process": {
+                        "type": "object",
+                        "properties": {
+                                "sox-effects": {
+                                        "type": "array",
+                                        "minItems": 1,
+                                        "items": {
+                                                "type": "string"
+                                        }
+                                }
+                        },
+                        "additionalProperties": False,
+                        "required": [
+                                "sox-effects"
+                        ]
+                },
+                "characters": {
+                        "type": "array",
+                        "minItems": 1,
+                        "items": {
+                                "type": "object",
+                                "properties": {
+                                        "name": {
+                                                "type": "string"
+                                        },
+                                        "voice-sample": {
+                                                "type": "string"
+                                        },
+                                        "sox-effects": {
+                                                "type": "array",
+                                                "minItems": 1,
+                                                "items": {
+                                                        "type": "string"
+                                                }
+                                        },
+                                        "custom-voice": {
+                                                "type": "object",
+                                                "properties": {
+                                                        "language": {
+                                                                "type": "string"
+                                                        },
+                                                        "speaker": {
+                                                                "type": "string"
+                                                        },
+                                                        "instruct": {
+                                                                "type": "string"
+                                                        }
+                                                },
+                                                "additionalProperties": False,
+                                                "required": [
+                                                        "language",
+                                                        "speaker",
+                                                        "instruct"
+                                                ]
+                                        },
+                                        "dialog-effects": {
+                                                "type": "array",
+                                                "minItems": 1,
+                                                "items": {
+                                                        "type": "string"
+                                                }
+                                        }
+                                },
+                                "additionalProperties": False,
+                                "required": [
+                                        "name"
+                                ]
+                        }
                 }
-            }
         },
         "additionalProperties": False,
-        "required": ["global", "llm-xml-generator", "dialog-effects", "story-audio-post-process", "characters"]
-    }
+        "required": [
+                "global",
+                "llm-xml-generator",
+                "dialog-effects",
+                "story-audio-post-process",
+                "characters"
+        ]
+}
+    # [SCHEMA_MARKER_END]
+
+def infer_schema(data):
+    if isinstance(data, dict):
+        properties = {}
+        required = []
+        for k, v in data.items():
+            properties[k] = infer_schema(v)
+            required.append(k)
+        return {
+            "type": "object",
+            "properties": properties,
+            "additionalProperties": False,
+            "required": required
+        }
+    elif isinstance(data, list):
+        if not data:
+            return {"type": "array"}
+        
+        # Merge schemas of all items to handle optional fields
+        merged_properties = {}
+        merged_required = None
+        item_types = set()
+        
+        for item in data:
+            item_schema = infer_schema(item)
+            item_types.add(item_schema["type"])
+            
+            if item_schema["type"] == "object":
+                for k, v in item_schema["properties"].items():
+                    if k not in merged_properties:
+                        merged_properties[k] = v
+                    # Optional: could merge v with existing if they differ
+                
+                if merged_required is None:
+                    merged_required = set(item_schema["required"])
+                else:
+                    merged_required &= set(item_schema["required"])
+            
+        if len(item_types) == 1:
+            item_type = item_types.pop()
+            if item_type == "object":
+                items_schema = {
+                    "type": "object",
+                    "properties": merged_properties,
+                    "additionalProperties": False
+                }
+                if merged_required:
+                    items_schema["required"] = sorted(list(merged_required))
+            else:
+                # Use the schema from the first item for non-objects
+                items_schema = infer_schema(data[0])
+        else:
+            # Heterogeneous array, just use the first item's type or a generic item
+            items_schema = infer_schema(data[0])
+            
+        return {
+            "type": "array",
+            "minItems": 1,
+            "items": items_schema
+        }
+    elif isinstance(data, bool):
+        return {"type": "boolean"}
+    elif isinstance(data, int):
+        return {"type": "integer"}
+    elif isinstance(data, float):
+        return {"type": "number"}
+    elif isinstance(data, str):
+        return {"type": "string"}
+    elif data is None:
+        return {"type": "null"}
+    else:
+        return {"type": "string"}
+
+def update_script_schema(new_schema):
+    script_path = os.path.abspath(__file__)
+    with open(script_path, 'r') as f:
+        lines = f.readlines()
+
+    schema_json = json.dumps(new_schema, indent=8)
+    schema_python = schema_json.replace(": true", ": True").replace(": false", ": False").replace(": null", ": None")
+    
+    start_idx = -1
+    end_idx = -1
+    for i, line in enumerate(lines):
+        if "[SCHEMA_MARKER_START]" in line:
+            start_idx = i
+        if "[SCHEMA_MARKER_END]" in line:
+            end_idx = i
+            break
+    
+    if start_idx == -1 or end_idx == -1:
+        print("Error: Could not find schema markers in the script.")
+        return False
+
+    new_lines = lines[:start_idx + 1]
+    new_lines.append("    # Define the schema based on the current story-config.yml\n")
+    new_lines.append(f"    return {schema_python}\n")
+    new_lines.extend(lines[end_idx:])
+
+    with open(script_path, 'w') as f:
+        f.writelines(new_lines)
+    
+    print(f"Successfully updated internal schema in {script_path}")
+    return True
 
 def find_line_number(path, data_lines):
     # path is a list of keys/indices, e.g., ['characters', 10, 'custom-voice']
@@ -347,7 +531,30 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Validate story-config.yml")
     parser.add_argument("file", nargs="?", default="story-config.yml", help="Path to the config file")
     parser.add_argument("--json", action="store_true", help="Output JSON equivalent of the config")
+    parser.add_argument("--update-schema", help="Update the internal schema using the specified well-formed YAML file")
     args = parser.parse_args()
+
+    if args.update_schema:
+        if not os.path.exists(args.update_schema):
+            print(f"File not found: {args.update_schema}")
+            sys.exit(1)
+        
+        with open(args.update_schema, 'r') as f:
+            try:
+                data = yaml.safe_load(f)
+            except yaml.YAMLError as e:
+                print(f"Error parsing YAML file {args.update_schema}: {e}")
+                sys.exit(1)
+        
+        if not data:
+            print(f"YAML file {args.update_schema} is empty.")
+            sys.exit(1)
+            
+        new_schema = infer_schema(data)
+        if update_script_schema(new_schema):
+            sys.exit(0)
+        else:
+            sys.exit(1)
 
     if args.json:
         if os.path.exists(args.file):

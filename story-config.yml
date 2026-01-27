@@ -12,6 +12,8 @@ global:
   story-audio: story-audio/
   # Generated character voice clips for the story are saved here
   clips: story-audio/clips/
+  # A silence of n seconds between audio-clips.
+  clip-separation: 0.3
 llm-xml-generator:
   # Configuration for the LLM XML formatter
   # Set to true to enable XML formatting

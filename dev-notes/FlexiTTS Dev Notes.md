@@ -1,74 +1,53 @@
 # FlexiTTS Development Notes
 
-The idea with FlexiTTS (Flexi-tus) is to create a flexible taggable story to audio-track system.
-Automated book to augmented-audible 
+The idea with FlexiTTS (Flexi-tus) is to create a simple flexible text to audio-book workflow.
 
 ## Features:
+   * Clone or Synthesize Voices + post-processing audio effects to voices.
   * Character parameters
-	* Characters and their voices
+	* Clone or Synthesize
+    * Post-Processing effects
   * Flexible use of various open source local TTS models
     * Use best model for the given problem
-  * Voice cloning were needed
-  * Leverage LLM to find tag dialog associated to a given character.
-  * Leverage LLM to identify atmospheric backgrounds and effects for a given story.
-   * Leverage LLM to find and possibly automate Character dialog that requires custom voice clone for added effect
-     * Find dialog that requires duress, pleasure, sarcasms, specific timing (jokes)
-       * Special effects, echo, chambers, street noise, crowds etc...
-  * Generate stems
-  * Apply effects to stems based on tags
-  * Append stems in the appropriate order (final edit)
-  * Generate captions
-
-## Voice Generation Pipelines
-
-Additionally, a pipeline could be created that allows for the generation of consistent graphic images that match a given situation.
-
-Given a set of images indicating the various characters of the story and backdrops where scenes are envisioned to occur.
-Visuals are synthesized that fit a given scene in the story.
+    * Currently, only uses Qwen3-TTS is supported.
+  * Uses LLM to generate XML, determines dialog associated to a given character. Added tags base on what should be the emotional tone of the character's dialog.
+     * Find dialog that requires duress, pleasure, sarcasm.
+  * Generates a sequence of audio-clips
+    * Appls effects to audio-clips based on tags
+    * Append audio-clips into your favorite DAW.
+    * Final audio-clips are also appended together by chapter.
 
 ### Design Outline
 
-  1. LLM scans text and adds tags for character dialog
-     1. <char-narrator>Text.</char-narrator>
-     2. <char-Hendricks>Text.</char-Hendricks>
-     3. Use Python and a local LLM to augment text
-	    1. Process 1 paragraph at a time.
-		2. Include 1 paragraph before and after as context or possibly more to include context.
-		3. If the story is short enough to fit into the LLM context window, load the full story.
-		4. Determine if the dialog requires attention to dramatization, pain, anger, elation, grief and add the area.
-			a. <flag:drama-grief></flag:drama-grief>
-	 5. Additional context my be required including...
-        1. a list of characters
-		2. a summary of the story
-		3. instructions on how to surround dialog with tags (tagging rules)
-           1. open/close tag may contain other open/close tags, and must not overlap.
-           2. output text as a nested XML file.
-  2. LLM scans text and adds tags for music and sound effects
-		1. Process 1 paragraph at a time.
-		2. Include 1 paragraph before and after as context or possibly more to include context.
-		3. If the story is short enough to fit into the LLM context window, load the full story.
-		4. Additional context my be required including...
-			1. a music and sound effects
-			2. a summary of the story
-			3. instructions on how to surround story sections with tags 
-  3. Python program scans augmented text and generates sound stems given character dialog.
+  1. LLM scans text file (chapter) and generates XML file of the chapter, adding tags for character dialog
+     1. \<narrator\> Text. \</narrator\>
+     2. \<dialog name=""Hendricks\> Text. \</dialog\>
+  2. Python program scans XML Chapter and generates sound stems given character dialog.
 	 1. Dialog Stems are replayed through Speech to Text STT (whisper) to validate dialog.
-		1. TTS Optimization...
-           1. atch TTS for a single characters voice so that cloning does not require reloads of the target voice for voice cloning.
-	 2. Stem lengths are noted so as to target appropriate locations for music and sound effect stems.
-	 3. Sound effect stems are auto selected or generated.
-	 4. Music stems are auto selected or generated.
-  4. Python program uses reapy-boost to...
-	 1. Place dialog sound-bytes on a track
-	 2. Potentially re-align sound-bytes end to end
-	 2. generate timing for video closed-captions
+     2. TTS Optimization...
+        1. Batch TTS for a single characters voice so that cloning does not require reloads of the target voice.
 
-#### Additional Ideas
-  1. Using Chatterbox-TTS, we can use prompting and sliders to control voice output's emotion.
-  	 1. Create a set of parameters that can be used to model emotion over the tone scale.
-	 2. Map AI's emotion attributes to points on the Tone Scale.
-	 3. Create an algorithm that applies the emotional attribute as an emotional shift to a given character, base on the character's Chronic Tone Level.
-	 4. Additionally, allow a character's story arc, to shift the characters Chronic Tone Level.
+## Hardware Requirements
+
+  * CPU with at least 4 cores and 8GB of RAM
+  * GPU with at least 8GB of VRAM
+    * Use for local audio dialog generation. 
+  * SSD with at least 500GB of storage
+  * Access to a commercial grade LLM
+    * Used to generate the required XML representation of the original Chapter document augmented with tags indicating dialogs for the Narrator and other Characters.
+
+## Scripts
+
+  - validate_config.py
+    - Validates the configuration file story_config.yml
+    - The internal schema used by story_config.yml text file can be updated given an properly formatted YAML document.
+  - chapter_to_xml.py
+    - Converts a Markdown Chapter text file to XML using the LLM service configured.
+  - chapter_validate.xml
+    - Validates the XML output of chapter_to_xml.py to ensure a properly formatted file, and that sections and indicated audio sequences are properly numbered.
+    - Contains an internal XSD (XML Schema Definition) which can be updated given an properly formatted XML document.
+  - chapter_xml_to_audio.py
+    - Generates audio given the augmented XML representation of the original Markdown text chapter.
 
 ## Story to XML Generation (AI Prompt) & Example Text
 

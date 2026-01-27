@@ -20,7 +20,7 @@
 	  skull. A message from an unknown sender. He opened it with a thought,
 	  the text overlaying his vision.
 	</narration>
-    <dialog character="Yakuza-1" emotion="taunting" dlgseq="4">
+    <dialog character="Yakuza-1" emotion="taunting" post-effects="cave" dlgseq="4">
 	  Tick-tock, Hendrix. The clock is ticking!
     </dialog>
 	<narration emotion="urgent" dlgseq="5">
@@ -33,26 +33,28 @@
 	  couldn't pay. He thought of the blockchain accounts he had tried to hack,
 	  the firewalls that were more like fortress walls. Unbreachable.
 	</narration>
-	<narration emotion="somber" dlgseq="7">
+  </section>
+  <section seq="2">
+	<narration emotion="somber" dlgseq="1">
 	  A couple walked by, laughing, their faces lit by the soft glow of their
 	  handheld screens. To them, he was just a shadow, a silhouette against the
 	  backdrop of the city's electric tapestry. They didn't see the desperation
 	  in his eyes, the weight of his predicament pulling him down like gravity.
 	</narration>
-	<narration emotion="reflective" dlgseq="8">
+	<narration emotion="reflective" dlgseq="2">
 	  Hendrix reached into his pocket and pulled out a small device, no bigger
 	  than a thumb drive. It was a last resort, a piece of black-market tech
 	  that could fry an AI's neural network. Dangerous, but it might fetch a
 	  high price. Would it be enough to buy his life back?
 	</narration>
-	<narration emotion="eerie" dlgseq="9">
+	<narration emotion="eerie" dlgseq="3">
 	  The lake seemed to whisper to him, its waves lapping at the shore like
 	  the soft murmur of ghosts. He looked at the water and then back at the
 	  city, its skyscrapers towering like digital deities. Two worlds,
 	  separated by a thin line of concrete. And there he was, standing on the
 	  edge, a man caught between the abyss and the code.
 	</narration>
-	<narration emotion="determined" dlgseq="10">
+	<narration emotion="determined" dlgseq="4">
 	  As he disappeared into the maze of streets and alleyways, one thing was
 	  clear. The game was on, and he was all in.
 	</narration>
