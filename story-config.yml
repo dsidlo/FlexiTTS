@@ -62,10 +62,14 @@ characters:
   # Ono_Anna: Playful Japanese female voice with a light, nimble timbre.   | Japanese
   #    Sohee: Warm Korean female voice with rich emotion.                  | Korean
   - name: narrator
+    # The narrator voice uses voice cloning and a post-effect to make it a bit louder.
     voice-sample: dgs-voice.wav
     sox-effects:
       - gain +4
   - name: narrator-cv
+    # This version of the narrator voice uses Qwen3-TTS voice customization.
+    # It customizes one of Qwen3-TTS's 9 internal voices using sox post-processing
+    # to make it deeper and rougher.
     custom-voice:
       language: English
       speaker: ryan
