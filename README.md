@@ -72,6 +72,7 @@ The idea with FlexiTTS (Flexi-tus) is to create a simple flexible text to audio-
     - The internal schema used by story_config.yml text file can be updated given an properly formatted YAML document.
   - chapter_to_xml.py
     - Converts a Markdown Chapter text file to XML using the LLM service configured.
+    - Uses the [FlexiTTS-AI-Prompt-Chapter-to-XML.md](https://github.com/QwenLM/FlexiTTS/blob/main/FlexiTTS-AI-Prompt-Chapter-to-XML.md) to generate an XML file that augments the original Markdown chapter with tags indicating dialogs for the Narrator and other Characters along with emotional attributes for each character.
   - chapter_validate.xml
     - Validates the XML output of chapter_to_xml.py to ensure a properly formatted file, and that sections and indicated audio sequences are properly numbered.
     - Contains an internal XSD (XML Schema Definition) which can be updated given an properly formatted XML document.
