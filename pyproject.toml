@@ -8,6 +8,12 @@ dependencies = [
     "litellm>=1.81.1",
     "lxml>=6.0.2",
     "qwen-tts",
+    "streamlit==1.38.0",
+    "streamlit-aggrid==1.1.2",
+    "pydub==0.25.1",
+    "soundfile==0.12.1",
+    "pyyaml==6.0.2",
+    "pandas==2.2.3",
 ]
 
 [tool.uv.sources]
