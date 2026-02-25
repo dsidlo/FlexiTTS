@@ -12,6 +12,8 @@ declare global {
       showConfirmDialog?: (title: string, message: string, detail: string) => Promise<number>;
       listChapterClips?: (chapterName: string) => Promise<string[]>;
       checkChapterAudio?: (chapterName: string) => Promise<boolean>;
+      checkXmlExists?: (chapterStem: string) => Promise<boolean>;
+      listChapterFiles?: () => Promise<string[]>;
       playSoundFile?: (filePath: string) => Promise<void>;
       killProcess?: (matchString: string) => Promise<boolean>;
     };
@@ -19,6 +21,24 @@ declare global {
 }
 
 export const PythonBridgeService = {
+  showErrorDialog: async (title: string, message: string): Promise<void> => {
+    if (typeof window !== 'undefined' && window.api && window.api.showErrorDialog) {
+      return await window.api.showErrorDialog(title, message);
+    } else {
+      console.error(`Mock Error Dialog: [${title}] ${message}`);
+      alert(`Error: ${title}\n${message}`);
+    }
+  },
+
+  showConfirmDialog: async (title: string, message: string, detail: string): Promise<number> => {
+    if (typeof window !== 'undefined' && window.api && window.api.showConfirmDialog) {
+      return await window.api.showConfirmDialog(title, message, detail);
+    }
+    // Mock fallback
+    const result = window.confirm(`${title}\n\n${message}\n${detail}\n\nOK to Save, Cancel to cancel.`);
+    return result ? 0 : 2; // 0=Save, 2=Cancel (no easy way to mock 3-way in browser)
+  },
+
   validateConfig: async (): Promise<void> => {
     try {
       if (typeof window !== 'undefined' && window.api && window.api.runPythonScript) {
@@ -102,22 +122,29 @@ export const PythonBridgeService = {
     return `<story><section><narration emotion="neutral" dlgseq="1">Fallback mock data for ${filePath}.</narration></section></story>`;
   },
 
-  listChapterFiles: async (storyXmlDir: string): Promise<string[]> => {
-    if (typeof window !== 'undefined' && window.api && (window.api as any).listChapterFiles) {
-      return await (window.api as any).listChapterFiles(storyXmlDir);
+  listChapterFiles: async (): Promise<string[]> => {
+    if (typeof window !== 'undefined' && window.api && window.api.listChapterFiles) {
+      return await window.api.listChapterFiles();
     }
     
-    console.log(`Mocking list for ${storyXmlDir}`);
+    console.log(`Mocking list for chapters`);
     // Simulate real delay
     await new Promise(resolve => setTimeout(resolve, 300));
     
     // Hardcode fallback paths if glob isn't working right
     return [
-      'Story-Entanglement/story-xml/01-Hendrix.xml',
-      'Story-Entanglement/story-xml/02-Tech.xml',
-      'Story-Entanglement/story-xml/03-Yamato.xml',
-      'Story-Entanglement/story-xml/04-Manus Labs.xml'
+      'Story-Entanglement/story-chapters/01-Hendrix.md',
+      'Story-Entanglement/story-chapters/02-Tech.md',
+      'Story-Entanglement/story-chapters/03-Yamato.md',
+      'Story-Entanglement/story-chapters/04-Manus Labs.md'
     ];
+  },
+
+  checkXmlExists: async (chapterStem: string): Promise<boolean> => {
+    if (typeof window !== 'undefined' && window.api && window.api.checkXmlExists) {
+      return await window.api.checkXmlExists(chapterStem);
+    }
+    return true; // Mock true for browser testing
   },
 
   writeChapterFile: async (filePath: string, xmlContent: string): Promise<boolean> => {
@@ -142,7 +169,7 @@ export const PythonBridgeService = {
       try {
         console.log(`[playAudio] Calling runPythonScript with chapter_xml_to_audio.py`);
         const out = await window.api.runPythonScript('src/scripts/chapter_xml_to_audio.py', [
-            `--chapter`, chapterName,
+            `Story-Entanglement/story-xml/${chapterName}`,
             `--section`, sectionNum,
             `--dlgseq`, dlgseqNum
         ]);
@@ -226,22 +253,6 @@ export const PythonBridgeService = {
         await new Promise(resolve => setTimeout(resolve, 2000)); // Simulate play time
         console.log(`Mock: Played audio.`);
     }
-  },
-
-  showConfirmDialog: async (title: string, message: string, detail: string): Promise<number> => {
-    if (typeof window !== 'undefined' && window.api && window.api.showConfirmDialog) {
-      try {
-        return await window.api.showConfirmDialog(title, message, detail);
-      } catch (e) {
-        console.warn('Failed to show confirm dialog', e);
-      }
-    }
-    // Browser fallback (native confirm only has OK/Cancel, so mapping is tricky)
-    if (typeof window !== 'undefined') {
-       const res = window.confirm(`${message}\n\n${detail}\n\nPress OK to Save, Cancel to Discard`);
-       return res ? 0 : 1; 
-    }
-    return 1; // Default Discard
   },
 
   listChapterClips: async (chapterName: string): Promise<string[]> => {

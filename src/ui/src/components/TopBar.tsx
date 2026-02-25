@@ -1,23 +1,23 @@
 import React, { useState } from 'react';
 import { PythonBridgeService } from '../services/pythonBridge';
-import type { Chapter } from '../models/types';
+import type { Chapter, StoryConfig } from '../models/types';
 
 interface TopBarProps {
+  config: StoryConfig | null;
   chapter: Chapter | null;
-  xmlContent: string;
   filePath: string;
   chapterList: string[];
   hasChapterAudio?: boolean;
   selectedCharacter: string;
   onChapterSelect: (filePath: string) => void;
   onCharacterSelect: (character: string) => void;
-  onSave?: () => void;
+  onSave?: () => Promise<void> | void;
   onRenderComplete?: () => void;
   hasUnsavedChanges?: boolean;
 }
 
 export const TopBar: React.FC<TopBarProps> = ({ 
-  chapter, xmlContent, filePath, chapterList, hasChapterAudio,
+  config, chapter, filePath, chapterList, hasChapterAudio,
   selectedCharacter, onChapterSelect, onCharacterSelect, onSave, onRenderComplete,
   hasUnsavedChanges
 }) => {
@@ -40,13 +40,8 @@ export const TopBar: React.FC<TopBarProps> = ({
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      console.log(`[TopBar] Saving XML to: ${filePath}`);
-      await PythonBridgeService.writeChapterFile(filePath, xmlContent);
-      console.log(`[TopBar] File saved successfully. Validating XML...`);
-      await PythonBridgeService.validateChapterXML(filePath);
-      console.log(`[TopBar] XML validation complete.`);
       if (onSave) {
-        onSave();
+        await onSave();
       }
     } catch (error) {
       console.error("[TopBar] Save or validation failed:", error);
@@ -56,11 +51,10 @@ export const TopBar: React.FC<TopBarProps> = ({
   };
 
   const handleRenderChapter = async () => {
-    const chapterName = filePath.split('/').pop() || 'Unknown.xml';
+    const chapterName = filePath.split('/').pop()?.replace('.md', '.xml') || 'Unknown.xml';
     
     if (isRendering) {
       // Cancel operation
-      const chapterName = filePath.split('/').pop() || 'Unknown.xml';
       await PythonBridgeService.cancelAudio(chapterName);
       setIsRendering(false);
       return;
@@ -68,12 +62,17 @@ export const TopBar: React.FC<TopBarProps> = ({
 
     setIsRendering(true);
     try {
+      if (hasUnsavedChanges && onSave) {
+        console.log(`[TopBar] Auto-saving unsaved changes before rendering...`);
+        await handleSave();
+      }
+
       console.log(`[TopBar] Rendering full chapter: ${chapterName}`);
       
       // We can use runPythonScript explicitly to process the whole chapter
       if (typeof window !== 'undefined' && window.api && window.api.runPythonScript) {
          await window.api.runPythonScript('src/scripts/chapter_xml_to_audio.py', [
-            `--chapter`, chapterName,
+            `Story-Entanglement/story-xml/${chapterName}`,
             `--create-missing-clips`
          ]);
          
@@ -89,7 +88,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   };
 
   const handlePlayChapter = async () => {
-    const chapterName = filePath.split('/').pop() || 'Unknown.xml';
+    const chapterName = filePath.split('/').pop()?.replace('.md', '.xml') || 'Unknown.xml';
     
     if (isPlayingAudio) {
       // Cancel operation
@@ -122,7 +121,7 @@ export const TopBar: React.FC<TopBarProps> = ({
           style={{ marginLeft: '8px', maxWidth: '200px' }}
         >
           {chapterList.map((file) => {
-            const fileName = file.split('/').pop() || file;
+            const fileName = file.split('/').pop()?.replace('.md', '')?.replace('.xml', '') || file;
             return (
               <option key={file} value={file}>
                 {fileName}
@@ -140,9 +139,18 @@ export const TopBar: React.FC<TopBarProps> = ({
           onChange={(e) => onCharacterSelect(e.target.value)}
         >
           <option value="">Select Character</option>
-          {uniqueCharacters.map((char) => (
-            <option key={char} value={char}>{char}</option>
-          ))}
+          {uniqueCharacters.map((char) => {
+             const isUnknown = config ? !config.characters.some(c => c.name === char) : false;
+             return (
+              <option 
+                key={char} 
+                value={char} 
+                style={isUnknown ? { color: '#ffb74d', fontWeight: 'bold' } : {}}
+              >
+                {char} {isUnknown ? '(New)' : ''}
+              </option>
+            );
+          })}
         </select>
       </div>
 

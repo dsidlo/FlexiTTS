@@ -137,7 +137,6 @@ def main():
     parser = argparse.ArgumentParser(description="Convert XML chapters to audio using Qwen3-TTS")
     parser.add_argument("xml_file", nargs="?", help="Path to the chapter XML file")
     parser.add_argument("--dry-run", action="store_true", help="Dry run: process XML but don't generate audio")
-    parser.add_argument("--chapter", type=str, help="Filename of the chapter XML to process (must exist in story-xml directory)")
     parser.add_argument("--section", type=str, help="Only generate/regenerate audio for this section number (e.g., 1 or 001)")
     parser.add_argument("--dlgseq", type=str, help="Only generate/regenerate audio for this dlgseq number (e.g., 1 or 001)")
     parser.add_argument("--create-missing-clips", action="store_true", help="Only generate audio clips that are missing from the clips directory")
@@ -158,12 +157,6 @@ def main():
     
     if args.xml_file:
         xml_path = Path(args.xml_file)
-    elif args.chapter:
-        xml_path = story_xml_dir / args.chapter
-        if not xml_path.exists():
-            print(f"Error: Chapter file '{args.chapter}' not found in {story_xml_dir}")
-            return
-        print(f"Using chapter file {xml_path}")
     else:
         # Look in story-xml directory
         xml_files = list(story_xml_dir.glob("*.xml"))
@@ -190,7 +183,8 @@ def main():
         return
 
     print(f"Processing {xml_path}...")
-    utterances = parse_xml(xml_path)
+    full_utterances = parse_xml(xml_path)
+    utterances = list(full_utterances)
     
     # Filter utterances if requested
     if args.section:
@@ -263,6 +257,63 @@ def main():
     chapter_clip_dir.mkdir(parents=True, exist_ok=True)
     story_audio_dir.mkdir(parents=True, exist_ok=True)
     
+    # Cleanup unused clips if we are generating missing clips (which means we are doing a full render)
+    if args.create_missing_clips:
+        print("Cleaning up unused audio clips...")
+        # Get all expected base filenames for this chapter from the FULL utterances list
+        expected_bases = set()
+        for utt in full_utterances:
+            # We must zero-pad chapter/section/dlgseq exactly as they're formatted in files
+            cnum = str(utt.chapter_num).zfill(3) if str(utt.chapter_num).isdigit() else utt.chapter_num
+            snum = str(utt.section_num).zfill(3) if str(utt.section_num).isdigit() else utt.section_num
+            dnum = str(utt.dlgseq).zfill(3) if str(utt.dlgseq).isdigit() else utt.dlgseq
+            
+            base_filename = f"chapter_{cnum}_{snum}_{dnum}_{utt.speaker.lower()}"
+            expected_bases.add(base_filename)
+            # Add fallback if speaker contains special chars
+            safe_speaker = "".join([c if c.isalnum() else "_" for c in utt.speaker.lower()])
+            safe_base_filename = f"chapter_{cnum}_{snum}_{dnum}_{safe_speaker}"
+            expected_bases.add(safe_base_filename)
+            
+        # Get all actual files in the directory
+        try:
+            import send2trash
+        except ImportError:
+            print("Warning: send2trash not installed. Falls back to permanent deletion.")
+            send2trash = None
+
+        for audio_file in chapter_clip_dir.glob("*.wav"):
+            # Extract base filename from actual file (remove _sXXX suffix and .wav)
+            # Handle standard names and ~silence names
+            file_stem = audio_file.stem.lower()
+            # Remove ~silence if present to get to the base
+            if file_stem.endswith("~silence"):
+                file_stem = file_stem[:-8]
+            # Remove _sXXX if present to get to the base
+            submatch = re.search(r"_s\d+$", file_stem)
+            if submatch:
+                file_stem = file_stem[:submatch.start()]
+                
+            # Compare (check if stem exactly matches an expected base)
+            is_expected = False
+            for base in expected_bases:
+                if file_stem == base:
+                    is_expected = True
+                    break
+            
+            if not is_expected:
+                if not args.dry_run:
+                    print(f"  Removing unused clip: {audio_file.name}")
+                    try:
+                        if send2trash:
+                            send2trash.send2trash(str(audio_file))
+                        else:
+                            os.remove(audio_file)
+                    except Exception as e:
+                        print(f"  Failed to remove {audio_file.name}: {e}")
+                else:
+                    print(f"  [Dry-run] Would remove unused clip: {audio_file.name}")
+
     all_generated_clips = []
 
     for character, utts in by_character.items():

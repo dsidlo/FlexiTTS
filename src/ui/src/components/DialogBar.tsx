@@ -10,13 +10,15 @@ interface DialogBarProps {
   chapterFileName?: string; // Need this for chapter_xml_to_audio.py
   isFilteredOut?: boolean;
   hasAudioClip?: boolean;
+  availableCharacters?: string[];
+  onSaveRequest?: () => Promise<void>;
   onUpdateDialog: (id: string, sectionId: string, updatedDialog: DialogElement) => void;
   onRefreshClips?: () => void;
 }
 
 export const DialogBar: React.FC<DialogBarProps> = ({ 
-  dialog, displayId, chapterFileName, isFilteredOut, hasAudioClip, 
-  onUpdateDialog, onRefreshClips 
+  dialog, displayId, chapterFileName, isFilteredOut, hasAudioClip, availableCharacters = [],
+  onSaveRequest, onUpdateDialog, onRefreshClips 
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [showContextMenu, setShowContextMenu] = useState(false);
@@ -25,6 +27,7 @@ export const DialogBar: React.FC<DialogBarProps> = ({
   const [attrEditValue, setAttrEditValue] = useState<string>('');
   const [isGeneratingAudio, setIsGeneratingAudio] = useState(false);
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
+  const [isEditingCharacter, setIsEditingCharacter] = useState(false);
 
   const bgColor = getColorForCharacter(dialog.character, parseInt(dialog.id) || 0);
 
@@ -36,6 +39,11 @@ export const DialogBar: React.FC<DialogBarProps> = ({
 
   const closeContextMenu = () => {
     setShowContextMenu(false);
+  };
+
+  const handleCharacterChange = (newCharacter: string) => {
+    onUpdateDialog(dialog.id, dialog.sectionId || '1', { ...dialog, character: newCharacter });
+    setIsEditingCharacter(false);
   };
 
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -142,13 +150,17 @@ export const DialogBar: React.FC<DialogBarProps> = ({
           <button 
             onClick={async (e) => { 
               e.stopPropagation(); 
-              const chapterName = chapterFileName || 'Unknown.xml';
+              const chapterName = chapterFileName?.replace('.md', '.xml') || 'Unknown.xml';
               
               if (isGeneratingAudio) {
                   // Attempt to cancel
                   await PythonBridgeService.cancelAudio(chapterName);
                   setIsGeneratingAudio(false);
                   return;
+              }
+
+              if (onSaveRequest) {
+                  await onSaveRequest();
               }
               
               const sectionNum = dialog.sectionId || '1';
@@ -207,7 +219,7 @@ export const DialogBar: React.FC<DialogBarProps> = ({
             <button 
               onClick={async (e) => { 
                 e.stopPropagation(); 
-                const chapterName = chapterFileName || 'Unknown.xml';
+                const chapterName = chapterFileName?.replace('.md', '.xml') || 'Unknown.xml';
                 
                 if (isPlayingAudio) {
                     await PythonBridgeService.cancelAudio(chapterName);
@@ -272,7 +284,67 @@ export const DialogBar: React.FC<DialogBarProps> = ({
               to { transform: rotate(360deg); }
             }
           `}</style>
-          {dialog.character}
+          
+          {isEditingCharacter ? (
+            <select
+              value={dialog.character}
+              onChange={(e) => {
+                e.stopPropagation();
+                handleCharacterChange(e.target.value);
+              }}
+              onBlur={() => setIsEditingCharacter(false)}
+              onClick={(e) => e.stopPropagation()}
+              autoFocus
+              style={{
+                background: 'rgba(255,255,255,0.9)',
+                color: '#000',
+                border: '1px solid #ccc',
+                borderRadius: '4px',
+                padding: '2px 8px',
+                fontSize: '0.9em',
+                cursor: 'pointer'
+              }}
+            >
+              {availableCharacters.map(charName => (
+                <option key={charName} value={charName}>
+                  {charName}
+                </option>
+              ))}
+              {!availableCharacters.includes(dialog.character) && (
+                <option value={dialog.character}>*{dialog.character} (New)</option>
+              )}
+            </select>
+          ) : (
+            <span 
+              onClick={(e) => {
+                e.stopPropagation();
+                if (availableCharacters.length > 0) {
+                  setIsEditingCharacter(true);
+                }
+              }}
+              title={availableCharacters.length > 0 ? (!availableCharacters.includes(dialog.character) ? "Unregistered Character - Click to change" : "Click to change character") : ""}
+              style={{
+                cursor: availableCharacters.length > 0 ? 'pointer' : 'default',
+                padding: '2px 6px',
+                borderRadius: '4px',
+                backgroundColor: isEditingCharacter ? 'transparent' : (!availableCharacters.includes(dialog.character) ? 'rgba(255,152,0,0.3)' : 'rgba(255,255,255,0.1)'),
+                border: !availableCharacters.includes(dialog.character) ? '1px solid rgba(255,152,0,0.8)' : '1px dashed transparent',
+                display: 'inline-block',
+                fontWeight: !availableCharacters.includes(dialog.character) ? 'bold' : 'normal',
+                color: !availableCharacters.includes(dialog.character) ? '#ffb74d' : 'inherit'
+              }}
+              onMouseEnter={(e) => {
+                if (availableCharacters.length > 0) {
+                  e.currentTarget.style.border = '1px dashed rgba(255,255,255,0.8)';
+                }
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.border = !availableCharacters.includes(dialog.character) ? '1px solid rgba(255,152,0,0.8)' : '1px dashed transparent';
+              }}
+            >
+              {dialog.character}
+            </span>
+          )}
         </div>
         <div className="dialog-attributes-summary" onClick={(e) => e.stopPropagation()}>
           {renderAttributes()}
