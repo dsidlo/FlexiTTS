@@ -1,0 +1,258 @@
+import type { StoryConfig } from '../models/types';
+import jsyaml from 'js-yaml';
+
+// Declaration to satisfy TypeScript for window.api
+declare global {
+  interface Window {
+    api?: {
+      runPythonScript: (scriptPath: string, args: string[]) => Promise<string>;
+      readFile: (filePath: string) => Promise<string>;
+      writeFile: (filePath: string, content: string) => Promise<boolean>;
+      showErrorDialog: (title: string, content: string) => Promise<void>;
+      listChapterClips?: (chapterName: string) => Promise<string[]>;
+      checkChapterAudio?: (chapterName: string) => Promise<boolean>;
+      playSoundFile?: (filePath: string) => Promise<void>;
+      killProcess?: (matchString: string) => Promise<boolean>;
+    };
+  }
+}
+
+export const PythonBridgeService = {
+  validateConfig: async (): Promise<void> => {
+    try {
+      if (typeof window !== 'undefined' && window.api && window.api.runPythonScript) {
+        await window.api.runPythonScript('src/scripts/validate_config.py', []);
+      } else {
+        console.log('Mock: Config validated');
+      }
+    } catch (err: unknown) {
+      console.warn("Config validation failed silently:", err);
+      // Suppress hard crash dialogs on initial validation failure 
+      // if (typeof window !== 'undefined' && window.api) await window.api.showErrorDialog('Configuration Error', (err as Error).message || 'Unknown error');
+    }
+  },
+
+  validateChapterXML: async (chapterFilePath: string): Promise<void> => {
+    try {
+      if (typeof window !== 'undefined' && window.api && window.api.runPythonScript) {
+        await window.api.runPythonScript('src/scripts/chapter_validate_xml.py', [chapterFilePath]);
+      } else {
+        console.log(`Mock: XML Validated for ${chapterFilePath}`);
+      }
+    } catch (err: unknown) {
+      console.warn(`XML Validation failed for ${chapterFilePath}:`, err);
+      if (typeof window !== 'undefined' && window.api && window.api.showErrorDialog) {
+        await window.api.showErrorDialog('XML Validation Error', (err as Error).message || 'Invalid XML generated.');
+      }
+      throw err;
+    }
+  },
+
+  loadStoryConfig: async (): Promise<StoryConfig> => {
+    if (typeof window !== 'undefined' && window.api) {
+      const yamlContent = await window.api.readFile('story-config.yml');
+      return jsyaml.load(yamlContent) as StoryConfig;
+    }
+    // Mock Config for browser viewing
+    return {
+      global: {
+        'story-dir': 'Story-Entanglement/',
+        voices: '',
+        chapters: '',
+        'story-xml': 'Story-Entanglement/story-xml/',
+        logs: '',
+        'story-audio': '',
+        clips: '',
+        'clip-separation': 0
+      },
+      'llm-xml-generator': [],
+      'dialog-effects': [],
+      'story-audio-post-process': {},
+      characters: []
+    } as StoryConfig;
+  },
+
+  readChapterFile: async (filePath: string): Promise<string> => {
+    // If the python bridge exists (i.e. running inside electron), use it
+    if (typeof window !== 'undefined' && window.api && window.api.readFile) {
+      try {
+        const fileContent = await window.api.readFile(filePath);
+        if (fileContent) return fileContent;
+      } catch (e) {
+        console.warn(`Could not read file natively: ${filePath}`, e);
+      }
+    }
+    
+    // Otherwise fallback to Vite import.meta.glob to read the raw file
+    console.log(`Mocking read for ${filePath}`);
+    
+    try {
+      const xmlFiles = import.meta.glob('/../../Story-Entanglement/story-xml/*.xml', { query: '?raw', import: 'default' });
+      for (const path in xmlFiles) {
+        if (path.includes(filePath.split('/').pop() || '')) {
+          const content = await xmlFiles[path]();
+          return content as string;
+        }
+      }
+    } catch(e) {
+      console.warn("Failed to fetch real file via glob:", e);
+    }
+    
+    return `<story><section><narration emotion="neutral" dlgseq="1">Fallback mock data for ${filePath}.</narration></section></story>`;
+  },
+
+  listChapterFiles: async (storyXmlDir: string): Promise<string[]> => {
+    if (typeof window !== 'undefined' && window.api && (window.api as any).listChapterFiles) {
+      return await (window.api as any).listChapterFiles(storyXmlDir);
+    }
+    
+    console.log(`Mocking list for ${storyXmlDir}`);
+    // Simulate real delay
+    await new Promise(resolve => setTimeout(resolve, 300));
+    
+    // Hardcode fallback paths if glob isn't working right
+    return [
+      'Story-Entanglement/story-xml/01-Hendrix.xml',
+      'Story-Entanglement/story-xml/02-Tech.xml',
+      'Story-Entanglement/story-xml/03-Yamato.xml',
+      'Story-Entanglement/story-xml/04-Manus Labs.xml'
+    ];
+  },
+
+  writeChapterFile: async (filePath: string, xmlContent: string): Promise<boolean> => {
+    if (typeof window !== 'undefined' && window.api && window.api.writeFile) {
+      try {
+        await window.api.writeFile(filePath, xmlContent);
+        return true;
+      } catch (err: unknown) {
+        if (window.api.showErrorDialog) {
+           await window.api.showErrorDialog('Save Error', (err as Error).message || 'Failed to write chapter file.');
+        }
+        throw err;
+      }
+    }
+    console.log(`Mock: Wrote file ${filePath}`, xmlContent);
+    return true;
+  },
+
+  playAudio: async (chapterName: string, sectionNum: string, dlgseqNum: string, onGenerationComplete?: () => void, skipPlay: boolean = false): Promise<void> => {
+    console.log(`[playAudio] Starting generation/play for chapter=${chapterName} section=${sectionNum} dlgseq=${dlgseqNum}`);
+    if (typeof window !== 'undefined' && window.api && window.api.runPythonScript) {
+      try {
+        console.log(`[playAudio] Calling runPythonScript with chapter_xml_to_audio.py`);
+        const out = await window.api.runPythonScript('src/scripts/chapter_xml_to_audio.py', [
+            `--chapter`, chapterName,
+            `--section`, sectionNum,
+            `--dlgseq`, dlgseqNum
+        ]);
+        console.log("[playAudio] Audio generation output:", out);
+
+        // Parse stdout to find the generated WAV file path
+        let wavName = '';
+        
+        // Let's explicitly log the parsing process to help debug if it fails
+        console.log(`[playAudio] Parsing stdout to find filename...`);
+        
+        // Match standard format: "Applying character effects to chapter_004_004_001_narrator.wav..."
+        const effectMatch = out.match(/Applying character effects to (.*?\.wav)/i);
+        if (effectMatch && effectMatch[1]) {
+           wavName = effectMatch[1];
+           console.log(`[playAudio] Found filename via character effects match: ${wavName}`);
+        } else {
+           // Fallback to "Generating narrator chapter_001_001_001_narrator..."
+           // We extract the base filename and add .wav
+           const genMatch = out.match(/Generating \w+ (chapter_\d+_\d+_\d+_[^.]+)/i);
+           if (genMatch && genMatch[1]) {
+               wavName = genMatch[1] + ".wav";
+               console.log(`[playAudio] Found filename via Generating match: ${wavName}`);
+           } else {
+               // Fallback to "Would save clip to /path/to/file.wav"
+               const saveMatch = out.match(/save clip to .*?(chapter_.*?\.wav)/i) || out.match(/saved to .*?(chapter_.*?\.wav)/i);
+               if (saveMatch && saveMatch[1]) {
+                   wavName = saveMatch[1];
+                   console.log(`[playAudio] Found filename via saved match: ${wavName}`);
+               } else {
+                   // Additional fallback for normal save pattern without full path logging
+                   const altMatch = out.match(/(chapter_.*?\.wav)/i);
+                   if (altMatch && altMatch[1]) {
+                       wavName = altMatch[1];
+                       console.log(`[playAudio] Found filename via alternative match: ${wavName}`);
+                   }
+               }
+           }
+        }
+
+        if (wavName) {
+            // Generation is done
+            if (onGenerationComplete) onGenerationComplete();
+            
+            // Reconstruct the full path
+            // Format is Story-Entanglement/story-audio/clips/<chapter-stem>/<wavName>
+            const chapterStem = chapterName.replace('.xml', '');
+            const fullPath = `Story-Entanglement/story-audio/clips/${chapterStem}/${wavName}`;
+            
+            console.log(`[playAudio] Attempting to play parsed path: ${fullPath}`);
+            
+            // To play this in the browser, we need to read it as a buffer or use a custom protocol
+            if (!skipPlay) {
+                if (window.api && window.api.playSoundFile) {
+                    console.log(`[playAudio] Calling window.api.playSoundFile...`);
+                    try {
+                        await window.api.playSoundFile(fullPath);
+                        console.log(`[playAudio] Finished playback.`);
+                    } catch (playErr) {
+                        console.error(`[playAudio] Error during audio playback API call:`, playErr);
+                    }
+                } else if (window.api) {
+                    console.warn(`[playAudio] Need an electron API to play ${fullPath}`);
+                }
+            } else {
+                console.log(`[playAudio] SkipPlay flag true. Generation complete.`);
+            }
+        } else {
+            console.error("[playAudio] Could not parse output filename from Python stdout", out);
+            throw new Error("Could not parse output filename from Python stdout");
+        }
+        
+      } catch (err) {
+        console.error("[playAudio] Failed to generate/play audio", err);
+        throw err;
+      }
+    } else {
+        console.log(`Mock: Generating audio for ${chapterName} s:${sectionNum} d:${dlgseqNum}...`);
+        await new Promise(resolve => setTimeout(resolve, 2000)); // Simulate generation time
+        if (onGenerationComplete) onGenerationComplete();
+        await new Promise(resolve => setTimeout(resolve, 2000)); // Simulate play time
+        console.log(`Mock: Played audio.`);
+    }
+  },
+
+  listChapterClips: async (chapterName: string): Promise<string[]> => {
+    if (typeof window !== 'undefined' && window.api && window.api.listChapterClips) {
+      try {
+        return await window.api.listChapterClips(chapterName);
+      } catch (e) {
+        console.warn('Failed to list chapter clips', e);
+      }
+    }
+    return [];
+  },
+
+  checkChapterAudio: async (chapterName: string): Promise<boolean> => {
+    if (typeof window !== 'undefined' && window.api && window.api.checkChapterAudio) {
+      try {
+        return await window.api.checkChapterAudio(chapterName);
+      } catch (e) {
+        console.warn('Failed to check chapter audio', e);
+      }
+    }
+    return false;
+  },
+
+  cancelAudio: async (matchString: string): Promise<void> => {
+    if (typeof window !== 'undefined' && window.api && window.api.killProcess) {
+       console.log(`[PythonBridge] Attempting to kill process matching: ${matchString}`);
+       await window.api.killProcess(matchString);
+    }
+  }
+};
