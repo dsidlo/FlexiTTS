@@ -9,6 +9,7 @@ declare global {
       readFile: (filePath: string) => Promise<string>;
       writeFile: (filePath: string, content: string) => Promise<boolean>;
       showErrorDialog: (title: string, content: string) => Promise<void>;
+      showConfirmDialog?: (title: string, message: string, detail: string) => Promise<number>;
       listChapterClips?: (chapterName: string) => Promise<string[]>;
       checkChapterAudio?: (chapterName: string) => Promise<boolean>;
       playSoundFile?: (filePath: string) => Promise<void>;
@@ -225,6 +226,22 @@ export const PythonBridgeService = {
         await new Promise(resolve => setTimeout(resolve, 2000)); // Simulate play time
         console.log(`Mock: Played audio.`);
     }
+  },
+
+  showConfirmDialog: async (title: string, message: string, detail: string): Promise<number> => {
+    if (typeof window !== 'undefined' && window.api && window.api.showConfirmDialog) {
+      try {
+        return await window.api.showConfirmDialog(title, message, detail);
+      } catch (e) {
+        console.warn('Failed to show confirm dialog', e);
+      }
+    }
+    // Browser fallback (native confirm only has OK/Cancel, so mapping is tricky)
+    if (typeof window !== 'undefined') {
+       const res = window.confirm(`${message}\n\n${detail}\n\nPress OK to Save, Cancel to Discard`);
+       return res ? 0 : 1; 
+    }
+    return 1; // Default Discard
   },
 
   listChapterClips: async (chapterName: string): Promise<string[]> => {

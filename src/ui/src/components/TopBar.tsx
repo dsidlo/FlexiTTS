@@ -13,14 +13,13 @@ interface TopBarProps {
   onCharacterSelect: (character: string) => void;
   onSave?: () => void;
   onRenderComplete?: () => void;
-  isRenderCooldown?: boolean;
-  triggerRenderCooldown?: () => void;
+  hasUnsavedChanges?: boolean;
 }
 
 export const TopBar: React.FC<TopBarProps> = ({ 
   chapter, xmlContent, filePath, chapterList, hasChapterAudio,
   selectedCharacter, onChapterSelect, onCharacterSelect, onSave, onRenderComplete,
-  isRenderCooldown, triggerRenderCooldown
+  hasUnsavedChanges
 }) => {
   const [isSaving, setIsSaving] = useState(false);
   const [isRendering, setIsRendering] = useState(false);
@@ -64,11 +63,8 @@ export const TopBar: React.FC<TopBarProps> = ({
       const chapterName = filePath.split('/').pop() || 'Unknown.xml';
       await PythonBridgeService.cancelAudio(chapterName);
       setIsRendering(false);
-      if (triggerRenderCooldown) triggerRenderCooldown();
       return;
     }
-
-    if (isRenderCooldown) return;
 
     setIsRendering(true);
     try {
@@ -157,38 +153,45 @@ export const TopBar: React.FC<TopBarProps> = ({
       <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px' }}>
         <button 
           onClick={handleRenderChapter} 
-          disabled={!isRendering && isRenderCooldown}
           style={{ 
             padding: '4px 16px',
-            backgroundColor: isRendering ? '#f44336' : (isRenderCooldown ? '#f44336' : (hasChapterAudio ? '#4CAF50' : '#888')),
+            backgroundColor: isRendering ? '#f44336' : (hasChapterAudio ? '#4CAF50' : '#888'),
             color: 'white',
             border: 'none',
             borderRadius: '4px',
-            cursor: (!isRendering && isRenderCooldown) ? 'not-allowed' : 'pointer',
+            cursor: 'pointer',
             display: 'flex',
             alignItems: 'center',
             gap: '8px',
-            opacity: (!isRendering && isRenderCooldown) ? 0.7 : 1
+            opacity: 1
           }}
-          title={isRendering ? "Stop rendering" : isRenderCooldown ? "Cooling down CUDA..." : (hasChapterAudio ? "Re-render chapter" : "Render full chapter")}
+          title={isRendering ? "Stop rendering" : (hasChapterAudio ? "Re-render chapter" : "Render full chapter")}
         >
           {isRendering ? (
             <>
+              <span className="spinner-icon" style={{ 
+                display: 'inline-block',
+                width: '0.8em',
+                height: '0.8em',
+                border: '2px solid rgba(255,255,255,0.3)',
+                borderRadius: '50%',
+                borderTopColor: '#fff',
+                animation: 'spin 1s ease-in-out infinite',
+                marginRight: '4px'
+              }}></span>
               <span style={{
                 display: 'inline-block',
                 width: '10px',
                 height: '10px',
                 backgroundColor: 'white'
-              }} /> Stop
+              }} /> Stop Chapter Render
             </>
-          ) : isRenderCooldown ? (
-            'Cooling Down...'
           ) : (
             'Render Chapter'
           )}
         </button>
 
-        {hasChapterAudio && !isRendering && !isRenderCooldown && (
+        {hasChapterAudio && !isRendering && (
           <button 
             onClick={handlePlayChapter} 
             style={{ 
@@ -221,12 +224,27 @@ export const TopBar: React.FC<TopBarProps> = ({
 
         <button 
           onClick={handleSave} 
-          disabled={isSaving}
-          style={{ padding: '4px 16px' }}
+          disabled={isSaving || !hasUnsavedChanges}
+          style={{ 
+            padding: '4px 16px',
+            backgroundColor: hasUnsavedChanges ? '#ff9800' : 'transparent',
+            color: hasUnsavedChanges ? 'white' : '#888',
+            border: hasUnsavedChanges ? 'none' : '1px solid #888',
+            borderRadius: '4px',
+            cursor: hasUnsavedChanges ? 'pointer' : 'default',
+            transition: 'all 0.2s ease-in-out'
+          }}
+          title={hasUnsavedChanges ? "You have unsaved changes!" : "No changes to save"}
         >
-          {isSaving ? 'Saving...' : 'Save'}
+          {isSaving ? 'Saving...' : (hasUnsavedChanges ? 'Save *' : 'Saved')}
         </button>
       </div>
+
+      <style>{`
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
     </div>
   );
 };

@@ -176,8 +176,17 @@ electron_1.ipcMain.handle('write-file', async (event, filePath, content) => {
         throw new Error(`Failed to write file ${filePath}: ${err.message}`);
     }
 });
-electron_1.ipcMain.handle('show-error-dialog', async (event, title, content) => {
-    electron_1.dialog.showErrorBox(title, content);
+electron_1.ipcMain.handle('show-confirm-dialog', async (event, title, message, detail) => {
+    const result = electron_1.dialog.showMessageBoxSync({
+        type: 'warning',
+        buttons: ['Save', 'Discard', 'Cancel'],
+        defaultId: 0,
+        cancelId: 2,
+        title: title,
+        message: message,
+        detail: detail
+    });
+    return result; // 0 = Save, 1 = Discard, 2 = Cancel
 });
 electron_1.ipcMain.handle('list-chapter-clips', async (event, chapterName) => {
     const projectRoot = path.resolve(__dirname, '../../../');

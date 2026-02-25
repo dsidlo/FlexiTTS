@@ -10,15 +10,13 @@ interface DialogBarProps {
   chapterFileName?: string; // Need this for chapter_xml_to_audio.py
   isFilteredOut?: boolean;
   hasAudioClip?: boolean;
-  isRenderCooldown?: boolean;
-  onUpdateDialog: (id: string, updatedDialog: DialogElement) => void;
+  onUpdateDialog: (id: string, sectionId: string, updatedDialog: DialogElement) => void;
   onRefreshClips?: () => void;
-  triggerRenderCooldown?: () => void;
 }
 
 export const DialogBar: React.FC<DialogBarProps> = ({ 
   dialog, displayId, chapterFileName, isFilteredOut, hasAudioClip, 
-  isRenderCooldown, onUpdateDialog, onRefreshClips, triggerRenderCooldown 
+  onUpdateDialog, onRefreshClips 
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [showContextMenu, setShowContextMenu] = useState(false);
@@ -43,7 +41,7 @@ export const DialogBar: React.FC<DialogBarProps> = ({
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     // Stop propagation so it doesn't trigger the expand/collapse from a parent
     e.stopPropagation();
-    onUpdateDialog(dialog.id, { ...dialog, text: e.target.value });
+    onUpdateDialog(dialog.id, dialog.sectionId || '1', { ...dialog, text: e.target.value });
   };
 
   const handleAttrClick = (key: string, value: string) => {
@@ -53,7 +51,7 @@ export const DialogBar: React.FC<DialogBarProps> = ({
 
   const handleAttrSave = () => {
     if (editingAttr) {
-      onUpdateDialog(dialog.id, {
+      onUpdateDialog(dialog.id, dialog.sectionId || '1', {
         ...dialog,
         attributes: { ...dialog.attributes, [editingAttr]: attrEditValue }
       });
@@ -150,11 +148,8 @@ export const DialogBar: React.FC<DialogBarProps> = ({
                   // Attempt to cancel
                   await PythonBridgeService.cancelAudio(chapterName);
                   setIsGeneratingAudio(false);
-                  if (triggerRenderCooldown) triggerRenderCooldown();
                   return;
               }
-              
-              if (isRenderCooldown) return;
               
               const sectionNum = dialog.sectionId || '1';
               const dlgseq = dialog.id.replace('dialog-', '');
@@ -168,24 +163,23 @@ export const DialogBar: React.FC<DialogBarProps> = ({
                   setIsGeneratingAudio(false);
               }
             }}
-            disabled={!isGeneratingAudio && isRenderCooldown}
             style={{ 
-              background: isRenderCooldown ? '#f44336' : (hasAudioClip ? '#4CAF50' : '#888'), 
+              background: hasAudioClip ? '#4CAF50' : '#888', 
               border: '2px solid rgba(255,255,255,0.2)', 
               borderRadius: '50%',
               width: '24px',
               height: '24px',
               color: '#fff', 
-              cursor: (!isGeneratingAudio && isRenderCooldown) ? 'not-allowed' : 'pointer', 
+              cursor: 'pointer', 
               marginRight: '8px',
               padding: '0',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              opacity: (!isGeneratingAudio && isRenderCooldown) ? 0.7 : (isGeneratingAudio ? 0.8 : 1.0),
-              boxShadow: (hasAudioClip && !isRenderCooldown) ? '0px 0px 5px rgba(76,175,80,0.8)' : 'none'
+              opacity: isGeneratingAudio ? 0.8 : 1.0,
+              boxShadow: hasAudioClip ? '0px 0px 5px rgba(76,175,80,0.8)' : 'none'
             }}
-            title={isGeneratingAudio ? "Stop Generating Audio..." : isRenderCooldown ? "Cooling down CUDA..." : (hasAudioClip ? "Re-render Audio" : "Render Audio")}
+            title={isGeneratingAudio ? "Stop Generating Audio..." : (hasAudioClip ? "Re-render Audio" : "Render Audio")}
           >
             {isGeneratingAudio ? (
               <span className="spinner-icon" style={{ 
@@ -355,7 +349,7 @@ export const DialogBar: React.FC<DialogBarProps> = ({
             onClick={() => {
               const newAttr = prompt("New attribute name:");
               if (newAttr && !dialog.attributes[newAttr]) {
-                onUpdateDialog(dialog.id, {
+                onUpdateDialog(dialog.id, dialog.sectionId || '1', {
                   ...dialog,
                   attributes: { ...dialog.attributes, [newAttr]: '' }
                 });

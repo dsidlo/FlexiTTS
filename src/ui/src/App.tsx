@@ -10,6 +10,8 @@ function App() {
   const [, setConfig] = useState<StoryConfig | null>(null);
   const [chapter, setChapter] = useState<Chapter | null>(null);
   const [xmlContent, setXmlContent] = useState<string>('');
+  const [lastSavedXml, setLastSavedXml] = useState<string>('');
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState<boolean>(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
@@ -23,7 +25,6 @@ function App() {
   const [currentChapterFile, setCurrentChapterFile] = useState<string>('story/chapters/chapter1.xml');
   const [availableClips, setAvailableClips] = useState<string[]>([]);
   const [hasChapterAudio, setHasChapterAudio] = useState(false);
-  const [isRenderCooldown, setIsRenderCooldown] = useState(false);
 
   useEffect(() => {
     const initApp = async () => {
@@ -80,8 +81,10 @@ function App() {
          setHasChapterAudio(hasAudio);
       }
       
-      // Update xmlContent to reflect the parsed state so that save uses the properly formatted generator output
-      setXmlContent(generateXMLFromChapter(parsedChapter));
+      const newXml = generateXMLFromChapter(parsedChapter);
+      setXmlContent(newXml);
+      setLastSavedXml(newXml);
+      setHasUnsavedChanges(false);
     } catch (err) {
       console.error('Failed to load chapter:', err);
     }
@@ -129,6 +132,7 @@ function App() {
       const text = rawText.replace(/\s+/g, ' ').trim();
       
       return {
+        _index: index, // Add internal index for strict array positioning
         id: attributes.id || attributes.dlgseq || `dialog-${index}`,
         sectionId: attributes.section_seq || '1',
         character: attributes.character || (node.tagName.toLowerCase() === 'narration' ? 'Narrator' : 'Unknown'),
@@ -221,18 +225,26 @@ function App() {
     return xml;
   };
 
-  const handleUpdateDialog = (id: string, updatedDialog: DialogElement) => {
+  const handleUpdateDialog = (id: string, sectionId: string, updatedDialog: DialogElement) => {
     if (!chapter) return;
     
-    const updatedDialogs = chapter.dialogs.map(d => 
-      d.id === id ? updatedDialog : d
-    );
+    // We update by mapping over the array to guarantee the strict array sequence is maintained
+    const updatedDialogs = chapter.dialogs.map(d => {
+      // Use the internal _index if available, otherwise fallback to matching id/sectionId combo
+      const isMatch = updatedDialog._index !== undefined && d._index !== undefined 
+         ? d._index === updatedDialog._index 
+         : d.id === id && (d.sectionId || '1') === sectionId;
+         
+      return isMatch ? updatedDialog : d;
+    });
     
     const updatedChapter = { ...chapter, dialogs: updatedDialogs };
     setChapter(updatedChapter);
     
     // Update the XML representation so TopBar can save it
-    setXmlContent(generateXMLFromChapter(updatedChapter));
+    const newXml = generateXMLFromChapter(updatedChapter);
+    setXmlContent(newXml);
+    setHasUnsavedChanges(newXml !== lastSavedXml);
   };
 
   const handleContextMenu = (e: React.MouseEvent) => {
@@ -247,16 +259,35 @@ function App() {
 
   const handleChapterSelect = async (filePath: string) => {
     closeMenu();
+
+    if (hasUnsavedChanges) {
+      const title = "Unsaved Changes";
+      const message = "You have unsaved changes in the current chapter.";
+      const detail = "Do you want to save them before switching chapters?";
+      
+      const res = await PythonBridgeService.showConfirmDialog(title, message, detail);
+      if (res === 2) {
+        // Cancel
+        return;
+      } else if (res === 0) {
+        // Save
+        try {
+          await PythonBridgeService.writeChapterFile(currentChapterFile, xmlContent);
+          await PythonBridgeService.validateChapterXML(currentChapterFile);
+          setHasUnsavedChanges(false);
+          setLastSavedXml(xmlContent);
+        } catch (error) {
+          console.error("Save failed during chapter switch", error);
+          // abort switch if save fails
+          return;
+        }
+      }
+      // if res === 1 (Discard), just proceed without saving
+    }
+
     setLoading(true);
     await loadChapter(filePath);
     setLoading(false);
-  };
-
-  const triggerRenderCooldown = () => {
-    setIsRenderCooldown(true);
-    setTimeout(() => {
-      setIsRenderCooldown(false);
-    }, 10000);
   };
 
   const refreshClips = async () => {
@@ -289,9 +320,12 @@ function App() {
           selectedCharacter={selectedCharacterFilter}
           onChapterSelect={handleChapterSelect}
           onCharacterSelect={setSelectedCharacterFilter}
+          onSave={() => {
+            setHasUnsavedChanges(false);
+            setLastSavedXml(xmlContent);
+          }}
           onRenderComplete={refreshClips}
-          isRenderCooldown={isRenderCooldown}
-          triggerRenderCooldown={triggerRenderCooldown}
+          hasUnsavedChanges={hasUnsavedChanges}
         />
       )}
       
@@ -320,10 +354,8 @@ function App() {
               chapterFileName={chapter.fileName.split('/').pop()}
               isFilteredOut={isFilteredOut}
               hasAudioClip={hasClip}
-              isRenderCooldown={isRenderCooldown}
               onUpdateDialog={handleUpdateDialog} 
               onRefreshClips={refreshClips}
-              triggerRenderCooldown={triggerRenderCooldown}
             />
           );
         })}

@@ -28,6 +28,7 @@ export interface CharacterConfig {
 }
 
 export interface DialogElement {
+  _index?: number;
   id: string; // Internal id for React mapping
   sectionId?: string; // Optional section sequence 
   character: string;

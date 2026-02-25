@@ -159,8 +159,17 @@ ipcMain.handle('write-file', async (event, filePath: string, content: string) =>
   }
 });
 
-ipcMain.handle('show-error-dialog', async (event, title: string, content: string) => {
-  dialog.showErrorBox(title, content);
+ipcMain.handle('show-confirm-dialog', async (event, title: string, message: string, detail: string) => {
+  const result = dialog.showMessageBoxSync({
+    type: 'warning',
+    buttons: ['Save', 'Discard', 'Cancel'],
+    defaultId: 0,
+    cancelId: 2,
+    title: title,
+    message: message,
+    detail: detail
+  });
+  return result; // 0 = Save, 1 = Discard, 2 = Cancel
 });
 
 ipcMain.handle('list-chapter-clips', async (event, chapterName: string) => {
