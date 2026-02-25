@@ -147,6 +147,14 @@ export const PythonBridgeService = {
     return true; // Mock true for browser testing
   },
 
+  readFile: async (filePath: string): Promise<string> => {
+    if (typeof window !== 'undefined' && window.api && window.api.readFile) {
+      return await window.api.readFile(filePath);
+    }
+    console.warn(`Mock: Reading file ${filePath}`);
+    return `Mock content for ${filePath}`;
+  },
+
   writeChapterFile: async (filePath: string, xmlContent: string): Promise<boolean> => {
     if (typeof window !== 'undefined' && window.api && window.api.writeFile) {
       try {

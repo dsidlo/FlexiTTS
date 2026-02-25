@@ -28,6 +28,19 @@ function App() {
   const [isGeneratingStructure, setIsGeneratingStructure] = useState(false);
   const [generateAttempt, setGenerateAttempt] = useState(0);
 
+  // New text editor mode
+  const [editorMode, setEditorMode] = useState<boolean>(false);
+  const [markdownContent, setMarkdownContent] = useState<string>('');
+  const [lastSavedMarkdown, setLastSavedMarkdown] = useState<string>('');
+  const [hasUnsavedMarkdownChanges, setHasUnsavedMarkdownChanges] = useState<boolean>(false);
+  const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1024);
+
+  useEffect(() => {
+    const handleResize = () => setWindowWidth(window.innerWidth);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   useEffect(() => {
     const initApp = async () => {
       try {
@@ -264,7 +277,7 @@ function App() {
   const handleChapterSelect = async (filePath: string, loadedConfig?: StoryConfig) => {
     closeMenu();
 
-    if (hasUnsavedChanges && currentChapterFile) {
+    if ((hasUnsavedChanges || hasUnsavedMarkdownChanges) && currentChapterFile) {
       const title = "Unsaved Changes";
       const message = "You have unsaved changes in the current chapter.";
       const detail = "Do you want to save them before switching chapters?";
@@ -276,13 +289,20 @@ function App() {
       } else if (res === 0) {
         // Save
         try {
-          // Determine the xml path corresponding to the old markdown path
           const stem = currentChapterFile.split('/').pop()?.replace('.md', '') || 'unknown';
-          const xmlPath = `Story-Entanglement/story-xml/${stem}.xml`;
-          await PythonBridgeService.writeChapterFile(xmlPath, xmlContent);
-          await PythonBridgeService.validateChapterXML(xmlPath);
-          setHasUnsavedChanges(false);
-          setLastSavedXml(xmlContent);
+          if (hasUnsavedChanges) {
+              const xmlPath = `Story-Entanglement/story-xml/${stem}.xml`;
+              await PythonBridgeService.writeChapterFile(xmlPath, xmlContent);
+              await PythonBridgeService.validateChapterXML(xmlPath);
+              setHasUnsavedChanges(false);
+              setLastSavedXml(xmlContent);
+          }
+          if (hasUnsavedMarkdownChanges) {
+              const mdPath = `Story-Entanglement/story-chapters/${stem}.md`;
+              await PythonBridgeService.writeChapterFile(mdPath, markdownContent);
+              setHasUnsavedMarkdownChanges(false);
+              setLastSavedMarkdown(markdownContent);
+          }
         } catch (error) {
           console.error("Save failed during chapter switch", error);
           // abort switch if save fails
@@ -298,6 +318,19 @@ function App() {
     // Determine target XML path
     const stem = filePath.split('/').pop()?.replace('.md', '')?.replace('.xml', '') || 'unknown';
     const xmlPath = `Story-Entanglement/story-xml/${stem}.xml`;
+
+    // Load the Markdown content regardless
+    try {
+      const mdPath = `Story-Entanglement/story-chapters/${stem}.md`;
+      const mdContent = await PythonBridgeService.readFile(mdPath);
+      setMarkdownContent(mdContent);
+      setLastSavedMarkdown(mdContent);
+      setHasUnsavedMarkdownChanges(false);
+    } catch (e) {
+      console.warn("Failed to load markdown for", stem, e);
+      setMarkdownContent("");
+      setLastSavedMarkdown("");
+    }
 
     // Check if XML exists for this Markdown file
     const xmlExists = await PythonBridgeService.checkXmlExists(stem);
@@ -360,14 +393,73 @@ function App() {
   const handleSave = async () => {
     try {
         const stem = currentChapterFile.split('/').pop()?.replace('.md', '') || 'unknown';
-        const xmlPath = `Story-Entanglement/story-xml/${stem}.xml`;
-        await PythonBridgeService.writeChapterFile(xmlPath, xmlContent);
-        await PythonBridgeService.validateChapterXML(xmlPath);
-        setLastSavedXml(xmlContent);
-        setHasUnsavedChanges(false);
+        if (hasUnsavedChanges) {
+          const xmlPath = `Story-Entanglement/story-xml/${stem}.xml`;
+          await PythonBridgeService.writeChapterFile(xmlPath, xmlContent);
+          await PythonBridgeService.validateChapterXML(xmlPath);
+          setLastSavedXml(xmlContent);
+          setHasUnsavedChanges(false);
+        }
+        if (hasUnsavedMarkdownChanges) {
+          const mdPath = `Story-Entanglement/story-chapters/${stem}.md`;
+          await PythonBridgeService.writeChapterFile(mdPath, markdownContent);
+          setLastSavedMarkdown(markdownContent);
+          setHasUnsavedMarkdownChanges(false);
+        }
     } catch(err) {
         console.error("Save failed:", err);
     }
+  };
+
+  const handleFormatMarkdown = () => {
+    // Word wrap markdown content to 80 characters without breaking words
+    const formatLine = (line: string, limit: number): string => {
+      if (line.length <= limit) return line;
+      const words = line.split(' ');
+      let currentLine = '';
+      let formatted = '';
+      
+      for (const word of words) {
+        if ((currentLine + word).length > limit) {
+          formatted += currentLine.trim() + '\n';
+          currentLine = word + ' ';
+        } else {
+          currentLine += word + ' ';
+        }
+      }
+      formatted += currentLine.trim();
+      return formatted;
+    };
+
+    const formattedContent = markdownContent
+      .split('\n')
+      .map(line => formatLine(line, 80))
+      .join('\n');
+      
+    setMarkdownContent(formattedContent);
+    setHasUnsavedMarkdownChanges(formattedContent !== lastSavedMarkdown);
+  };
+
+  const handleToggleEditor = async () => {
+    if (editorMode && hasUnsavedMarkdownChanges) {
+      const title = "Unsaved Text Changes";
+      const message = "You have unsaved changes in the text editor.";
+      const detail = "Do you want to save them before closing?";
+      
+      const res = await PythonBridgeService.showConfirmDialog(title, message, detail);
+      if (res === 2) {
+        // Cancel
+        return;
+      } else if (res === 0) {
+        // Save
+        await handleSave();
+      } else if (res === 1) {
+        // Discard - revert to last saved
+        setMarkdownContent(lastSavedMarkdown);
+        setHasUnsavedMarkdownChanges(false);
+      }
+    }
+    setEditorMode(!editorMode);
   };
 
   const refreshClips = async () => {
@@ -426,43 +518,148 @@ function App() {
           onCharacterSelect={setSelectedCharacterFilter}
           onSave={handleSave}
           onRenderComplete={refreshClips}
-          hasUnsavedChanges={hasUnsavedChanges}
+          hasUnsavedChanges={hasUnsavedChanges || hasUnsavedMarkdownChanges}
+          editorMode={editorMode}
+          onToggleEditor={handleToggleEditor}
         />
       )}
-      
-      <main className="window-body" style={{ padding: '20px' }}>
-        <h2>Dialogs</h2>
-        {chapter?.dialogs.map(dialog => {
-          const isFilteredOut = selectedCharacterFilter !== '' && dialog.character !== selectedCharacterFilter;
-          const displayId = dialog.sectionId ? `${dialog.sectionId}.${dialog.id}` : dialog.id;
-          
-          // Determine if we have a generated audio clip matching this dialog
-          const chapNumMatch = chapter.fileName.match(/(\d+)/);
-          const chapNum = chapNumMatch ? chapNumMatch[1].padStart(3, '0') : '000';
-          const secStr = (dialog.sectionId || '1').padStart(3, '0');
-          const dlgStr = dialog.id.replace('dialog-', '').padStart(3, '0');
-          
-          // Example: chapter_001_001_001_narrator.wav or chapter_001_001_001.wav
-          // We'll check if any file in availableClips contains this sequence
-          const searchStr = `chapter_${chapNum}_${secStr}_${dlgStr}`;
-          const hasClip = availableClips.some(clipName => clipName.includes(searchStr));
 
-          return (
-            <DialogBar 
-              key={`${dialog.sectionId || '1'}-${dialog.id}-${dialog._index}`} 
-              dialog={dialog} 
-              displayId={displayId}
-              chapterFileName={chapter.fileName.split('/').pop()}
-              isFilteredOut={isFilteredOut}
-              hasAudioClip={hasClip}
-              onSaveRequest={handleSave}
-              onUpdateDialog={handleUpdateDialog} 
-              onRefreshClips={refreshClips}
-              availableCharacters={config?.characters?.map(c => c.name) || []}
+      <div style={{ display: 'flex', height: 'calc(100vh - 60px)', overflow: 'hidden' }}>
+        
+        {/* Markdown Editor Side (Now on the Left) */}
+        {editorMode && (
+          <aside style={{ 
+            flex: 1, 
+            display: 'flex', 
+            flexDirection: 'column', 
+            backgroundColor: '#1e1e1e', 
+            color: '#d4d4d4',
+            overflow: 'hidden',
+            borderRight: (windowWidth >= 1200) ? '1px solid #ccc' : 'none'
+          }}>
+            <div style={{ 
+              display: 'flex', 
+              justifyContent: 'space-between', 
+              padding: '10px 20px', 
+              backgroundColor: '#2d2d2d',
+              borderBottom: '1px solid #444',
+              alignItems: 'center'
+            }}>
+              <h2 style={{ margin: 0, fontSize: '1rem', color: '#fff' }}>Chapter Editor (Markdown)</h2>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button 
+                  onClick={handleFormatMarkdown}
+                  style={{
+                    padding: '6px 12px',
+                    backgroundColor: '#4CAF50',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer'
+                  }}
+                  title="Format text to 80 chars without breaking words"
+                >
+                  Clean Up (80 chars)
+                </button>
+                <button 
+                  onClick={handleSave}
+                  style={{
+                    padding: '6px 12px',
+                    backgroundColor: hasUnsavedMarkdownChanges ? '#ff9800' : '#2196F3',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontWeight: hasUnsavedMarkdownChanges ? 'bold' : 'normal'
+                  }}
+                >
+                  {hasUnsavedMarkdownChanges ? 'Save *' : 'Save'}
+                </button>
+                <button 
+                  onClick={handleToggleEditor}
+                  style={{
+                    padding: '6px 12px',
+                    backgroundColor: '#2196F3',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    marginLeft: '10px'
+                  }}
+                  title="Close Markdown Editor"
+                >
+                  Close Chapter Text
+                </button>
+              </div>
+            </div>
+            <textarea
+              value={markdownContent}
+              onChange={(e) => {
+                setMarkdownContent(e.target.value);
+                setHasUnsavedMarkdownChanges(e.target.value !== lastSavedMarkdown);
+              }}
+              style={{
+                flex: 1,
+                width: '100%',
+                padding: '20px',
+                backgroundColor: '#1e1e1e',
+                color: '#d4d4d4',
+                border: 'none',
+                resize: 'none',
+                fontFamily: 'monospace',
+                fontSize: '14px',
+                lineHeight: '1.6',
+                outline: 'none',
+                whiteSpace: 'pre-wrap',
+                wordWrap: 'break-word'
+              }}
+              spellCheck="false"
             />
-          );
-        })}
-      </main>
+          </aside>
+        )}
+
+        {/* Audio UI Side (Now on the Right) */}
+        {(!editorMode || windowWidth >= 1200) && (
+          <main className="window-body" style={{ 
+            flex: 1, 
+            padding: '20px', 
+            overflowY: 'auto'
+          }}>
+            <h2 style={{marginTop: 0}}>Dialogs</h2>
+            {chapter?.dialogs.map(dialog => {
+              const isFilteredOut = selectedCharacterFilter !== '' && dialog.character !== selectedCharacterFilter;
+              const displayId = dialog.sectionId ? `${dialog.sectionId}.${dialog.id}` : dialog.id;
+              
+              // Determine if we have a generated audio clip matching this dialog
+              const chapNumMatch = chapter.fileName.match(/(\d+)/);
+              const chapNum = chapNumMatch ? chapNumMatch[1].padStart(3, '0') : '000';
+              const secStr = (dialog.sectionId || '1').padStart(3, '0');
+              const dlgStr = dialog.id.replace('dialog-', '').padStart(3, '0');
+              
+              // Example: chapter_001_001_001_narrator.wav or chapter_001_001_001.wav
+              // We'll check if any file in availableClips contains this sequence
+              const searchStr = `chapter_${chapNum}_${secStr}_${dlgStr}`;
+              const hasClip = availableClips.some(clipName => clipName.includes(searchStr));
+
+              return (
+                <DialogBar 
+                  key={`${dialog.sectionId || '1'}-${dialog.id}-${dialog._index}`} 
+                  dialog={dialog} 
+                  displayId={displayId}
+                  chapterFileName={chapter.fileName.split('/').pop()}
+                  isFilteredOut={isFilteredOut}
+                  hasAudioClip={hasClip}
+                  onSaveRequest={handleSave}
+                  onUpdateDialog={handleUpdateDialog} 
+                  onRefreshClips={refreshClips}
+                  availableCharacters={config?.characters?.map(c => c.name) || []}
+                />
+              );
+            })}
+          </main>
+        )}
+
+      </div>
 
       {showChapterMenu && (
         <div 

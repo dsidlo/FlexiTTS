@@ -83,7 +83,14 @@ export const DialogBar: React.FC<DialogBarProps> = ({
               onChange={(e) => setAttrEditValue(e.target.value)}
               onBlur={handleAttrSave}
               onKeyDown={(e) => e.key === 'Enter' && handleAttrSave()}
-              style={{ width: '80px', color: '#000' }}
+              style={{ 
+                width: '100px', 
+                color: '#fff', 
+                backgroundColor: 'rgba(0,0,0,0.5)', 
+                border: '1px solid #fff',
+                borderRadius: '3px',
+                padding: '2px 4px'
+              }}
               onClick={(e) => e.stopPropagation()}
             />
           ) : (
@@ -120,7 +127,12 @@ export const DialogBar: React.FC<DialogBarProps> = ({
   return (
     <div 
       className="dialog-bar-container" 
-      style={{ marginBottom: '10px', position: 'relative' }}
+      style={{ 
+        marginBottom: '10px', 
+        position: 'relative',
+        maxWidth: '800px', // Restrict the maximum width of the dialogs to prevent them from stretching too wide
+        margin: '0 auto 10px auto' // Center them if the container is wider than 800px
+      }}
       onMouseLeave={closeContextMenu}
     >
       <div 

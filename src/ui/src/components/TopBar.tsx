@@ -14,12 +14,14 @@ interface TopBarProps {
   onSave?: () => Promise<void> | void;
   onRenderComplete?: () => void;
   hasUnsavedChanges?: boolean;
+  editorMode?: boolean;
+  onToggleEditor?: () => void;
 }
 
 export const TopBar: React.FC<TopBarProps> = ({ 
   config, chapter, filePath, chapterList, hasChapterAudio,
   selectedCharacter, onChapterSelect, onCharacterSelect, onSave, onRenderComplete,
-  hasUnsavedChanges
+  hasUnsavedChanges, editorMode, onToggleEditor
 }) => {
   const [isSaving, setIsSaving] = useState(false);
   const [isRendering, setIsRendering] = useState(false);
@@ -113,7 +115,7 @@ export const TopBar: React.FC<TopBarProps> = ({
 
   return (
     <div className="top-bar" style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '8px', borderBottom: '1px solid #ccc' }}>
-      <div className="chapter-name">
+      <div className="chapter-name" style={{ display: 'flex', alignItems: 'center' }}>
         <strong>Chapter Name:</strong>{' '}
         <select 
           value={filePath} 
@@ -129,6 +131,25 @@ export const TopBar: React.FC<TopBarProps> = ({
             );
           })}
         </select>
+        {!editorMode && (
+          <button 
+            onClick={onToggleEditor}
+            style={{
+              marginLeft: '12px',
+              padding: '4px 12px',
+              backgroundColor: '#e0e0e0',
+              color: '#333',
+              border: '1px solid #888',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontSize: '0.9em',
+              fontWeight: 'bold'
+            }}
+            title="Open Markdown Editor"
+          >
+            Edit Text
+          </button>
+        )}
       </div>
       
       <div className="characters">
@@ -158,7 +179,7 @@ export const TopBar: React.FC<TopBarProps> = ({
         <strong>Dialogs:</strong> [{dialogCount}]
       </div>
       
-      <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px' }}>
+      <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px', alignItems: 'center' }}>
         <button 
           onClick={handleRenderChapter} 
           style={{ 
