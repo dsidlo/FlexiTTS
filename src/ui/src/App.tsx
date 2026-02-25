@@ -627,7 +627,9 @@ function App() {
           }}>
             <h2 style={{marginTop: 0}}>Dialogs</h2>
             {chapter?.dialogs.map(dialog => {
-              const isFilteredOut = selectedCharacterFilter !== '' && dialog.character !== selectedCharacterFilter;
+              const isFilteredOut = selectedCharacterFilter !== '' && 
+                                    selectedCharacterFilter !== 'All Characters' && 
+                                    dialog.character !== selectedCharacterFilter;
               const displayId = dialog.sectionId ? `${dialog.sectionId}.${dialog.id}` : dialog.id;
               
               // Determine if we have a generated audio clip matching this dialog

@@ -159,7 +159,7 @@ export const TopBar: React.FC<TopBarProps> = ({
           value={selectedCharacter}
           onChange={(e) => onCharacterSelect(e.target.value)}
         >
-          <option value="">Select Character</option>
+          <option value="">All Characters</option>
           {uniqueCharacters.map((char) => {
              const isUnknown = config ? !config.characters.some(c => c.name === char) : false;
              return (
