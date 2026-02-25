@@ -17,6 +17,8 @@ The MVP contains several underlying UI mechanics designed for stability, data in
 * **Auto-Save on Render**: Clicking "Render Chapter Audio" seamlessly auto-saves the XML to disk first to ensure the Python sub-process reads the exact text currently visible in the UI.
 * **Native OS Protection**: Navigating away from a chapter with unsaved changes triggers a native OS confirmation dialog (Save, Discard, Cancel) via Electron's `showMessageBoxSync`, rather than a browser `alert()`.
 * **Standardized Disk Formatting**: All UI saves enforce an 80-character word wrap and strict tab (`\t`) indentation to ensure the raw XML remains highly readable in standard text editors.
+* **Chapter Markdown Editor**: A dual-pane text editor that allows users to edit the `.md` file directly. Features a "Clean Up (80 chars)" word wrapper tool, and intelligent window resizing (hides UI at <1200px width).
+* **Audio-Clip Cleanup**: Rendering a full chapter automatically cleans up orphaned/stale `.wav` clips from the local chapter clip directory to prevent disk bloat.
 
 ---
 
@@ -37,13 +39,15 @@ Use this checklist to manually verify the UI functionality.
 ### Phase C: Dialog Bars & Editing
 - [ ] **Expand/Collapse**: Click the header of a Dialog Bar. Verify it expands to show the text area. Click inside the text area. Verify the bar *does not* collapse.
 - [ ] **Text Editing**: Edit the text in a dialog. Verify it correctly updates the internal state (triggering the unsaved warning).
-- [ ] **Attribute Editing**: Click on an inline attribute (like `emotion="happy"`). Change the value and press Enter/unfocus. Verify it saves the attribute.
+- [ ] **Attribute Editing**: Click on an inline attribute (like `emotion="happy"`). Change the value and press Enter/unfocus. Verify it saves the attribute. Verify the background color is a translucent dark shade, making the white text readable across different colored character headers.
 - [ ] **Character Editing**: Click on a character's name. Verify it turns into a `<select>` dropdown populated by `story-config.yml`.
 - [ ] **Hallucination Highlighting**: Manually inject a fake character name into the XML (or find one). Verify the name renders in orange text and shows `(New)` in the dropdown.
 
-### Phase D: Filtering
+### Phase D: Filtering & Layout
 - [ ] **Character Filter**: Select a specific character from the Top Bar filter dropdown.
-- [ ] **Filtered State**: Verify that matching dialogs remain fully visible. Verify that non-matching dialogs shrink to a small, italicized `...CharacterName...` placeholder block.
+- [ ] **Filtered State**: Verify that matching dialogs remain fully visible. Verify that non-matching dialogs shrink to a small, italicized `...CharacterName...` placeholder block with a translucent hashtag ID identifier (`#1.1`).
+- [ ] **All Characters Reset**: Select "All Characters" from the dropdown. Verify all placeholders expand back into their full headers.
+- [ ] **Maximum Width Check**: Stretch the application window across a large monitor. Verify the Dialog Bars max out at `800px` width and stay horizontally centered to maintain visual readability.
 
 ### Phase E: Audio Rendering & State
 - [ ] **Audio Button Colors**: Verify that play buttons for existing audio clips are green. Dialogs missing audio should have grey buttons.
@@ -54,6 +58,12 @@ Use this checklist to manually verify the UI functionality.
 ### Phase F: Data Integrity
 - [ ] **XML Validation**: Manually corrupt the XML syntax in the raw file and hit Save in the UI (if possible) or generate invalid XML. Verify the UI pops up an Error Dialog regarding schema validation.
 - [ ] **File Formatting**: Save a chapter in the UI. Open the `.xml` file in VS Code. Verify it is indented with tabs and the text is wrapped at 80 characters.
+
+### Phase G: Markdown Editor
+- [ ] **Dual Pane UI**: Expand the window width beyond `1200px` and click "Edit Text" in the Top Bar. Verify the Markdown Editor appears on the left, and the Dialogs shift to the right.
+- [ ] **Single Pane UI**: Shrink the window width below `1200px` and click "Edit Text". Verify the Text Editor replaces the Dialog UI completely.
+- [ ] **Clean Up Formatter**: Type a long string of text on a single line in the editor. Click "Clean Up (80 chars)". Verify the text wraps to 80 characters per line without cutting any words in half.
+- [ ] **Markdown Saving**: Make a text edit in the editor pane. Notice the Top Bar "Save" button activates. Switch chapters. Verify the Electron native OS save dialog correctly traps the unsaved `.md` state and writes it to disk.
 
 ---
 
@@ -103,3 +113,7 @@ When the DyTopo team shifts to implementing E2E tests (e.g., using **Playwright*
    * *Setup*: Load XML with two `<dialog dlgseq="1">` elements in different `<section>` blocks.
    * *Action*: Edit the text of the *second* element.
    * *Assert*: Only the second element's text changes. The arrays do not swap or overwrite the first element. (Validates absolute `_index` usage).
+3. **Test**: `markdown_editor_responsive_layout`
+   * *Setup*: Launch Playwright browser with a viewport width of `800px`.
+   * *Action*: Click the `Edit Text` button.
+   * *Assert*: Expect the markdown `<textarea>` to be visible, but expect the `<main>` dialog container to be completely hidden. Resize window to `1200px` and verify both elements become simultaneously visible.
