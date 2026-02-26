@@ -1,0 +1,29 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`chapterService > generateXMLFromChapter > should match snapshot for basic chapter > basic-chapter 1`] = `
+"<?xml version="1.0" encoding="UTF-8"?>
+<chapter name="Test Chapter">
+  <dialog id="1" character="Test Character" emotion="happy">
+    Hello world!
+  </dialog>
+</chapter>"
+`;
+
+exports[`chapterService > generateXMLFromChapter > should match snapshot for story format > story-format 1`] = `
+"<?xml version="1.0" encoding="UTF-8"?>
+<story>
+  <section seq="1">
+	<narration dlgseq="1">
+	  Opening narration
+	</narration>
+	<dialog dlgseq="2" character="Alice">
+	  Hello Bob
+	</dialog>
+  </section>
+  <section seq="2">
+	<dialog dlgseq="3" character="Bob">
+	  Hi Alice
+	</dialog>
+  </section>
+</story>"
+`;

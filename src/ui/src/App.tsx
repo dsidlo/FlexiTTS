@@ -1,516 +1,228 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useCallback, useState } from 'react';
 import './App.css';
 import { PythonBridgeService } from './services/pythonBridge';
-import type { StoryConfig, Chapter, DialogElement } from './models/types';
+import type { StoryConfig } from './models/types';
 import { TopBar } from './components/TopBar';
 import { DialogBar } from './components/DialogBar';
+import { useChapter, useMarkdown } from './hooks';
+import { generateXMLFromChapter } from './services/chapterService';
 
 function App() {
-  // We don't use config directly in rendering right now, but we validate and load it
-  const [config, setConfig] = useState<StoryConfig | null>(null);
-  const [chapter, setChapter] = useState<Chapter | null>(null);
-  const [xmlContent, setXmlContent] = useState<string>('');
-  const [lastSavedXml, setLastSavedXml] = useState<string>('');
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState<boolean>(false);
+  // Chapter state from hook
+  const {
+    config, setConfig, chapter, chapterList, setChapterList,
+    currentChapterFile, setCurrentChapterFile, selectedCharacterFilter, setSelectedCharacterFilter,
+    availableClips, setAvailableClips, hasChapterAudio, setHasChapterAudio,
+    isGeneratingStructure, setIsGeneratingStructure, generateAttempt, setGenerateAttempt,
+    xmlContentRef, hasUnsavedChangesRef,
+    setLastSavedXmlValue, setHasUnsavedChangesValue,
+    loadChapter, handleUpdateDialog,
+  } = useChapter();
+
+  // Markdown state from hook
+  const {
+    editorMode, setEditorMode, markdownContent, setMarkdownContent,
+    lastSavedMarkdownRef, hasUnsavedMarkdownChangesRef,
+    setLastSavedMarkdownValue, setHasUnsavedMarkdownChangesValue,
+    windowWidth, setWindowWidth, formatMarkdown, loadMarkdown, resetMarkdown,
+  } = useMarkdown();
+
+  // Local UI state
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  
-  // Context menu state
   const [showChapterMenu, setShowChapterMenu] = useState(false);
   const [menuPos, setMenuPos] = useState({ x: 0, y: 0 });
-  const [chapterList, setChapterList] = useState<string[]>([]);
-  const [selectedCharacterFilter, setSelectedCharacterFilter] = useState<string>('');
 
-  // In a real app this would come from the user's selection
-  const [currentChapterFile, setCurrentChapterFile] = useState<string>('');
-  const [availableClips, setAvailableClips] = useState<string[]>([]);
-  const [hasChapterAudio, setHasChapterAudio] = useState(false);
-  const [isGeneratingStructure, setIsGeneratingStructure] = useState(false);
-  const [generateAttempt, setGenerateAttempt] = useState(0);
-
-  // New text editor mode
-  const [editorMode, setEditorMode] = useState<boolean>(false);
-  const [markdownContent, setMarkdownContent] = useState<string>('');
-  const [lastSavedMarkdown, setLastSavedMarkdown] = useState<string>('');
-  const [hasUnsavedMarkdownChanges, setHasUnsavedMarkdownChanges] = useState<boolean>(false);
-  const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1024);
-
+  // Window resize handler
   useEffect(() => {
     const handleResize = () => setWindowWidth(window.innerWidth);
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
-  }, []);
+  }, [setWindowWidth]);
 
+  // Initialize app
   useEffect(() => {
-    const initApp = async () => {
+    const init = async () => {
       try {
         setLoading(true);
-        
-        // Load configuration
         await PythonBridgeService.validateConfig();
-        const loadedConfig = await PythonBridgeService.loadStoryConfig();
-        setConfig(loadedConfig);
-        
-        // Load chapter list first (now primarily reading .md files)
-        const fetchedList = await PythonBridgeService.listChapterFiles();
-        setChapterList(fetchedList);
-
-        if (fetchedList.length > 0) {
-           await handleChapterSelect(fetchedList[0], loadedConfig);
-        }
+        const cfg = await PythonBridgeService.loadStoryConfig();
+        setConfig(cfg);
+        const list = await PythonBridgeService.listChapterFiles();
+        setChapterList(list);
+        if (list.length > 0) await handleChapterSelect(list[0], cfg);
       } catch (err: unknown) {
-        const error = err as Error;
-        setError(error.message || 'Unknown error');
+        setError((err as Error).message || 'Unknown error');
       } finally {
         setLoading(false);
       }
     };
-    initApp();
+    init();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const loadChapter = async (filePath: string, loadedConfig?: StoryConfig) => {
+  // XML generation pipeline
+  const runXmlGenerationPipeline = async (stem: string, attempt: number): Promise<void> => {
+    if (attempt > 3) throw new Error('Exceeded max retries');
+    setGenerateAttempt(attempt);
     try {
-      console.log(`Loading chapter: ${filePath}`);
-      // Only attempt to read and validate if the file exists. If it doesn't exist, we will fail cleanly.
-      // Validate the XML
-      try {
-        await PythonBridgeService.validateChapterXML(filePath);
-      } catch (validationErr: unknown) {
-        console.warn('XML validation failed:', validationErr);
-      }
-
-      const loadedXml = await PythonBridgeService.readChapterFile(filePath);
-      console.log(`Loaded XML for ${filePath}:`, loadedXml.substring(0, 50) + '...');
-      
-      const parsedChapter = parseChapterXML(loadedXml, filePath);
-      console.log(`Parsed chapter:`, parsedChapter);
-      setChapter(parsedChapter);
-      console.log("Config characters check:", (loadedConfig || config)?.characters);
-      // Let handleChapterSelect manage currentChapterFile state to avoid flipping it back to xml
-      setSelectedCharacterFilter(''); // reset filter on load
-      
-      const chapterName = filePath.split('/').pop() || '';
-      if (chapterName) {
-         const clips = await PythonBridgeService.listChapterClips(chapterName);
-         setAvailableClips(clips);
-         const hasAudio = await PythonBridgeService.checkChapterAudio(chapterName);
-         setHasChapterAudio(hasAudio);
-      }
-      
-      const newXml = generateXMLFromChapter(parsedChapter);
-      setXmlContent(newXml);
-      setLastSavedXml(newXml);
-      setHasUnsavedChanges(false);
-    } catch (err) {
-      console.error('Failed to load chapter:', err);
-    }
-  };
-
-  const parseChapterXML = (xmlString: string, filePath: string): Chapter => {
-    const parser = new DOMParser();
-    const xmlDoc = parser.parseFromString(xmlString, 'text/xml');
-    
-    // Check for parsing errors
-    const parseError = xmlDoc.querySelector('parsererror');
-    if (parseError) {
-      console.error('Error parsing XML', parseError);
-    }
-
-    const chapterNode = xmlDoc.querySelector('chapter') || xmlDoc.querySelector('story');
-    const chapterName = chapterNode?.getAttribute('name') || filePath.split('/').pop()?.replace('.xml', '') || 'Unknown Chapter';
-    
-    // Support either <dialog> or <narration> nodes depending on XML format
-    // Also grab standard <dialog> nodes and <narration> nodes wherever they exist
-    const dialogNodes = Array.from(xmlDoc.querySelectorAll('dialog, narration'));
-    
-    if (dialogNodes.length === 0) {
-      console.warn("No <dialog> or <narration> nodes found in XML string: ", xmlString);
-    }
-
-    const dialogs: DialogElement[] = dialogNodes.map((node, index) => {
-      const attributes: Record<string, string> = {};
-      
-      // Extract all attributes from the XML node
-      for (let i = 0; i < node.attributes.length; i++) {
-        const attr = node.attributes[i];
-        attributes[attr.name] = attr.value;
-      }
-      
-      // Preserve section sequence if present by looking at parent
-      const parentSection = node.closest('section');
-      if (parentSection && parentSection.hasAttribute('seq')) {
-         attributes['section_seq'] = parentSection.getAttribute('seq') || '';
-      }
-      
-      // Fix text content parsing, making sure to remove excessive indentation/newlines
-      // Wait, node.textContent includes all child text. Let's just use it but trim whitespace.
-      const rawText = node.textContent || '';
-      const text = rawText.replace(/\s+/g, ' ').trim();
-      
-      return {
-        _index: index, // Add internal index for strict array positioning
-        id: attributes.id || attributes.dlgseq || `dialog-${index}`,
-        sectionId: attributes.section_seq || '1',
-        character: attributes.character || (node.tagName.toLowerCase() === 'narration' ? 'Narrator' : 'Unknown'),
-        text: text,
-        attributes: attributes
-      };
-    });
-    
-    return {
-      fileName: filePath,
-      name: chapterName,
-      dialogs: dialogs
-    };
-  };
-
-  const generateXMLFromChapter = (updatedChapter: Chapter): string => {
-    let xml = `<?xml version="1.0" encoding="UTF-8"?>\n`;
-    
-    // Determine whether this was originally a <story> or <chapter> structure
-    const isStoryFormat = updatedChapter.fileName.includes('Story-Entanglement');
-    const rootNodeName = isStoryFormat ? 'story' : 'chapter';
-    
-    xml += `<${rootNodeName}${!isStoryFormat ? ` name="${updatedChapter.name}"` : ''}>\n`;
-    
-    let currentSection = '';
-    
-    updatedChapter.dialogs.forEach((dialog, index) => {
-      let attrString = '';
-      Object.entries(dialog.attributes).forEach(([key, value]) => {
-        // Skip structural and internal attributes
-        if (key !== 'character' && key !== 'id' && key !== 'dlgseq' && key !== 'section_seq') {
-           attrString += ` ${key}="${value}"`;
-        }
-      });
-      
-      const nodeName = isStoryFormat && dialog.character === 'Narrator' ? 'narration' : 'dialog';
-      
-      if (!isStoryFormat || dialog.character !== 'Narrator') {
-        attrString = ` character="${dialog.character}"` + attrString;
-      }
-      
-      const idKey = isStoryFormat ? 'dlgseq' : 'id';
-      // Format XML with tab characters to match the style of the backup
-      const idStr = dialog.id.replace('dialog-', '');
-      attrString = ` ${idKey}="${idStr}"` + attrString;
-      
-      if (isStoryFormat) {
-        // Group by section if applicable
-        const sectionSeq = dialog.sectionId || dialog.attributes.section_seq as string || '1';
-        if (sectionSeq !== currentSection) {
-          if (currentSection !== '') {
-            xml += `  </section>\n`;
-          }
-          xml += `  <section seq="${sectionSeq}">\n`;
-          currentSection = sectionSeq;
-        }
-        
-        // Wrap text to an 80-character line limit based on word boundaries
-        const wrapText = (text: string, indent: string, maxLen: number = 80): string => {
-          const words = text.split(' ');
-          let lines = [];
-          let currentLine = words[0] || '';
-          
-          for (let i = 1; i < words.length; i++) {
-            const word = words[i];
-            if (currentLine.length + word.length + 1 > maxLen) {
-              lines.push(currentLine);
-              currentLine = word;
-            } else {
-              currentLine += ' ' + word;
-            }
-          }
-          lines.push(currentLine);
-          return lines.map(line => `${indent}${line}`).join('\n');
-        };
-        
-        const wrappedText = wrapText(dialog.text, '\t  ');
-        xml += `\t<${nodeName}${attrString}>\n${wrappedText}\n\t</${nodeName}>\n`;
-        
-        // Close last section on final element
-        if (index === updatedChapter.dialogs.length - 1) {
-          xml += `  </section>\n`;
-        }
+      if (window.api?.runPythonScript) {
+        await window.api.runPythonScript('src/scripts/chapter_to_xml.py', [`Story-Entanglement/story-chapters/${stem}.md`]);
+        await window.api.runPythonScript('src/scripts/chapter_seq_xml.py', [`Story-Entanglement/story-xml/${stem}.xml`]);
+        await window.api.runPythonScript('src/scripts/chapter_validate_xml.py', [`Story-Entanglement/story-xml/${stem}.xml`]);
       } else {
-         xml += `  <${nodeName}${attrString}>\n    ${dialog.text}\n  </${nodeName}>\n`;
+        console.log(`[Mock] Attempt ${attempt}`);
+        await new Promise(r => setTimeout(r, 2000));
       }
-    });
-    
-    xml += `</${rootNodeName}>`;
-    return xml;
+    } catch (err) {
+      if (attempt >= 3) throw err;
+      await runXmlGenerationPipeline(stem, attempt + 1);
+    }
   };
 
-  const handleUpdateDialog = (id: string, sectionId: string, updatedDialog: DialogElement) => {
-    if (!chapter) return;
-    
-    // We update by mapping over the array to guarantee the strict array sequence is maintained
-    const updatedDialogs = chapter.dialogs.map(d => {
-      // Use the internal _index if available, otherwise fallback to matching id/sectionId combo
-      const isMatch = updatedDialog._index !== undefined && d._index !== undefined 
-         ? d._index === updatedDialog._index 
-         : d.id === id && (d.sectionId || '1') === sectionId;
-         
-      return isMatch ? updatedDialog : d;
-    });
-    
-    const updatedChapter = { ...chapter, dialogs: updatedDialogs };
-    setChapter(updatedChapter);
-    
-    // Update the XML representation so TopBar can save it
-    const newXml = generateXMLFromChapter(updatedChapter);
-    setXmlContent(newXml);
-    setHasUnsavedChanges(newXml !== lastSavedXml);
-  };
+  // Chapter selection handler
+  const handleChapterSelect = useCallback(async (filePath: string, loadedConfig?: StoryConfig) => {
+    // Check for unsaved changes
+    if ((hasUnsavedChangesRef.current || hasUnsavedMarkdownChangesRef.current) && currentChapterFile) {
+      const res = await PythonBridgeService.showConfirmDialog(
+        'Unsaved Changes',
+        'You have unsaved changes.',
+        'Save before switching?'
+      );
+      if (res === 2) return;
+      if (res === 0) {
+        try {
+          const stem = currentChapterFile.split('/').pop()?.replace('.md', '') || 'unknown';
+          if (hasUnsavedChangesRef.current) {
+            await PythonBridgeService.writeChapterFile(
+              `Story-Entanglement/story-xml/${stem}.xml`, 
+              xmlContentRef.current
+            );
+            setLastSavedXmlValue(xmlContentRef.current);
+          }
+          if (hasUnsavedMarkdownChangesRef.current) {
+            await PythonBridgeService.writeChapterFile(
+              `Story-Entanglement/story-chapters/${stem}.md`, 
+              markdownContent
+            );
+            setLastSavedMarkdownValue(markdownContent);
+            setHasUnsavedMarkdownChangesValue(false);
+          }
+        } catch (e) {
+          console.error('Save failed during switch:', e);
+          return;
+        }
+      }
+    }
 
+    setShowChapterMenu(false);
+    setLoading(true);
+    setCurrentChapterFile(filePath);
+    const stem = filePath.split('/').pop()?.replace('.md', '')?.replace('.xml', '') || 'unknown';
+    
+    await loadMarkdown(stem);
+    
+    const xmlPath = `Story-Entanglement/story-xml/${stem}.xml`;
+    if (await PythonBridgeService.checkXmlExists(stem)) {
+      await loadChapter(xmlPath, loadedConfig);
+    } else {
+      setIsGeneratingStructure(true);
+      try {
+        await runXmlGenerationPipeline(stem, 1);
+        await loadChapter(xmlPath, loadedConfig);
+      } catch (err) {
+        await PythonBridgeService.showErrorDialog('Generation Failed', `Failed to generate XML for ${stem}`);
+        resetMarkdown();
+      } finally {
+        setIsGeneratingStructure(false);
+        setGenerateAttempt(0);
+      }
+    }
+    setLoading(false);
+  }, [currentChapterFile, hasUnsavedChangesRef, hasUnsavedMarkdownChangesRef, xmlContentRef, 
+      markdownContent, setLastSavedXmlValue, setLastSavedMarkdownValue, setHasUnsavedMarkdownChangesValue,
+      setCurrentChapterFile, loadMarkdown, loadChapter, setIsGeneratingStructure, setGenerateAttempt,
+      setLoading, resetMarkdown]);
+
+  // Save handler
+  const handleSave = useCallback(async () => {
+    try {
+      const stem = currentChapterFile.split('/').pop()?.replace('.md', '') || 'unknown';
+      if (hasUnsavedChangesRef.current && chapter) {
+        const xml = generateXMLFromChapter(chapter);
+        await PythonBridgeService.writeChapterFile(`Story-Entanglement/story-xml/${stem}.xml`, xml);
+        await PythonBridgeService.validateChapterXML(`Story-Entanglement/story-xml/${stem}.xml`);
+        setLastSavedXmlValue(xml);
+        setHasUnsavedChangesValue(false);
+      }
+      if (hasUnsavedMarkdownChangesRef.current) {
+        const mdPath = `Story-Entanglement/story-chapters/${stem}.md`;
+        await PythonBridgeService.writeChapterFile(mdPath, markdownContent);
+        setLastSavedMarkdownValue(markdownContent);
+        setHasUnsavedMarkdownChangesValue(false);
+      }
+    } catch (e) {
+      console.error('Save failed:', e);
+    }
+  }, [currentChapterFile, chapter, hasUnsavedChangesRef, hasUnsavedMarkdownChangesRef, 
+      markdownContent, setLastSavedXmlValue, setHasUnsavedChangesValue,
+      setLastSavedMarkdownValue, setHasUnsavedMarkdownChangesValue]);
+
+  // Toggle editor handler
+  const handleToggleEditor = useCallback(async () => {
+    if (editorMode && hasUnsavedMarkdownChangesRef.current) {
+      const res = await PythonBridgeService.showConfirmDialog(
+        'Unsaved Changes',
+        'You have unsaved changes.',
+        'Save before closing?'
+      );
+      if (res === 2) return;
+      if (res === 0) await handleSave();
+      else {
+        setMarkdownContent(lastSavedMarkdownRef.current);
+        setHasUnsavedMarkdownChangesValue(false);
+      }
+    }
+    setEditorMode(!editorMode);
+  }, [editorMode, hasUnsavedMarkdownChangesRef, lastSavedMarkdownRef, handleSave,
+      setEditorMode, setMarkdownContent, setHasUnsavedMarkdownChangesValue]);
+
+  // Refresh clips
+  const refreshClips = useCallback(async () => {
+    if (!currentChapterFile) return;
+    const name = currentChapterFile.split('/').pop()?.replace('.md', '.xml') || '';
+    setAvailableClips(await PythonBridgeService.listChapterClips(name));
+    setHasChapterAudio(await PythonBridgeService.checkChapterAudio(name));
+  }, [currentChapterFile, setAvailableClips, setHasChapterAudio]);
+
+  // Context menu handlers
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
     setShowChapterMenu(true);
     setMenuPos({ x: e.pageX, y: e.pageY });
   };
+  const closeMenu = () => setShowChapterMenu(false);
 
-  const closeMenu = () => {
-    setShowChapterMenu(false);
-  };
+  if (loading) return <div className="loading-screen">Loading FlexiTTS...</div>;
+  if (error) return <div className="error-screen">Error: {error}</div>;
 
-  const handleChapterSelect = async (filePath: string, loadedConfig?: StoryConfig) => {
-    closeMenu();
-
-    if ((hasUnsavedChanges || hasUnsavedMarkdownChanges) && currentChapterFile) {
-      const title = "Unsaved Changes";
-      const message = "You have unsaved changes in the current chapter.";
-      const detail = "Do you want to save them before switching chapters?";
-      
-      const res = await PythonBridgeService.showConfirmDialog(title, message, detail);
-      if (res === 2) {
-        // Cancel
-        return;
-      } else if (res === 0) {
-        // Save
-        try {
-          const stem = currentChapterFile.split('/').pop()?.replace('.md', '') || 'unknown';
-          if (hasUnsavedChanges) {
-              const xmlPath = `Story-Entanglement/story-xml/${stem}.xml`;
-              await PythonBridgeService.writeChapterFile(xmlPath, xmlContent);
-              await PythonBridgeService.validateChapterXML(xmlPath);
-              setHasUnsavedChanges(false);
-              setLastSavedXml(xmlContent);
-          }
-          if (hasUnsavedMarkdownChanges) {
-              const mdPath = `Story-Entanglement/story-chapters/${stem}.md`;
-              await PythonBridgeService.writeChapterFile(mdPath, markdownContent);
-              setHasUnsavedMarkdownChanges(false);
-              setLastSavedMarkdown(markdownContent);
-          }
-        } catch (error) {
-          console.error("Save failed during chapter switch", error);
-          // abort switch if save fails
-          return;
-        }
-      }
-      // if res === 1 (Discard), just proceed without saving
-    }
-
-    setLoading(true);
-    setCurrentChapterFile(filePath); // Always set the selected markdown file path in TopBar
-
-    // Determine target XML path
-    const stem = filePath.split('/').pop()?.replace('.md', '')?.replace('.xml', '') || 'unknown';
-    const xmlPath = `Story-Entanglement/story-xml/${stem}.xml`;
-
-    // Load the Markdown content regardless
-    try {
-      const mdPath = `Story-Entanglement/story-chapters/${stem}.md`;
-      const mdContent = await PythonBridgeService.readFile(mdPath);
-      setMarkdownContent(mdContent);
-      setLastSavedMarkdown(mdContent);
-      setHasUnsavedMarkdownChanges(false);
-    } catch (e) {
-      console.warn("Failed to load markdown for", stem, e);
-      setMarkdownContent("");
-      setLastSavedMarkdown("");
-    }
-
-    // Check if XML exists for this Markdown file
-    const xmlExists = await PythonBridgeService.checkXmlExists(stem);
-
-    if (xmlExists) {
-      await loadChapter(xmlPath, loadedConfig);
-      setLoading(false);
-    } else {
-      // Missing XML -> Generation Pipeline
-      setLoading(false);
-      setIsGeneratingStructure(true);
-      setGenerateAttempt(1);
-      
-      try {
-        await runXmlGenerationPipeline(stem, 1);
-        // On success, load it
-        await loadChapter(xmlPath, loadedConfig);
-      } catch (err: any) {
-        console.error("XML Generation Pipeline failed entirely:", err);
-        await PythonBridgeService.showErrorDialog(
-          "Generation Failed",
-          `Could not generate valid XML for ${stem} after 3 attempts. Please check your raw Markdown file for unsupported formatting.\n\nError: ${err.message}`
-        );
-      } finally {
-        setIsGeneratingStructure(false);
-      }
-    }
-  };
-
-  const runXmlGenerationPipeline = async (stem: string, attempt: number): Promise<void> => {
-    if (attempt > 3) {
-      throw new Error("Exceeded maximum retry attempts (3).");
-    }
-    setGenerateAttempt(attempt);
-
-    try {
-      if (typeof window !== 'undefined' && window.api && window.api.runPythonScript) {
-        console.log(`[Pipeline] Attempt ${attempt}: Running chapter_to_xml.py on ${stem}`);
-        await window.api.runPythonScript('src/scripts/chapter_to_xml.py', [`Story-Entanglement/story-chapters/${stem}.md`]);
-        
-        console.log(`[Pipeline] Attempt ${attempt}: Running chapter_seq_xml.py on ${stem}`);
-        await window.api.runPythonScript('src/scripts/chapter_seq_xml.py', [`Story-Entanglement/story-xml/${stem}.xml`]);
-        
-        console.log(`[Pipeline] Attempt ${attempt}: Running chapter_validate_xml.py on ${stem}`);
-        await window.api.runPythonScript('src/scripts/chapter_validate_xml.py', [`Story-Entanglement/story-xml/${stem}.xml`]);
-      } else {
-        // Mock fallback
-        console.log(`[Mock Pipeline] Attempt ${attempt} for ${stem}`);
-        await new Promise(r => setTimeout(r, 2000));
-      }
-    } catch (err: any) {
-      console.warn(`[Pipeline] Attempt ${attempt} failed:`, err);
-      if (attempt >= 3) {
-        throw err;
-      }
-      await runXmlGenerationPipeline(stem, attempt + 1);
-    }
-  };
-
-  const handleSave = async () => {
-    try {
-        const stem = currentChapterFile.split('/').pop()?.replace('.md', '') || 'unknown';
-        if (hasUnsavedChanges) {
-          const xmlPath = `Story-Entanglement/story-xml/${stem}.xml`;
-          await PythonBridgeService.writeChapterFile(xmlPath, xmlContent);
-          await PythonBridgeService.validateChapterXML(xmlPath);
-          setLastSavedXml(xmlContent);
-          setHasUnsavedChanges(false);
-        }
-        if (hasUnsavedMarkdownChanges) {
-          const mdPath = `Story-Entanglement/story-chapters/${stem}.md`;
-          await PythonBridgeService.writeChapterFile(mdPath, markdownContent);
-          setLastSavedMarkdown(markdownContent);
-          setHasUnsavedMarkdownChanges(false);
-        }
-    } catch(err) {
-        console.error("Save failed:", err);
-    }
-  };
-
-  const handleFormatMarkdown = () => {
-    // Word wrap markdown content to 80 characters without breaking words
-    const formatLine = (line: string, limit: number): string => {
-      if (line.length <= limit) return line;
-      const words = line.split(' ');
-      let currentLine = '';
-      let formatted = '';
-      
-      for (const word of words) {
-        if ((currentLine + word).length > limit) {
-          formatted += currentLine.trim() + '\n';
-          currentLine = word + ' ';
-        } else {
-          currentLine += word + ' ';
-        }
-      }
-      formatted += currentLine.trim();
-      return formatted;
-    };
-
-    const formattedContent = markdownContent
-      .split('\n')
-      .map(line => formatLine(line, 80))
-      .join('\n');
-      
-    setMarkdownContent(formattedContent);
-    setHasUnsavedMarkdownChanges(formattedContent !== lastSavedMarkdown);
-  };
-
-  const handleToggleEditor = async () => {
-    if (editorMode && hasUnsavedMarkdownChanges) {
-      const title = "Unsaved Text Changes";
-      const message = "You have unsaved changes in the text editor.";
-      const detail = "Do you want to save them before closing?";
-      
-      const res = await PythonBridgeService.showConfirmDialog(title, message, detail);
-      if (res === 2) {
-        // Cancel
-        return;
-      } else if (res === 0) {
-        // Save
-        await handleSave();
-      } else if (res === 1) {
-        // Discard - revert to last saved
-        setMarkdownContent(lastSavedMarkdown);
-        setHasUnsavedMarkdownChanges(false);
-      }
-    }
-    setEditorMode(!editorMode);
-  };
-
-  const refreshClips = async () => {
-    const chapterName = currentChapterFile.split('/').pop()?.replace('.md', '.xml') || '';
-    if (chapterName) {
-       const clips = await PythonBridgeService.listChapterClips(chapterName);
-       setAvailableClips(clips);
-       const hasAudio = await PythonBridgeService.checkChapterAudio(chapterName);
-       setHasChapterAudio(hasAudio);
-    }
-  };
-
-  if (loading) {
-    return <div className="loading-screen">Loading FlexiTTS...</div>;
-  }
-
-  if (error) {
-    return <div className="error-screen">Error initializing app: {error}</div>;
-  }
+  const hasAnyUnsaved = hasUnsavedChangesRef.current || hasUnsavedMarkdownChangesRef.current;
 
   return (
     <div className="app-container" onContextMenu={handleContextMenu} onClick={closeMenu}>
       {isGeneratingStructure && (
-        <div style={{
-          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-          backgroundColor: 'rgba(0,0,0,0.8)', zIndex: 9999,
-          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-          color: 'white', fontFamily: 'sans-serif'
-        }}>
-          <div className="spinner-icon" style={{ 
-            width: '40px', height: '40px',
-            border: '4px solid rgba(255,255,255,0.3)',
-            borderRadius: '50%', borderTopColor: '#4CAF50',
-            animation: 'spin 1s ease-in-out infinite',
-            marginBottom: '20px'
-          }}></div>
+        <div className="loading-overlay">
+          <div className="spinner" />
           <h2>Processing Markdown...</h2>
-          <p>Generating XML structure (Attempt {generateAttempt}/3)</p>
-          <style>{`
-            @keyframes spin {
-              to { transform: rotate(360deg); }
-            }
-          `}</style>
+          <p>Attempt {generateAttempt}/3</p>
         </div>
       )}
 
       {chapter && (
         <TopBar 
           config={config}
-          chapter={chapter} 
-          filePath={currentChapterFile} 
+          chapter={chapter}
+          filePath={currentChapterFile}
           chapterList={chapterList}
           hasChapterAudio={hasChapterAudio}
           selectedCharacter={selectedCharacterFilter}
@@ -518,141 +230,56 @@ function App() {
           onCharacterSelect={setSelectedCharacterFilter}
           onSave={handleSave}
           onRenderComplete={refreshClips}
-          hasUnsavedChanges={hasUnsavedChanges || hasUnsavedMarkdownChanges}
+          hasUnsavedChanges={hasAnyUnsaved}
           editorMode={editorMode}
           onToggleEditor={handleToggleEditor}
         />
       )}
 
       <div style={{ display: 'flex', height: 'calc(100vh - 60px)', overflow: 'hidden' }}>
-        
-        {/* Markdown Editor Side (Now on the Left) */}
         {editorMode && (
-          <aside style={{ 
-            flex: 1, 
-            display: 'flex', 
-            flexDirection: 'column', 
-            backgroundColor: '#1e1e1e', 
-            color: '#d4d4d4',
-            overflow: 'hidden',
-            borderRight: (windowWidth >= 1200) ? '1px solid #ccc' : 'none'
-          }}>
-            <div style={{ 
-              display: 'flex', 
-              justifyContent: 'space-between', 
-              padding: '10px 20px', 
-              backgroundColor: '#2d2d2d',
-              borderBottom: '1px solid #444',
-              alignItems: 'center'
-            }}>
+          <aside style={{ flex: 1, display: 'flex', flexDirection: 'column', background: '#1e1e1e', color: '#d4d4d4', borderRight: windowWidth >= 1200 ? '1px solid #ccc' : 'none' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 20px', background: '#2d2d2d', borderBottom: '1px solid #444', alignItems: 'center' }}>
               <h2 style={{ margin: 0, fontSize: '1rem', color: '#fff' }}>Chapter Editor (Markdown)</h2>
               <div style={{ display: 'flex', gap: '10px' }}>
-                <button 
-                  onClick={handleFormatMarkdown}
-                  style={{
-                    padding: '6px 12px',
-                    backgroundColor: '#4CAF50',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '4px',
-                    cursor: 'pointer'
-                  }}
-                  title="Format text to 80 chars without breaking words"
-                >
-                  Clean Up (80 chars)
-                </button>
-                <button 
-                  onClick={handleSave}
-                  style={{
-                    padding: '6px 12px',
-                    backgroundColor: hasUnsavedMarkdownChanges ? '#ff9800' : '#2196F3',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '4px',
-                    cursor: 'pointer',
-                    fontWeight: hasUnsavedMarkdownChanges ? 'bold' : 'normal'
-                  }}
-                >
-                  {hasUnsavedMarkdownChanges ? 'Save *' : 'Save'}
-                </button>
-                <button 
-                  onClick={handleToggleEditor}
-                  style={{
-                    padding: '6px 12px',
-                    backgroundColor: '#2196F3',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '4px',
-                    cursor: 'pointer',
-                    marginLeft: '10px'
-                  }}
-                  title="Close Markdown Editor"
-                >
-                  Close Chapter Text
-                </button>
+                <button onClick={formatMarkdown} style={{ padding: '6px 12px', background: '#4CAF50', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Clean Up (80 chars)</button>
+                <button onClick={handleSave} style={{ padding: '6px 12px', background: hasUnsavedMarkdownChangesRef.current ? '#ff9800' : '#2196F3', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: hasUnsavedMarkdownChangesRef.current ? 'bold' : 'normal' }}>{hasUnsavedMarkdownChangesRef.current ? 'Save *' : 'Save'}</button>
+                <button onClick={handleToggleEditor} style={{ padding: '6px 12px', background: '#2196F3', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Close</button>
               </div>
             </div>
             <textarea
               value={markdownContent}
-              onChange={(e) => {
+              onChange={e => {
                 setMarkdownContent(e.target.value);
-                setHasUnsavedMarkdownChanges(e.target.value !== lastSavedMarkdown);
+                setHasUnsavedMarkdownChangesValue(e.target.value !== lastSavedMarkdownRef.current);
               }}
-              style={{
-                flex: 1,
-                width: '100%',
-                padding: '20px',
-                backgroundColor: '#1e1e1e',
-                color: '#d4d4d4',
-                border: 'none',
-                resize: 'none',
-                fontFamily: 'monospace',
-                fontSize: '14px',
-                lineHeight: '1.6',
-                outline: 'none',
-                whiteSpace: 'pre-wrap',
-                wordWrap: 'break-word'
-              }}
-              spellCheck="false"
+              style={{ flex: 1, width: '100%', padding: '20px', background: '#1e1e1e', color: '#d4d4d4', border: 'none', resize: 'none', fontFamily: 'monospace', fontSize: '14px', lineHeight: '1.6', outline: 'none', whiteSpace: 'pre-wrap' }}
+              spellCheck={false}
             />
           </aside>
         )}
 
-        {/* Audio UI Side (Now on the Right) */}
         {(!editorMode || windowWidth >= 1200) && (
-          <main className="window-body" style={{ 
-            flex: 1, 
-            padding: '20px', 
-            overflowY: 'auto'
-          }}>
-            <h2 style={{marginTop: 0}}>Dialogs</h2>
+          <main className="window-body" style={{ flex: 1, padding: '20px', overflowY: 'auto' }}>
+            <h2 style={{ marginTop: 0 }}>Dialogs</h2>
             {chapter?.dialogs.map(dialog => {
-              const isFilteredOut = selectedCharacterFilter !== '' && 
-                                    selectedCharacterFilter !== 'All Characters' && 
-                                    dialog.character !== selectedCharacterFilter;
+              const isFiltered = !!selectedCharacterFilter && dialog.character !== selectedCharacterFilter;
               const displayId = dialog.sectionId ? `${dialog.sectionId}.${dialog.id}` : dialog.id;
-              
-              // Determine if we have a generated audio clip matching this dialog
-              const chapNumMatch = chapter.fileName.match(/(\d+)/);
-              const chapNum = chapNumMatch ? chapNumMatch[1].padStart(3, '0') : '000';
+              const chapNum = chapter.fileName.match(/(\d+)/)?.[1]?.padStart(3, '0') || '000';
               const secStr = (dialog.sectionId || '1').padStart(3, '0');
               const dlgStr = dialog.id.replace('dialog-', '').padStart(3, '0');
-              
-              // Example: chapter_001_001_001_narrator.wav or chapter_001_001_001.wav
-              // We'll check if any file in availableClips contains this sequence
-              const searchStr = `chapter_${chapNum}_${secStr}_${dlgStr}`;
-              const hasClip = availableClips.some(clipName => clipName.includes(searchStr));
+              const hasClip = availableClips.some(c => c.includes(`chapter_${chapNum}_${secStr}_${dlgStr}`));
 
               return (
                 <DialogBar 
-                  key={`${dialog.sectionId || '1'}-${dialog.id}-${dialog._index}`} 
-                  dialog={dialog} 
+                  key={`${dialog.sectionId || '1'}-${dialog.id}-${dialog._index}`}
+                  dialog={dialog}
                   displayId={displayId}
                   chapterFileName={chapter.fileName.split('/').pop()}
-                  isFilteredOut={isFilteredOut}
+                  isFilteredOut={isFiltered}
                   hasAudioClip={hasClip}
                   onSaveRequest={handleSave}
-                  onUpdateDialog={handleUpdateDialog} 
+                  onUpdateDialog={handleUpdateDialog}
                   onRefreshClips={refreshClips}
                   availableCharacters={config?.characters?.map(c => c.name) || []}
                 />
@@ -660,60 +287,32 @@ function App() {
             })}
           </main>
         )}
-
       </div>
 
       {showChapterMenu && (
-        <div 
-          className="context-menu"
-          style={{
-            position: 'fixed',
-            top: menuPos.y,
-            left: menuPos.x,
-            backgroundColor: 'white',
-            border: '1px solid #ccc',
-            boxShadow: '0 2px 5px rgba(0,0,0,0.2)',
-            zIndex: 1000,
-            padding: '5px 0',
-            minWidth: '200px'
-          }}
+        <div
+          style={{ position: 'fixed', top: menuPos.y, left: menuPos.x, background: 'white', border: '1px solid #ccc', boxShadow: '0 2px 5px rgba(0,0,0,0.2)', zIndex: 1000, padding: '5px 0', minWidth: '200px' }}
+          onClick={e => e.stopPropagation()}
         >
-          <div style={{ padding: '5px 10px', fontWeight: 'bold', borderBottom: '1px solid #eee', color: '#333' }}>
-            Select Chapter
-          </div>
-          {chapterList.length > 0 ? (
-            chapterList.map((chFile, idx) => {
-              const chFileName = chFile.split('/').pop()?.replace('.md', '')?.replace('.xml', '') || chFile;
-              return (
-                <div 
-                  key={idx} 
-                  style={{ 
-                    padding: '5px 15px', 
-                    cursor: 'pointer', 
-                    color: '#333',
-                    backgroundColor: chFile === currentChapterFile ? '#e6f7ff' : 'transparent',
-                    fontWeight: chFile === currentChapterFile ? 'bold' : 'normal'
-                  }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleChapterSelect(chFile);
-                  }}
-                  onMouseEnter={(e) => {
-                    if (chFile !== currentChapterFile) e.currentTarget.style.backgroundColor = '#f0f0f0';
-                  }}
-                  onMouseLeave={(e) => {
-                    if (chFile !== currentChapterFile) e.currentTarget.style.backgroundColor = 'transparent';
-                  }}
-                >
-                  {chFileName}
-                </div>
-              );
-            })
-          ) : (
-            <div style={{ padding: '5px 15px', color: '#999', fontStyle: 'italic' }}>
-              No chapters found
-            </div>
-          )}
+          <div style={{ padding: '5px 10px', fontWeight: 'bold', borderBottom: '1px solid #eee', color: '#333' }}>Select Chapter</div>
+          {chapterList.map((chFile, idx) => {
+            const name = chFile.split('/').pop()?.replace('.md', '')?.replace('.xml', '') || chFile;
+            const isActive = chFile === currentChapterFile;
+            return (
+              <div 
+                key={idx}
+                style={{ padding: '5px 15px', cursor: 'pointer', color: '#333', background: isActive ? '#e6f7ff' : 'transparent', fontWeight: isActive ? 'bold' : 'normal' }}
+                onClick={() => {
+                  setShowChapterMenu(false);
+                  handleChapterSelect(chFile);
+                }}
+                onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = '#f0f0f0'; }}
+                onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = 'transparent'; }}
+              >
+                {name}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
