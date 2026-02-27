@@ -247,7 +247,7 @@ flowchart TD
     class ROOT root
     class APP app
     class USE_CHAPTER,USE_AUDIO,USE_MARKDOWN hook
-    class TOPBAR,DIALOG BAR,CHAPTER_MENU,EDITOR child
+    class TOPBAR,DIALOG_BAR,CHAPTER_MENU,EDITOR child
     class SF1,SF2,SF3 flow
 ```
 
@@ -736,7 +736,6 @@ sequenceDiagram
 
     Client->>Client: close() cleanup
     Main->>Service: Terminate process
-    deactivate Service
 
     Note over Main,GPU: Fallback to LocalTTSProvider
     Main->>Client: Switch to fallback mode
