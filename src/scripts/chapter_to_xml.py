@@ -12,7 +12,7 @@ def load_config(config_path="story-config.yml"):
     with open(config_path, 'r') as f:
         return yaml.safe_load(f)
 
-def get_prompt_template(notes_path="./FlexiTTS-AI-Prompt-Chapter-to-XML.md"):
+def get_prompt_template(notes_path="src/scripts/FlexiTTS-AI-Prompt-Chapter-to-XML.md"):
     with open(notes_path, 'r') as f:
         content = f.read()
     
@@ -34,21 +34,31 @@ def get_prompt_template(notes_path="./FlexiTTS-AI-Prompt-Chapter-to-XML.md"):
     template = content[start_index:end_index].strip()
     return template
 
+def create_parser():
+    """Create and return the argument parser."""
+    parser = argparse.ArgumentParser(description="Convert story chapter markdown to XML using LLM.")
+    parser.add_argument("file_path", nargs="?", help="Path to the markdown file.")
+    # add a flag argument to process all file in config.global.chapters --all-chapters
+    parser.add_argument("--all-chapters", action="store_true", help="Process all files in the chapters directory.")
+    parser.add_argument("--llm", type=str, help="Name of the LLM configuration to use from story-config.yml.")
+    return parser
+
+
 def main():
     # Load environment variables from ~/.env
     env_path = Path.home() / ".env"
     load_dotenv(dotenv_path=env_path)
+
+    # Parse args first to allow --help without config
+    parser = create_parser()
+    args = parser.parse_args()
 
     config = load_config()
     story_dir = Path(config['global']['story-dir'])
     chapters_dir = story_dir / config['global']['chapters']
     xml_dir = story_dir / config['global']['story-xml']
 
-    parser = argparse.ArgumentParser(description="Convert story chapter markdown to XML using LLM.")
-    parser.add_argument("file_path", nargs="?", help="Path to the markdown file.")
-    # add a flag argument to process all file in config.global.chapters --all-chapters
-    parser.add_argument("--all-chapters", action="store_true", help="Process all files in the chapters directory.")
-    parser.add_argument("--llm", type=str, help="Name of the LLM configuration to use from story-config.yml.")
+    # Re-parse with config-aware paths
     args = parser.parse_args()
 
     chapter_files = []

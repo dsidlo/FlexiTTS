@@ -27,15 +27,13 @@ def resequence_xml(input_path, output_path=None):
         return
 
     try:
-        # Using a custom parser to keep comments if any exist
-        parser = ET.XMLParser(target=ET.TreeBuilder(insert_comments=True))
-        tree = ET.parse(input_path, parser=parser)
+        # Standard ET parse
+        tree = ET.parse(input_path)
         root = tree.getroot()
 
         section_count = 1
         for section in root.findall('.//section'):
             section.set('seq', str(section_count))
-            section_count += 1
 
             dlgseq_count = 1
             # We want to iterate over all children of section in order
@@ -43,12 +41,13 @@ def resequence_xml(input_path, output_path=None):
                 if child.tag in ('narration', 'dialog'):
                     child.set('dlgseq', str(dlgseq_count))
                     dlgseq_count += 1
+            
+            section_count += 1
         
         if output_path is None:
             output_path = input_path
 
-        # To preserve some formatting, we might want to be careful.
-        # But simple ET.write works.
+        # ET.write
         tree.write(output_path, encoding='utf-8', xml_declaration=False)
         print(f"Successfully re-sequenced XML and saved to {output_path}")
 

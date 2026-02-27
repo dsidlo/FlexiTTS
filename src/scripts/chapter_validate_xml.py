@@ -23,7 +23,6 @@ XSD_SCHEMA = """<?xml version="1.0" encoding="UTF-8"?>
                       <xs:attribute name="character" type="xs:string" use="required"/>
                       <xs:attribute name="dlgseq" type="xs:integer" use="required"/>
                       <xs:attribute name="emotion" type="xs:string" use="required"/>
-                      <xs:attribute name="post-effects" type="xs:string" use="optional"/>
                     </xs:extension>
                   </xs:simpleContent>
                 </xs:complexType>

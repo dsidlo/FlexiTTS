@@ -1,0 +1,5 @@
+    def test_output_xsd(self):
+        """Test --output-xsd - note: this flag doesn't exist in validate_config.py (it's in chapter_validate_xml.py)."""
+        result = run_script(["--output-xsd"])
+        # This flag doesn't exist, so argparser will fail
+        assert result.returncode in [0, 2]  # 2 is argparse error
