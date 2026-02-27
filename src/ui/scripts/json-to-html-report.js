@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Converts Vitest JSON test results to HTML report
+ * Converts Vitest JSON test results to HTML report with Dark Theme
  * Usage: node json-to-html-report.js [input.json] [output.html]
  */
 
@@ -59,10 +59,12 @@ const html = `<!DOCTYPE html>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>FlexiTTS Test Results</title>
   <style>
+    /* Dark Theme CSS */
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: #f5f5f5;
+      background: #1a1a2e !important;
+      color: #eaeaea !important;
       padding: 20px;
       line-height: 1.6;
     }
@@ -71,13 +73,13 @@ const html = `<!DOCTYPE html>
       margin: 0 auto;
     }
     header {
-      background: white;
+      background: #16213e !important;
       padding: 30px;
       border-radius: 8px;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      border: 1px solid #0f3460 !important;
       margin-bottom: 20px;
     }
-    h1 { color: #333; margin-bottom: 10px; }
+    h1 { color: #eaeaea !important; margin-bottom: 10px; }
     .nav-banner {
       background: #3b82f6;
       color: white;
@@ -94,7 +96,7 @@ const html = `<!DOCTYPE html>
     .nav-banner a:hover {
       text-decoration: underline;
     }
-    .meta { color: #666; font-size: 14px; }
+    .meta { color: #a0a0a0 !important; font-size: 14px; }
     .summary {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -102,29 +104,29 @@ const html = `<!DOCTYPE html>
       margin: 20px 0;
     }
     .summary-card {
-      background: white;
+      background: #16213e !important;
       padding: 20px;
       border-radius: 8px;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      border: 1px solid #0f3460 !important;
       text-align: center;
     }
     .summary-card h2 {
       font-size: 36px;
       margin-bottom: 5px;
     }
-    .summary-card.passed h2 { color: #22c55e; }
-    .summary-card.failed h2 { color: #ef4444; }
-    .summary-card.total h2 { color: #3b82f6; }
-    .summary-card.rate h2 { color: #8b5cf6; }
-    .summary-card p { color: #666; font-size: 14px; }
+    .summary-card.passed h2 { color: #22c55e !important; }
+    .summary-card.failed h2 { color: #ef4444 !important; }
+    .summary-card.total h2 { color: #3b82f6 !important; }
+    .summary-card.rate h2 { color: #8b5cf6 !important; }
+    .summary-card p { color: #a0a0a0 !important; font-size: 14px; }
     .test-files {
       display: grid;
       gap: 15px;
     }
     .test-file {
-      background: white;
+      background: #16213e !important;
       border-radius: 8px;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      border: 1px solid #0f3460 !important;
       overflow: hidden;
     }
     .test-file.passed { border-left: 4px solid #22c55e; }
@@ -134,44 +136,53 @@ const html = `<!DOCTYPE html>
       justify-content: space-between;
       align-items: center;
       padding: 15px 20px;
-      background: #f9fafb;
-      border-bottom: 1px solid #e5e7eb;
+      background: #0f3460 !important;
+      border-bottom: 1px solid #0f3460;
     }
-    .file-header h3 { color: #333; font-size: 16px; }
+    .file-header h3 { color: #eaeaea !important; font-size: 16px; }
     .file-stats {
-      background: #e5e7eb;
+      background: #1a1a2e !important;
       padding: 4px 12px;
       border-radius: 12px;
       font-size: 12px;
-      color: #666;
+      color: #a0a0a0 !important;
     }
     .tests-list {
       padding: 15px 20px;
+      background: #16213e !important;
     }
     .test-item {
       padding: 10px 0;
-      border-bottom: 1px solid #f3f4f6;
+      border-bottom: 1px solid #0f3460;
       font-size: 14px;
+      color: #eaeaea !important;
     }
     .test-item:last-child { border-bottom: none; }
-    .test-pass { color: #22c55e; }
-    .test-fail { color: #ef4444; }
+    .test-pass { color: #22c55e !important; }
+    .test-fail { color: #ef4444 !important; }
     .footer {
       margin-top: 30px;
       padding: 20px;
       text-align: center;
-      color: #666;
+      background: #16213e !important;
+      border: 1px solid #0f3460 !important;
+      border-radius: 8px;
+      color: #a0a0a0 !important;
       font-size: 12px;
+    }
+    .footer p {
+      color: #a0a0a0 !important;
     }
     .nav-links {
       margin-top: 15px;
     }
     .nav-links a {
-      color: #3b82f6;
+      color: #4fc3f7 !important;
       text-decoration: none;
       margin: 0 10px;
     }
     .nav-links a:hover {
+      color: #80d8ff !important;
       text-decoration: underline;
     }
   </style>
