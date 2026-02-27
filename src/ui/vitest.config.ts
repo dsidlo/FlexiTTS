@@ -10,14 +10,16 @@ export default defineConfig({
     setupFiles: './src/__tests__/setup.ts',
     include: ['src/__tests__/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
     
-    // Test result reporters (pass/fail results)
-    // Default: 'verbose' for detailed output
-    // Optional: 'html' (requires @vitest/ui), 'json', 'junit'
+    // Reporters:
+    // - 'verbose' - Terminal output
+    // - './scripts/dark-theme-reporter.ts' - Custom dark-themed HTML report
+    // - 'json' - JSON report (when VITE_REPORT=true, for dashboard compatibility)
     reporter: process.env.VITE_REPORT === 'true' 
-      ? ['verbose', 'json'] 
-      : ['verbose'],
+      ? ['verbose', './scripts/dark-theme-reporter.ts', 'json'] 
+      : ['verbose', './scripts/dark-theme-reporter.ts'],
+    
     outputFile: process.env.VITE_REPORT === 'true' 
-      ? './test-reports/test-results.json'
+      ? { json: './test-reports/test-results.json' }
       : undefined,
     
     // Coverage optional - use VITE_COVERAGE=true to enable
