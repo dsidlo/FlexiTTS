@@ -74,13 +74,66 @@ table.coverage td.line-count {
   color: #a0a0a0 !important;
 }
 
-/* Coverage colors adjusted for dark theme */
+/* Coverage colors adjusted for dark theme - table cells */
 .high .cover-fill { background: #4ade80 !important; }
 .high { color: #4ade80 !important; }
 .medium .cover-fill { background: #facc15 !important; }
-.medium { color: #facc15 !important; }
+.medium { color: #111 !important; }
 .low .cover-fill { background: #f87171 !important; }
 .low { color: #f87171 !important; }
+
+/* Fix coverage summary table cells - ensure text is visible */
+.coverage-summary td.high,
+.coverage-summary td.low,
+.coverage-summary td.medium,
+.coverage-summary td.empty {
+  background: #1a1a2e !important;
+  font-weight: 500;
+}
+
+.coverage-summary td.high { color: #4ade80 !important; }
+.coverage-summary td.medium { color: #facc15 !important; }
+.coverage-summary td.low { color: #f87171 !important; }
+.coverage-summary td.empty { color: #a0a0a0 !important; }
+
+/* Fix for cells with 'abs' class (0/0 etc) */
+.coverage-summary td.abs {
+  background: #1a1a2e !important;
+  color: #eaeaea !important;
+}
+
+.coverage-summary td.abs.high { color: #4ade80 !important; }
+.coverage-summary td.abs.medium { color: #facc15 !important; }
+.coverage-summary td.abs.low { color: #f87171 !important; }
+.coverage-summary td.abs.empty { color: #6b7280 !important; }
+
+/* Fix for 'pct' cells (percentages) */
+.coverage-summary td.pct {
+  background: #1a1a2e !important;
+  color: #eaeaea !important;
+  font-weight: 500;
+}
+
+.coverage-summary td.pct.high { color: #4ade80 !important; }
+.coverage-summary td.pct.medium { color: #facc15 !important; }
+.coverage-summary td.pct.low { color: #f87171 !important; }
+.coverage-summary td.pct.empty { color: #6b7280 !important; }
+
+/* Fix file cells */
+.coverage-summary td.file {
+  background: #1a1a2e !important;
+  color: #eaeaea !important;
+}
+
+.coverage-summary td.file.high { color: #4ade80 !important; }
+.coverage-summary td.file.medium { color: #facc15 !important; }
+.coverage-summary td.file.low { color: #f87171 !important; }
+.coverage-summary td.file.empty { color: #6b7280 !important; }
+
+/* Ensure all table cells have proper background */
+.coverage-summary tbody td {
+  background: #1a1a2e !important;
+}
 
 /* Line coverage indicators */
 .cline-yes { background: rgba(74, 222, 128, 0.3) !important; color: #eaeaea !important; }
@@ -168,14 +221,14 @@ const baseCssPath = path.join(coverageDir, 'base.css');
 if (fs.existsSync(baseCssPath)) {
   let baseCss = fs.readFileSync(baseCssPath, 'utf-8');
   
-  // Check if already injected
-  if (!baseCss.includes('DARK THEME OVERRIDES')) {
-    baseCss += darkThemeCSS;
-    fs.writeFileSync(baseCssPath, baseCss);
-    console.log('✅ Dark theme injected into base.css');
-  } else {
-    console.log('ℹ️ Dark theme already present in base.css');
+  // Remove old dark theme if present and re-inject
+  if (baseCss.includes('DARK THEME OVERRIDES')) {
+    baseCss = baseCss.replace(/\/\* === DARK THEME OVERRIDES === \*\/[\s\S]*$/, '');
   }
+  
+  baseCss += darkThemeCSS;
+  fs.writeFileSync(baseCssPath, baseCss);
+  console.log('✅ Dark theme injected into base.css');
 } else {
   console.warn('⚠️ base.css not found');
 }
