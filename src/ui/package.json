@@ -9,7 +9,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:coverage": "VITE_COVERAGE=true vitest run",
+    "test:coverage": "VITE_COVERAGE=true vitest run && node scripts/inject-coverage-dark-theme.js",
     "test:report": "VITE_REPORT=true vitest run",
     "test:report:legacy": "npm run test:report && node scripts/json-to-html-report.js",
     "test:watch": "vitest",
