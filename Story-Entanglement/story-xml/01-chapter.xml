@@ -1,0 +1,25 @@
+<story>
+  <section seq="1">
+	<narration emotion="neutral" dlgseq="1">
+	  # Chapter 1: The Beginning
+
+	  Alice walked into the room.
+	</narration>
+	<dialog character="Alice" emotion="friendly" dlgseq="2">
+	  Hello,
+	</dialog>
+  </section>
+  <section seq="2">
+	<narration emotion="mysterious" dlgseq="3">
+	  The room was dark and mysterious.
+
+	  Bob called from the corner.
+	</narration>
+	<dialog character="Bob" emotion="startled" dlgseq="4">
+	  Who's there?
+	</dialog>
+	<dialog character="Alice" emotion="reassuring" dlgseq="5">
+	  It's just me,
+	</dialog>
+  </section>
+</story>
