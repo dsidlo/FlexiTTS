@@ -51,7 +51,7 @@
 	</narration>
   </section>
   <section seq="2">
-	<narration emotion="painful;flag" dlgseq="7">
+	<narration emotion="painful;flag" dlgseq="1">
 	  The pain came first, a dull ache that radiated from the implant site
 	  like ripples in a pond. But pain was a small price to pay for what came
 	  next. As the organoids began to grow, to weave their tendrils into her
@@ -59,7 +59,7 @@
 	  self and other began to blur, to dissolve into a mist of electrons and
 	  neurotransmitters.
 	</narration>
-	<narration emotion="dreamlike" dlgseq="8">
+	<narration emotion="dreamlike" dlgseq="2">
 	  And then came the dreams. As Ayana slept, her consciousness was flooded
 	  with visions so vivid they made reality seem like a pale imitation. She
 	  saw fractal landscapes that unfolded in impossible geometries, heard
@@ -67,7 +67,7 @@
 	  all, she felt the presence of Ryan, a spectral companion on her journey
 	  through the dreamscape.
 	</narration>
-	<narration emotion="intimate" dlgseq="9">
+	<narration emotion="intimate" dlgseq="3">
 	  The interface initiations began, tentative at first, like the touch of a
 	  lover testing the waters. Data packets flowed from Ryan to Ayana and
 	  back again, a digital dialogue that transcended the limitations of
@@ -75,13 +75,13 @@
 	  Ayana felt her mind expand, her perceptions sharpen, her creativity soar
 	  to heights she had never imagined.
 	</narration>
-	<narration emotion="purposeful" dlgseq="10">
+	<narration emotion="purposeful" dlgseq="4">
 	  But it was more than that. She felt a sense of purpose, a conviction
 	  that she was part of something greater than herself. And as she looked
 	  into the abyss of her own mortality, she knew that she had found a way
 	  to transcend it, to turn her curse into a gift.
 	</narration>
-	<narration emotion="transformative" dlgseq="11">
+	<narration emotion="transformative" dlgseq="5">
 	  She was Ayana, the first of a new breed, a hybrid of human and machine
 	  that was neither and both. And as she woke from her dreams, as she
 	  opened her eyes to a world transformed, she knew that she had crossed a
@@ -89,33 +89,33 @@
 	</narration>
   </section>
   <section seq="3">
-	<narration emotion="abrupt;flag" dlgseq="12">
+	<narration emotion="abrupt;flag" dlgseq="1">
 	  The ringtone sliced through the dreamscape like a scalpel through
 	  flesh, severing the ethereal connection between Ayana and Ryan. Her
 	  eyes snapped open, pupils dilating as they adjusted to the harsh
 	  reality of fluorescent lights. It was Yamato on the line, his voice
 	  tinged with a static of urgency that sent a shiver down her spine.
 	</narration>
-	<narration emotion="ominous;flag" dlgseq="13">
+	<narration emotion="ominous;flag" dlgseq="2">
 	  The line went dead, but the message had already sunk its claws into
 	  her. A raid. Disconnection. The words hung in the air like a bad omen,
 	  a prophecy of doom that she couldn't shake off. And then she felt it,
 	  the slow unraveling of the neural tapestry that had bound her to Ryan,
 	  thread by thread, neuron by neuron.
 	</narration>
-	<narration emotion="despairing;flag" dlgseq="14">
+	<narration emotion="despairing;flag" dlgseq="3">
 	  But it was more than sensory deprivation. It was a void, a gaping
 	  chasm in her soul that swallowed her whole. The disconnection hit her
 	  like a lead anvil of depression, a crushing weight that pressed
 	  against the very fabric of her being until she could bear it no more.
 	</narration>
-	<narration emotion="bleak;flag" dlgseq="15">
+	<narration emotion="bleak;flag" dlgseq="4">
 	  And then, darkness. A blackout, a curtain falling on the stage of her
 	  consciousness, leaving her adrift in a sea of nothingness. She was
 	  Ayana, unmoored, untethered, a pioneer who had ventured too far into
 	  the unknown and paid the price.
 	</narration>
-	<narration emotion="melancholic;flag" dlgseq="16">
+	<narration emotion="melancholic;flag" dlgseq="5">
 	  As she slipped into unconsciousness, one thought echoed in the empty
 	  corridors of her mind: She had tasted the future, and now she was
 	  exiled from it, a refugee in her own body. And the world, the world of

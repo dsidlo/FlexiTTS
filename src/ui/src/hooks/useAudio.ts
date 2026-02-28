@@ -83,7 +83,7 @@ export const useAudio = (): UseAudioReturn => {
   }, []);
 
   /**
-   * Generate audio for a specific dialog
+   * Generate audio for a specific dialog with TTS service health check
    * @param params - Audio generation parameters
    */
   const generateAudio = useCallback(async ({
@@ -96,11 +96,18 @@ export const useAudio = (): UseAudioReturn => {
     isCancelledRef.current = false;
     
     try {
+      // Start TTS WebSocket service (--tts-service enables fast GPU-accelerated rendering)
+      // Required for audio generation - returns ws://localhost:8765 for remote TTS mode
+      const ttsServiceUrl = await PythonBridgeService.ensureTtsService();
+      
+      if (isCancelledRef.current) return;
+      
       if (typeof window !== 'undefined' && window.api && window.api.runPythonScript) {
         const out = await window.api.runPythonScript('src/scripts/chapter_xml_to_audio.py', [
           `Story-Entanglement/story-xml/${chapterName}`,
           `--section`, sectionNum,
-          `--dlgseq`, dlgseqNum
+          `--dlgseq`, dlgseqNum,
+          `--tts-service`, ttsServiceUrl
         ]);
         
         if (isCancelledRef.current) return;
@@ -154,9 +161,17 @@ export const useAudio = (): UseAudioReturn => {
           onComplete();
         }
       }
-    } catch (err) {
+    } catch (err: unknown) {
       if (!isCancelledRef.current) {
         console.error("Failed to generate audio:", err);
+        // Show user-friendly error
+        const errorMessage = err instanceof Error 
+          ? err.message 
+          : "An unknown error occurred during audio generation";
+        await PythonBridgeService.showErrorDialog(
+          "Audio Generation Failed", 
+          `Failed to generate audio: ${errorMessage}\n\nPlease ensure the TTS service is running and try again.`
+        );
         throw err;
       }
     }

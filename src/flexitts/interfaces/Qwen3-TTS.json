@@ -1,0 +1,58 @@
+{
+  "tts-tool": {
+    "name": "Qwen3-TTS",
+    "func_name": "Qwen3TTSModel.from_pretrained",
+    "setup": {
+      "parameters": [
+        {
+          "model_name": {
+            "type": "string",
+            "description": "Model name for loading"
+          }
+        },
+        {
+          "device_map": {
+            "param_name": "device_map",
+            "type": "string",
+            "description": "Device map for model loading"
+          }
+        },
+        {
+          "dtype": {
+            "param_name": "dtype",
+            "type": "string",
+            "description": "Data type for model loading"
+          }
+        },
+        {
+          "attn_implementation": {
+            "param_name": "attn_implementation",
+            "type": "string",
+            "description": "Attention implementation for model loading"
+          }
+        }
+      ],
+      "returns": [
+        {
+          "type": "Qwen3TTSModel",
+          "description": "The loaded Qwen3-TTS model"
+        }
+      ]
+    },
+    "tts-custom_model": {
+      "func_name": "custom_model",
+      "parameters": [
+        {
+
+        }
+
+      ],
+      "returns": [
+        "type": "array",
+        {
+
+        }
+      ]
+    }
+  }
+}

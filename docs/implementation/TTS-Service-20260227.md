@@ -103,6 +103,7 @@ for attempt in range(self.max_retries):
 ```
 
 **Configuration:**
+
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `max_retries` | 4 | Connection retry attempts |

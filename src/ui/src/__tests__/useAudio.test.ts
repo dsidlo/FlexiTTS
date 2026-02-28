@@ -12,6 +12,10 @@ vi.mock('../services/pythonBridge', () => ({
     listChapterClips: vi.fn(),
     checkChapterAudio: vi.fn(),
     cancelAudio: vi.fn(),
+    showErrorDialog: vi.fn(),
+    isTtsServiceRunning: vi.fn(),
+    startTtsService: vi.fn(),
+    ensureTtsService: vi.fn(),
   },
 }));
 
@@ -31,6 +35,11 @@ describe('useAudio', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // Default mock implementations for TTS service methods
+    vi.mocked(PythonBridgeService.isTtsServiceRunning).mockResolvedValue(true);
+    vi.mocked(PythonBridgeService.startTtsService).mockResolvedValue(true);
+    vi.mocked(PythonBridgeService.ensureTtsService).mockResolvedValue(undefined);
+    vi.mocked(PythonBridgeService.showErrorDialog).mockResolvedValue(undefined);
   });
 
   describe('initial state', () => {

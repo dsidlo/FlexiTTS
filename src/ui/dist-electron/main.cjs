@@ -176,6 +176,50 @@ electron_1.ipcMain.handle('write-file', async (event, filePath, content) => {
         throw new Error(`Failed to write file ${filePath}: ${err.message}`);
     }
 });
+electron_1.ipcMain.handle('list-chapter-files', async () => {
+    const projectRoot = path.resolve(__dirname, '../../../');
+    // First check if story-chapters exists (the new source of truth)
+    const mdDirPath = path.join(projectRoot, 'Story-Entanglement', 'story-chapters');
+    try {
+        if (fs.existsSync(mdDirPath)) {
+            // Return .md files, ignoring directories like story-notes
+            return fs.readdirSync(mdDirPath)
+                .filter(f => f.endsWith('.md') && fs.statSync(path.join(mdDirPath, f)).isFile())
+                // Format return to look like relative paths expected by UI
+                .map(f => `Story-Entanglement/story-chapters/${f}`);
+        }
+    }
+    catch (err) {
+        console.error(`Failed to read story-chapters directory: ${err}`);
+    }
+    // Fallback to story-xml for backwards compatibility / robustness
+    const xmlDirPath = path.join(projectRoot, 'Story-Entanglement', 'story-xml');
+    try {
+        if (fs.existsSync(xmlDirPath)) {
+            return fs.readdirSync(xmlDirPath)
+                .filter(f => f.endsWith('.xml'))
+                .map(f => `Story-Entanglement/story-xml/${f}`);
+        }
+    }
+    catch (err) {
+        console.error(`Failed to read story-xml directory: ${err}`);
+    }
+    return [];
+});
+electron_1.ipcMain.handle('check-xml-exists', async (event, chapterStem) => {
+    const projectRoot = path.resolve(__dirname, '../../../');
+    const xmlPath = path.join(projectRoot, 'Story-Entanglement', 'story-xml', `${chapterStem}.xml`);
+    try {
+        return fs.existsSync(xmlPath);
+    }
+    catch (err) {
+        console.error(`Failed to check if XML exists: ${err}`);
+        return false;
+    }
+});
+electron_1.ipcMain.handle('show-error-dialog', async (event, title, message) => {
+    electron_1.dialog.showErrorBox(title, message);
+});
 electron_1.ipcMain.handle('show-confirm-dialog', async (event, title, message, detail) => {
     const result = electron_1.dialog.showMessageBoxSync({
         type: 'warning',
@@ -190,7 +234,8 @@ electron_1.ipcMain.handle('show-confirm-dialog', async (event, title, message, d
 });
 electron_1.ipcMain.handle('list-chapter-clips', async (event, chapterName) => {
     const projectRoot = path.resolve(__dirname, '../../../');
-    const chapterStem = chapterName.replace('.xml', '');
+    // chapterName might be passed as 01-Hendrix.xml or 01-Hendrix.md
+    const chapterStem = chapterName.replace('.xml', '').replace('.md', '');
     const dirPath = path.join(projectRoot, 'Story-Entanglement', 'story-audio', 'clips', chapterStem);
     try {
         if (fs.existsSync(dirPath)) {

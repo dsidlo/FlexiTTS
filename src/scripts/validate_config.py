@@ -28,75 +28,23 @@ def get_schema():
     return {
         "type": "object",
         "properties": {
-                "global": {
-                        "type": "object",
-                        "properties": {
-                                "story-dir": {
-                                        "type": "string"
-                                },
-                                "voices": {
-                                        "type": "string"
-                                },
-                                "chapters": {
-                                        "type": "string"
-                                },
-                                "story-xml": {
-                                        "type": "string"
-                                },
-                                "logs": {
-                                        "type": "string"
-                                },
-                                "story-audio": {
-                                        "type": "string"
-                                },
-                                "clips": {
-                                        "type": "string"
-                                },
-                                "clip-separation": {
-                                        "type": "number"
-                                }
-                        },
-                        "additionalProperties": False,
-                        "required": [
-                                "story-dir",
-                                "voices",
-                                "chapters",
-                                "story-xml",
-                                "logs",
-                                "story-audio",
-                                "clips",
-                                "clip-separation"
-                        ]
-                },
-                "llm-xml-generator": {
+                "characters": {
                         "type": "array",
                         "minItems": 1,
                         "items": {
                                 "type": "object",
                                 "properties": {
-                                        "default-llm": {
+                                        "name": {
                                                 "type": "string"
                                         },
-                                        "model": {
+                                        "voice-sample": {
                                                 "type": "string"
-                                        },
-                                        "api_key": {
-                                                "type": "string"
-                                        },
-                                        "api_base": {
-                                                "type": "string"
-                                        },
-                                        "llm": {
-                                                "type": "string"
-                                        },
-                                        "temperature": {
-                                                "type": "number"
                                         }
                                 },
                                 "additionalProperties": False,
                                 "required": [
-                                        "api_base",
-                                        "model"
+                                        "name",
+                                        "voice-sample"
                                 ]
                         }
                 },
@@ -124,6 +72,70 @@ def get_schema():
                                 ]
                         }
                 },
+                "global": {
+                        "type": "object",
+                        "properties": {
+                                "chapters": {
+                                        "type": "string"
+                                },
+                                "clip-separation": {
+                                        "type": "number"
+                                },
+                                "clips": {
+                                        "type": "string"
+                                },
+                                "logs": {
+                                        "type": "string"
+                                },
+                                "story-audio": {
+                                        "type": "string"
+                                },
+                                "story-dir": {
+                                        "type": "string"
+                                },
+                                "story-xml": {
+                                        "type": "string"
+                                },
+                                "voices": {
+                                        "type": "string"
+                                }
+                        },
+                        "additionalProperties": False,
+                        "required": [
+                                "chapters",
+                                "clip-separation",
+                                "clips",
+                                "logs",
+                                "story-audio",
+                                "story-dir",
+                                "story-xml",
+                                "voices"
+                        ]
+                },
+                "llm-xml-generator": {
+                        "type": "array",
+                        "minItems": 1,
+                        "items": {
+                                "type": "object",
+                                "properties": {
+                                        "api_base": {
+                                                "type": "string"
+                                        },
+                                        "default-llm": {
+                                                "type": "string"
+                                        },
+                                        "model": {
+                                                "type": "string"
+                                        }
+                                },
+                                "additionalProperties": False,
+                                "required": [
+                                        "api_base",
+                                        "default-llm",
+                                        "model"
+                                ]
+                        }
+                },
                 "story-audio-post-process": {
                         "type": "object",
                         "properties": {
@@ -139,68 +151,15 @@ def get_schema():
                         "required": [
                                 "sox-effects"
                         ]
-                },
-                "characters": {
-                        "type": "array",
-                        "minItems": 1,
-                        "items": {
-                                "type": "object",
-                                "properties": {
-                                        "name": {
-                                                "type": "string"
-                                        },
-                                        "voice-sample": {
-                                                "type": "string"
-                                        },
-                                        "sox-effects": {
-                                                "type": "array",
-                                                "minItems": 1,
-                                                "items": {
-                                                        "type": "string"
-                                                }
-                                        },
-                                        "custom-voice": {
-                                                "type": "object",
-                                                "properties": {
-                                                        "language": {
-                                                                "type": "string"
-                                                        },
-                                                        "speaker": {
-                                                                "type": "string"
-                                                        },
-                                                        "instruct": {
-                                                                "type": "string"
-                                                        }
-                                                },
-                                                "additionalProperties": False,
-                                                "required": [
-                                                        "language",
-                                                        "speaker",
-                                                        "instruct"
-                                                ]
-                                        },
-                                        "dialog-effects": {
-                                                "type": "array",
-                                                "minItems": 1,
-                                                "items": {
-                                                        "type": "string"
-                                                }
-                                        }
-                                },
-                                "additionalProperties": False,
-                                "required": [
-                                        "name"
-                                ]
-                        }
                 }
         },
         "additionalProperties": False,
         "required": [
+                "characters",
+                "dialog-effects",
                 "global",
                 "llm-xml-generator",
-                "dialog-effects",
-                "story-audio-post-process",
-                "characters"
+                "story-audio-post-process"
         ]
 }
     # [SCHEMA_MARKER_END]

@@ -1,0 +1,18 @@
+# .coveragerc
+[run]
+# Tell coverage which directories/packages contain the real code you want to measure
+source =
+    *.py
+
+# Explicitly exclude common test locations (very strong recommendation)
+omit =
+    */tests/*
+    */test_*.py
+    *test/*
+    */test/*
+    tests/*
+    test_*.py
+
+# Optional: also good defaults
+branch = true
+relative_files = true

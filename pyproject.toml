@@ -14,7 +14,31 @@ dependencies = [
     "soundfile==0.12.1",
     "pyyaml==6.0.2",
     "pandas==2.2.3",
+    "transformers==4.57.3",
+    "accelerate==1.12.0",
+    "gradio",
+    "librosa",
+    "torchaudio",
+    "sox",
+    "onnxruntime",
+    "einops",
+    "redis>=7.2.0",
+    "numpy>=2.3.5",
+    "requests>=2.32.5",
+    "sympy>=1.14.0",
 ]
 
 [tool.uv.sources]
 qwen-tts = { path = "Qwen3-TTS" }
+
+[dependency-groups]
+dev = [
+    "coverage>=7.13.4",
+    "pytest>=9.0.2",
+    "pytest-cov>=7.0.0",
+    "pytest-html>=4.2.0",
+]
+
+[tool.pytest.ini_options]
+addopts = "-v --cov=. --cov-report=html:src/scripts/test-results/htmlcov --html=src/scripts/test-reports/pytest-report.html --self-contained-html"
+testpaths = ["src/scripts/tests"]

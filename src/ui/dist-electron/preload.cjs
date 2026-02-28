@@ -6,6 +6,7 @@ electron_1.contextBridge.exposeInMainWorld('api', {
     readFile: (filePath) => electron_1.ipcRenderer.invoke('read-file', filePath),
     writeFile: (filePath, content) => electron_1.ipcRenderer.invoke('write-file', filePath, content),
     showErrorDialog: (title, content) => electron_1.ipcRenderer.invoke('show-error-dialog', title, content),
+    checkXmlExists: (chapterStem) => electron_1.ipcRenderer.invoke('check-xml-exists', chapterStem),
     showConfirmDialog: (title, message, detail) => electron_1.ipcRenderer.invoke('show-confirm-dialog', title, message, detail),
     listChapterClips: (chapterName) => electron_1.ipcRenderer.invoke('list-chapter-clips', chapterName),
     checkChapterAudio: (chapterName) => electron_1.ipcRenderer.invoke('check-chapter-audio', chapterName),

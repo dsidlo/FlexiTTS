@@ -13,7 +13,8 @@ from pathlib import Path
 
 # Configuration
 UI_REPORTS = "../src/ui/test-reports"
-SCRIPTS_REPORTS = "../src/scripts/test-reports"
+SCRIPTS_REPORTS = "../src/scripts/test-results"  # Updated to read from test-results
+SCRIPTS_RAW_REPORTS = "../src/scripts/test-reports"  # Raw pytest output
 OUTPUT_FILE = "index.html"
 
 def read_json_report(path):
@@ -106,8 +107,8 @@ def generate_dashboard():
     scripts_json_path = os.path.join(script_dir, SCRIPTS_REPORTS, "test-results.json")
     scripts_data = read_json_report(scripts_json_path)
     
-    scripts_html_report = os.path.join(SCRIPTS_REPORTS, "pytest-report.html")
-    scripts_coverage = os.path.join(SCRIPTS_REPORTS, "pytest-coverage", "index.html")
+    scripts_html_report = os.path.join(SCRIPTS_REPORTS, "unit-tests-report.html")  # CSS-injected version
+    scripts_coverage = os.path.join(SCRIPTS_REPORTS, "htmlcov", "index.html")  # Updated path
     scripts_coverage_exists = check_file_exists(scripts_coverage)
     
     # Get timestamps
@@ -468,11 +469,11 @@ def generate_dashboard():
                 </tr>
                 <tr style="border-bottom: 1px solid #0f3460;">
                     <td style="padding: 12px; color: #4fc3f7;">Python Test Report</td>
-                    <td style="padding: 12px; color: #9ca3af;"><code>src/scripts/test-reports/pytest-report.html</code></td>
+                    <td style="padding: 12px; color: #9ca3af;"><code>src/scripts/test-results/unit-tests-report.html</code></td>
                 </tr>
                 <tr>
                     <td style="padding: 12px; color: #4fc3f7;">Python Coverage</td>
-                    <td style="padding: 12px; color: #9ca3af;"><code>src/scripts/test-reports/pytest-coverage/index.html</code></td>
+                    <td style="padding: 12px; color: #9ca3af;"><code>src/scripts/test-results/htmlcov/index.html</code></td>
                 </tr>
             </table>
         </div>

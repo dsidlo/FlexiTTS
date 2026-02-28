@@ -4,19 +4,18 @@ This module implements the TTSInterface for local Qwen3-TTS model
 execution with voice cloning and custom voice capabilities.
 """
 
+from __future__ import annotations
+
 import os
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
 import numpy as np
-import torch
 import soundfile as sf
 
-try:
-    from qwen_tts import Qwen3TTSModel
-except ImportError:
-    sys.path.append(os.path.join(os.getcwd(), "Qwen3-TTS"))
+if TYPE_CHECKING:
+    import torch
     from qwen_tts import Qwen3TTSModel
 
 from tts_interface import TTSInterface, TTSError, CharacterNotSupportedError, TTSResult
@@ -52,6 +51,15 @@ class LocalTTSProvider(TTSInterface):
         Raises:
             TTSError: If model initialization fails.
         """
+        # Lazy imports - only when actually instantiating
+        import torch
+        try:
+            from qwen_tts import Qwen3TTSModel
+        except ImportError:
+            sys.path.append(os.path.join(os.getcwd(), "Qwen3-TTS"))
+            from qwen_tts import Qwen3TTSModel
+        
+        self._Qwen3TTSModel = Qwen3TTSModel
         self.device = "cuda:0" if torch.cuda.is_available() else "cpu"
         self.dtype = torch.bfloat16 if torch.cuda.is_available() else torch.float32
         self.voices_dir = voices_dir or Path("voices")

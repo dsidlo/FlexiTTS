@@ -16,10 +16,12 @@ from dataclasses import dataclass
 from chapter_validate_xml import validate_and_fix_xml
 
 try:
-    from tts_factory import create_tts_provider, TTSFactory
-except ImportError:
+    from tts_factory import create_tts_provider, TTSProviderFactory as TTSFactory
+except ImportError as e:
     TTSFactory = None
     create_tts_provider = None
+    print(f"WARNING: TTS provider imports failed: {e}", file=sys.stderr)
+    print("Audio generation will fail. Ensure GPU dependencies are installed.", file=sys.stderr)
 
 
 @dataclass
@@ -166,8 +168,13 @@ def main():
                 voices_dir=voices_dir
             )
         except Exception as e:
-            print(f"Failed to initialize TTS provider: {e}")
-            return
+            print(f"ERROR: Failed to initialize TTS provider: {e}", file=sys.stderr)
+            raise RuntimeError(f"TTS provider initialization failed: {e}") from e
+    elif not args.dry_run and create_tts_provider is None:
+        raise RuntimeError(
+            "TTS provider factory unavailable. "
+            "Check that GPU dependencies are installed: pip install -r requirements.txt"
+        )
 
     chapter_clip_dir = clips_dir / xml_path.stem
     chapter_clip_dir.mkdir(parents=True, exist_ok=True)
@@ -204,6 +211,12 @@ def main():
                 instruct = f"Speak in a {utt.emotion} tone."
 
             print(f"  Generating {base}...")
+
+            # Validate text length limit (2K character max)
+            if len(utt.text) > 2000:
+                print(f"    ERROR: Text too long: {len(utt.text)} chars (max 2000)")
+                print(f"    Truncating...")
+                utt.text = utt.text[:2000]
 
             if not args.dry_run and provider:
                 try:

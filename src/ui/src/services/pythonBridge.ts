@@ -175,11 +175,15 @@ export const PythonBridgeService = {
     console.log(`[playAudio] Starting generation/play for chapter=${chapterName} section=${sectionNum} dlgseq=${dlgseqNum}`);
     if (typeof window !== 'undefined' && window.api && window.api.runPythonScript) {
       try {
-        console.log(`[playAudio] Calling runPythonScript with chapter_xml_to_audio.py`);
+        // Start TTS WebSocket service for fast GPU-accelerated rendering (required)
+        const ttsServiceUrl = await PythonBridgeService.ensureTtsService();
+        
+        console.log(`[playAudio] Calling runPythonScript with chapter_xml_to_audio.py, tts-service=${ttsServiceUrl}`);
         const out = await window.api.runPythonScript('src/scripts/chapter_xml_to_audio.py', [
             `Story-Entanglement/story-xml/${chapterName}`,
             `--section`, sectionNum,
-            `--dlgseq`, dlgseqNum
+            `--dlgseq`, dlgseqNum,
+            `--tts-service`, ttsServiceUrl
         ]);
         console.log("[playAudio] Audio generation output:", out);
 
@@ -189,28 +193,29 @@ export const PythonBridgeService = {
         // Let's explicitly log the parsing process to help debug if it fails
         console.log(`[playAudio] Parsing stdout to find filename...`);
         
-        // Match standard format: "Applying character effects to chapter_004_004_001_narrator.wav..."
-        const effectMatch = out.match(/Applying character effects to (.*?\.wav)/i);
-        if (effectMatch && effectMatch[1]) {
-           wavName = effectMatch[1];
-           console.log(`[playAudio] Found filename via character effects match: ${wavName}`);
+        // Match actual output format: "  Generating chapter_004_004_001_alice..."
+        // This is the primary matching pattern based on chapter_xml_to_audio.py line 188
+        const genMatch = out.match(/Generating\s+(chapter_\d+_\d+_\d+_\w+)/i);
+        if (genMatch?.[1]) {
+           wavName = genMatch[1] + ".wav";
+           console.log(`[playAudio] Found filename via Generating match: ${wavName}`);
         } else {
-           // Fallback to "Generating narrator chapter_001_001_001_narrator..."
-           // We extract the base filename and add .wav
-           const genMatch = out.match(/Generating \w+ (chapter_\d+_\d+_\d+_[^.]+)/i);
-           if (genMatch && genMatch[1]) {
-               wavName = genMatch[1] + ".wav";
-               console.log(`[playAudio] Found filename via Generating match: ${wavName}`);
+           // Fallback to "Applying character effects to /path/to/file.wav"
+           // (only prints if character has effects configured in story-config.yml)
+           const effectMatch = out.match(/Applying character effects to (.*?\.wav)/i);
+           if (effectMatch?.[1]) {
+               wavName = effectMatch[1];
+               console.log(`[playAudio] Found filename via character effects match: ${wavName}`);
            } else {
-               // Fallback to "Would save clip to /path/to/file.wav"
+               // Fallback to "Would save clip to /path/to/file.wav" or "saved to /path/to/file.wav"
                const saveMatch = out.match(/save clip to .*?(chapter_.*?\.wav)/i) || out.match(/saved to .*?(chapter_.*?\.wav)/i);
-               if (saveMatch && saveMatch[1]) {
+               if (saveMatch?.[1]) {
                    wavName = saveMatch[1];
                    console.log(`[playAudio] Found filename via saved match: ${wavName}`);
                } else {
                    // Additional fallback for normal save pattern without full path logging
                    const altMatch = out.match(/(chapter_.*?\.wav)/i);
-                   if (altMatch && altMatch[1]) {
+                   if (altMatch?.[1]) {
                        wavName = altMatch[1];
                        console.log(`[playAudio] Found filename via alternative match: ${wavName}`);
                    }
@@ -290,5 +295,98 @@ export const PythonBridgeService = {
        console.log(`[PythonBridge] Attempting to kill process matching: ${matchString}`);
        await window.api.killProcess(matchString);
     }
+  },
+
+  /**
+   * Check if the TTS service is running
+   * @returns Promise<boolean> - true if service is running
+   */
+  isTtsServiceRunning: async (): Promise<boolean> => {
+    try {
+      if (typeof window !== 'undefined' && window.api && window.api.runPythonScript) {
+        const out = await window.api.runPythonScript('src/scripts/check_tts_service.py', []);
+        return out.includes('running') || out.includes('true');
+      }
+    } catch (e) {
+      console.warn('TTS service check failed:', e);
+    }
+    return false;
+  },
+
+  /**
+   * Start the TTS service
+   * @returns Promise<boolean> - true if service started successfully
+   */
+  startTtsService: async (): Promise<boolean> => {
+    try {
+      if (typeof window !== 'undefined' && window.api && window.api.runPythonScript) {
+        // Use nohup to start service in background
+        const out = await window.api.runPythonScript('src/scripts/start_tts_service.py', []);
+        return out.includes('started') || out.includes('success');
+      }
+    } catch (e) {
+      console.error('Failed to start TTS service:', e);
+    }
+    return false;
+  },
+
+  /**
+   * Ensure TTS service is running with health check and retry logic
+   * Uses exponential backoff: 1s, 2s, 4s, 8s delays, max 4 attempts
+   * @returns Promise<string> - service URL ws://localhost:8765 if running
+   */
+  ensureTtsService: async (): Promise<string> => {
+    const maxRetries = 4;
+    const delays = [1000, 2000, 4000, 8000]; // 1s, 2s, 4s, 8s
+
+    const serviceUrl = 'ws://localhost:8765';
+
+    // First check if already running
+    if (await PythonBridgeService.isTtsServiceRunning()) {
+      console.log('[TTS] Service is already running');
+      return serviceUrl;
+    }
+
+    console.log('[TTS] Service not running, attempting to start...');
+
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        const started = await PythonBridgeService.startTtsService();
+        
+        if (started) {
+          // Wait a moment for service to initialize
+          await new Promise(resolve => setTimeout(resolve, delays[attempt]));
+          
+          // Verify service is now running - return URL so Python can use remote mode
+          if (await PythonBridgeService.isTtsServiceRunning()) {
+            console.log(`[TTS] Service started successfully on attempt ${attempt + 1}`);
+            return serviceUrl;
+          }
+        }
+
+        console.log(`[TTS] Start attempt ${attempt + 1} failed, waiting ${delays[attempt]}ms before retry...`);
+        await new Promise(resolve => setTimeout(resolve, delays[attempt]));
+      } catch (e) {
+        console.error(`[TTS] Attempt ${attempt + 1} error:`, e);
+        if (attempt < maxRetries - 1) {
+          await new Promise(resolve => setTimeout(resolve, delays[attempt]));
+        }
+      }
+    }
+
+    // All attempts failed
+    const userMessage = 'Unable to start the TTS service after multiple attempts. ' +
+      'Please check that:\n' +
+      '1. Python dependencies are installed (pip install -r requirements.txt)\n' +
+      '2. The TTS model files are available\n' +
+      '3. Port 8765 is not in use by another process\n\n' +
+      'See the application logs for more details.';
+    
+    await PythonBridgeService.showErrorDialog(
+      'TTS Service Failed to Start',
+      userMessage
+    );
+    
+    throw new Error('TTS service failed to start after ' + maxRetries + ' attempts');
   }
 };
