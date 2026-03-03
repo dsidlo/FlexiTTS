@@ -1,0 +1,15 @@
+{
+  "name": "flexitts",
+  "version": "1.0.0",
+  "description": "FlexiTTS - Flexible Text-to-Speech Application",
+  "scripts": {
+    "start": "cd src/ui && npm start",
+    "dev": "cd src/ui && npm run dev",
+    "build": "cd src/ui && npm run build",
+    "test": "cd src/ui && npm test",
+    "test:coverage": "cd src/ui && npm run test:coverage",
+    "lint": "cd src/ui && npm run lint",
+    "install:ui": "cd src/ui && npm install"
+  },
+  "private": true
+}
