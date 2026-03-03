@@ -5,10 +5,18 @@ Includes JSON report generation for dashboard.
 """
 
 import sys
+import asyncio
 from pathlib import Path
 from unittest.mock import Mock, MagicMock
 import numpy as np
 import pytest
+
+# Add src/scripts to path for importing GenerateResult
+sys.path.insert(0, str(Path(__file__).parent))
+
+# Import GenerateResult before mocking
+sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
+from tts_models.base import GenerateResult
 
 # Store original modules to restore later
 _original_modules = {}
@@ -47,8 +55,12 @@ def _setup_mocks():
     qwen_tts_mock.Qwen3TTSModel = Mock()
     mock_model_instance = Mock()
     mock_model_instance.create_voice_clone_prompt = Mock(return_value="mock_prompt")
-    mock_model_instance.generate_voice_clone = Mock(return_value=([np.zeros(1000)], 24000))
-    mock_model_instance.generate_custom_voice = Mock(return_value=([np.zeros(1000)], 24000))
+    mock_model_instance.generate_voice_clone = Mock(return_value=GenerateResult(
+        audio_segments=[np.zeros(1000)], sample_rate=24000, duration_ms=500, model_name="mock"
+    ))
+    mock_model_instance.generate_custom_voice = Mock(return_value=GenerateResult(
+        audio_segments=[np.zeros(1000)], sample_rate=24000, duration_ms=500, model_name="mock"
+    ))
     qwen_tts_mock.Qwen3TTSModel.from_pretrained = Mock(return_value=mock_model_instance)
     sys.modules['qwen_tts'] = qwen_tts_mock
     sys.modules['qwen_tts'].Qwen3TTSModel = qwen_tts_mock.Qwen3TTSModel
@@ -63,13 +75,9 @@ def _setup_mocks():
     websockets_mock.connect = Mock(return_value=mock_websocket)
     sys.modules['websockets'] = websockets_mock
     
-    # Mock asyncio for sync testing
-    asyncio_mock = Mock()
-    asyncio_mock.run = Mock(return_value=([np.zeros(1000)], 24000))
-    asyncio_mock.sleep = Mock()
-    asyncio_mock.wait_for = Mock(return_value=mock_websocket)
-    asyncio_mock.TimeoutError = TimeoutError
-    sys.modules['asyncio'] = asyncio_mock
+    # Note: We do NOT mock the asyncio module as it breaks async tests
+    # that use asyncio.run(). Tests that need asyncio fixtures should
+    # use pytest-asyncio's event_loop fixture instead.
 
 # Set up mocks at module load time
 _setup_mocks()
@@ -78,6 +86,14 @@ _setup_mocks()
 # =============================================================================
 # Pytest Fixtures
 # =============================================================================
+
+@pytest.fixture
+def event_loop():
+    """Create an instance of the default event loop for each test case."""
+    loop = asyncio.get_event_loop_policy().new_event_loop()
+    yield loop
+    loop.close()
+
 
 @pytest.fixture(autouse=True)
 def reset_tts_modules():
@@ -94,7 +110,9 @@ def mock_base_model():
     """Create mocked base Qwen3TTSModel."""
     model = Mock()
     model.create_voice_clone_prompt = Mock(return_value="mock_prompt")
-    model.generate_voice_clone = Mock(return_value=([np.zeros(1000)], 24000))
+    model.generate_voice_clone = Mock(return_value=GenerateResult(
+        audio_segments=[np.zeros(1000)], sample_rate=24000, duration_ms=500, model_name="mock"
+    ))
     return model
 
 
@@ -102,7 +120,9 @@ def mock_base_model():
 def mock_custom_model():
     """Create mocked custom Qwen3TTSModel."""
     model = Mock()
-    model.generate_custom_voice = Mock(return_value=([np.zeros(1000)], 24000))
+    model.generate_custom_voice = Mock(return_value=GenerateResult(
+        audio_segments=[np.zeros(1000)], sample_rate=24000, duration_ms=500, model_name="mock"
+    ))
     return model
 
 
@@ -120,10 +140,29 @@ def mock_websocket():
 def mock_fallback_provider():
     """Create mocked fallback TTS provider."""
     provider = Mock()
-    provider.generate = Mock(return_value=([np.zeros(1000)], 24000))
+    provider.generate = Mock(return_value=GenerateResult(
+        audio_segments=[np.zeros(1000)], sample_rate=24000, duration_ms=500, model_name="mock"
+    ))
     provider.supports_character = Mock(return_value=True)
     provider.close = Mock()
     return provider
+
+
+@pytest.fixture(autouse=True, scope="module")
+def cleanup_threading_between_modules():
+    """Clean up threading state between test modules to prevent isolation issues.
+    
+    Voice cache threading tests create threads and barriers that can leave
+    Python's threading state corrupted for subsequent async tests. This 
+    fixture ensures proper cleanup between modules.
+    """
+    yield
+    import gc
+    import time
+    # Allow threads to terminate and cleanup
+    time.sleep(0.05)
+    # Force garbage collection to clean up thread objects
+    gc.collect()
 
 
 # =============================================================================
@@ -218,13 +257,14 @@ def _run_post_test_processing():
         print(f"\n  ⚠️ add-css.py not found at: {add_css_script}")
     
     # Generate dashboard
-    dashboard_script = project_root / "test-report" / "generate-dashboard.py"
+    all_test_reports_dir = "all-test-reports"
+    dashboard_script = project_root / all_test_reports_dir / "generate-dashboard.py"
     if dashboard_script.exists():
         print(f"\n  Running generate-dashboard.py...")
         try:
             result = subprocess.run(
                 ["python3", str(dashboard_script)],
-                cwd=str(project_root / "test-report"),
+                cwd=str(project_root / all_test_reports_dir),
                 capture_output=True,
                 text=True
             )

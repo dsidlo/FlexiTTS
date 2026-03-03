@@ -26,6 +26,7 @@ dependencies = [
     "numpy>=2.3.5",
     "requests>=2.32.5",
     "sympy>=1.14.0",
+    "websockets>=13.1.0",
 ]
 
 [tool.uv.sources]
@@ -35,10 +36,14 @@ qwen-tts = { path = "Qwen3-TTS" }
 dev = [
     "coverage>=7.13.4",
     "pytest>=9.0.2",
+    "pytest-asyncio>=0.25.0",
     "pytest-cov>=7.0.0",
     "pytest-html>=4.2.0",
 ]
 
 [tool.pytest.ini_options]
-addopts = "-v --cov=. --cov-report=html:src/scripts/test-results/htmlcov --html=src/scripts/test-reports/pytest-report.html --self-contained-html"
+addopts = "-v --cov=. --cov-report=html:test-results/htmlcov --html=test-reports/pytest-report.html --self-contained-html"
 testpaths = ["src/scripts/tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+asyncio_default_test_loop_scope = "function"

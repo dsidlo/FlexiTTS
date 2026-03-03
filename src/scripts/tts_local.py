@@ -16,9 +16,17 @@ import soundfile as sf
 
 if TYPE_CHECKING:
     import torch
+
+# Try to import Qwen3TTSModel for export and module use
+try:
     from qwen_tts import Qwen3TTSModel
+except ImportError:
+    # For testing/mocking - will be mocked
+    Qwen3TTSModel = None  # type: ignore
 
 from tts_interface import TTSInterface, TTSError, CharacterNotSupportedError, TTSResult
+
+__all__ = ['LocalTTSProvider', 'Qwen3TTSModel']
 
 
 class LocalTTSProvider(TTSInterface):
@@ -257,6 +265,8 @@ class LocalTTSProvider(TTSInterface):
     
     def close(self) -> None:
         """Release model resources."""
+        import torch
+        
         if self.base_model is not None:
             del self.base_model
             self.base_model = None

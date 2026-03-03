@@ -4,7 +4,6 @@ import pytest
 import sys
 from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock, call
-import numpy as np
 
 # Mock all TTS modules before importing chapter_xml_to_audio
 sys.modules['tts_factory'] = Mock()
@@ -15,7 +14,8 @@ sys.modules['tts_local'] = Mock()
 sys.modules['tts_service'] = Mock()
 sys.modules['yaml'] = Mock()
 sys.modules['soundfile'] = Mock()
-sys.modules['numpy'] = Mock()
+# Note: Do NOT mock sys.modules['numpy'] here - it causes isolation issues
+# Instead use @patch('chapter_xml_to_audio.np') in tests that need it
 
 # Import after mocking
 from chapter_xml_to_audio import apply_sox_effects, generate_silence

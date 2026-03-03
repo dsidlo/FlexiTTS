@@ -14,24 +14,34 @@ from typing import Any, Dict, Optional
 # Try to import websockets
 try:
     import websockets
+    try:
+        from websockets.server import serve as ws_serve
+    except ImportError:
+        from websockets import serve as ws_serve
+    
+    try:
+        from websockets.exceptions import ConnectionClosed as ws_ConnectionClosed
+    except ImportError:
+        from websockets import ConnectionClosed as ws_ConnectionClosed
+        
     WEBSOCKETS_AVAILABLE = True
 except ImportError:
     WEBSOCKETS_AVAILABLE = False
     class MockWebServer:
         pass
-    websockets = MockWebServer()
-    websockets.server = MockWebServer()
-    websockets.server.serve = lambda *args, **kwargs: None
-    websockets.exceptions = MockWebServer()
-    websockets.exceptions.ConnectionClosed = Exception
+    
+    async def mock_serve(*args, **kwargs):
+        raise RuntimeError("websockets library is not installed. Please install it with 'pip install websockets'.")
+    
+    ws_serve = mock_serve
+    ws_ConnectionClosed = Exception
 
 # Import TTS models
 try:
     from tts_models import create_model, ModelConfig
     from tts_models.utils import get_gpu_memory_info
     TTS_MODELS_AVAILABLE = True
-except ImportError as e:
-    logger.warning(f"TTS models import failed: {e}")
+except (ImportError, ModuleNotFoundError) as e:
     TTS_MODELS_AVAILABLE = False
 
 # Setup logging
@@ -241,7 +251,7 @@ class TTSServer:
                         "error": f"Invalid JSON: {str(e)}"
                     }))
                     
-        except websockets.exceptions.ConnectionClosed:
+        except ws_ConnectionClosed:
             logger.info(f"Client disconnected: {client_addr}")
         except Exception as e:
             logger.error(f"Error handling request: {e}")
@@ -270,7 +280,7 @@ class TTSServer:
         if TTS_MODELS_AVAILABLE:
             log_gpu_stats("startup", 0)
         
-        self.server = await websockets.server.serve(
+        self.server = await ws_serve(
             self.handle_request,
             "localhost",
             self.port

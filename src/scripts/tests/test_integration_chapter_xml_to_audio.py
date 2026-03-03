@@ -105,7 +105,7 @@ def run_script(args, cwd=None, env=None):
         text=True,
         cwd=cwd,
         env=env or os.environ.copy(),
-        timeout=60  # Longer timeout for audio processing
+        timeout=5  # Quick timeout to prevent hanging
     )
     return result
 
