@@ -38,7 +38,7 @@ describe('useAudio', () => {
     // Default mock implementations for TTS service methods
     vi.mocked(PythonBridgeService.isTtsServiceRunning).mockResolvedValue(true);
     vi.mocked(PythonBridgeService.startTtsService).mockResolvedValue(true);
-    vi.mocked(PythonBridgeService.ensureTtsService).mockResolvedValue(undefined);
+    vi.mocked(PythonBridgeService.ensureTtsService).mockResolvedValue('ws://localhost:8765');
     vi.mocked(PythonBridgeService.showErrorDialog).mockResolvedValue(undefined);
   });
 

@@ -109,38 +109,34 @@ class Qwen3Model(TTSModel, ParameterTranslator):
     
     def _create_base_model(self) -> Any:
         """Create the base Qwen3-TTS model with thread safety."""
-        with self._model_lock:
-            logger.info("Loading Qwen3 base model...")
-            with self._cuda_lock:
-                return self._Qwen3TTSModel.from_pretrained(
-                    "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
-                    device_map=self._device,
-                    dtype=self._dtype,
-                    attn_implementation="eager",
-                )
+        logger.info("Loading Qwen3 base model...")
+        return self._Qwen3TTSModel.from_pretrained(
+            "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
+            device_map=self._device,
+            dtype=self._dtype,
+            attn_implementation="eager",
+        )
     
     def _create_custom_model(self) -> Any:
         """Create the custom voice Qwen3-TTS model with thread safety."""
-        with self._model_lock:
-            logger.info("Loading Qwen3 custom model...")
-            with self._cuda_lock:
-                return self._Qwen3TTSModel.from_pretrained(
-                    "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice",
-                    device_map=self._device,
-                    dtype=self._dtype,
-                    attn_implementation="eager",
-                )
+        logger.info("Loading Qwen3 custom model...")
+        return self._Qwen3TTSModel.from_pretrained(
+            "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice",
+            device_map=self._device,
+            dtype=self._dtype,
+            attn_implementation="eager",
+        )
     
     def _ensure_base_model(self) -> Any:
         """Ensure base model is loaded (thread-safe)."""
         if self._base_model is None:
-            return self._create_base_model()
+            self._base_model = self._create_base_model()
         return self._base_model
     
     def _ensure_custom_model(self) -> Any:
         """Ensure custom model is loaded (thread-safe)."""
         if self._custom_model is None:
-            return self._create_custom_model()
+            self._custom_model = self._create_custom_model()
         return self._custom_model
     
     def translate_parameters(

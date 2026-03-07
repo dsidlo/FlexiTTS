@@ -41,6 +41,18 @@ from tts_service import RemoteTTSProvider
 from tts_interface import TTSError, TTSConnectionError, TTSGenerationError
 
 
+# Module-level fixture to patch async methods
+@pytest.fixture(autouse=True)
+def patch_async_methods():
+    """Patch async methods to prevent unawaited coroutine warnings."""
+    # Use regular Mock that returns an already-resolved coroutine-like object
+    mock_gen_result = ([np.zeros(1000)], 24000)
+    
+    with patch.object(RemoteTTSProvider, '_generate_remote', Mock(return_value=mock_gen_result)):
+        with patch.object(RemoteTTSProvider, '_connect_with_retry', Mock(return_value=Mock())):
+            yield
+
+
 class TestRemoteTTSProvider:
     """Test RemoteTTSProvider class."""
     
@@ -272,11 +284,12 @@ class TestTryFallback:
 class TestSupportsCharacter:
     """Test supports_character with fallback."""
     
-    def test_supports_character_with_fallback(self):
+    @patch.object(RemoteTTSProvider, '_generate_remote', new_callable=AsyncMock)
+    def test_supports_character_with_fallback(self, mock_generate):
         """Test supports_character delegates to fallback."""
         with patch.object(tts_service, 'WEBSOCKETS_AVAILABLE', True):
             with patch.object(tts_service, 'websockets'):
-                fallback = Mock()
+                fallback = Mock(spec=['supports_character', 'generate'])
                 fallback.supports_character.return_value = True
                 
                 provider = RemoteTTSProvider(
@@ -289,7 +302,8 @@ class TestSupportsCharacter:
                 assert result is True
                 fallback.supports_character.assert_called_once_with({"voice": "test"})
     
-    def test_supports_character_without_fallback(self):
+    @patch.object(RemoteTTSProvider, '_generate_remote', new_callable=AsyncMock)
+    def test_supports_character_without_fallback(self, mock_generate):
         """Test supports_character returns True without fallback."""
         with patch.object(tts_service, 'WEBSOCKETS_AVAILABLE', True):
             with patch.object(tts_service, 'websockets'):

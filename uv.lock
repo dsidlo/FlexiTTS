@@ -646,6 +646,7 @@ dev = [
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
     { name = "pytest-html" },
+    { name = "soundfile" },
 ]
 
 [package.metadata]
@@ -682,6 +683,7 @@ dev = [
     { name = "pytest-asyncio", specifier = ">=0.25.0" },
     { name = "pytest-cov", specifier = ">=7.0.0" },
     { name = "pytest-html", specifier = ">=4.2.0" },
+    { name = "soundfile", specifier = ">=0.12.1" },
 ]
 
 [[package]]

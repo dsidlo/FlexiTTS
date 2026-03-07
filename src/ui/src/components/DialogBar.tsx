@@ -180,8 +180,8 @@ export const DialogBar: React.FC<DialogBarProps> = ({
               
               setIsGeneratingAudio(true);
               try {
-                  // Pass true to skipPlay, we only want to generate
-                  await PythonBridgeService.playAudio(chapterName, sectionNum, dlgseq, undefined, true); 
+                  // Pass false to play audio immediately after generation
+                  await PythonBridgeService.playAudio(chapterName, sectionNum, dlgseq, undefined, false); 
                   if (onRefreshClips) onRefreshClips();
               } finally {
                   setIsGeneratingAudio(false);

@@ -39,6 +39,35 @@ const child_process_1 = require("child_process");
 const fs = __importStar(require("fs"));
 // Store active processes so they can be killed
 const activeProcesses = new Map();
+// Store TTS service process for cleanup
+let ttsServiceProcess = null;
+// Track if we're shutting down to prevent new operations
+let isShuttingDown = false;
+// Kill all active Python processes
+function killAllActiveProcesses() {
+    console.log(`[Cleanup] Killing ${activeProcesses.size} active Python processes...`);
+    Array.from(activeProcesses.entries()).forEach(([id, proc]) => {
+        try {
+            console.log(`[Cleanup] Killing ${id} (PID ${proc.pid})`);
+            proc.kill('SIGTERM');
+            // Force kill after 2 seconds if still running
+            setTimeout(() => {
+                if (proc.pid && !proc.killed) {
+                    try {
+                        process.kill(proc.pid, 'SIGKILL');
+                    }
+                    catch (e) {
+                        // Already dead
+                    }
+                }
+            }, 2000);
+        }
+        catch (e) {
+            console.log(`[Cleanup] Failed to kill ${id}:`, e);
+        }
+    });
+    activeProcesses.clear();
+}
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 try {
     if (require('electron-squirrel-startup')) {
@@ -75,10 +104,82 @@ const createWindow = () => {
 electron_1.app.commandLine.appendSwitch('ignore-certificate-errors');
 // Add a CSP rule to suppress the warning during development
 process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = 'true';
-electron_1.app.whenReady().then(createWindow);
+// Start TTS service on app startup
+async function warmupTTSService() {
+    console.log('[TTS Warmup] Starting TTS service warmup...');
+    const projectRoot = path.resolve(__dirname, '../../../');
+    return new Promise((resolve) => {
+        const warmupProcess = (0, child_process_1.spawn)('uv', ['run', 'python', 'src/scripts/start_tts_service.py'], {
+            cwd: projectRoot,
+            stdio: 'pipe'
+        });
+        let output = '';
+        warmupProcess.stdout.on('data', (data) => {
+            output += data.toString();
+            console.log(`[TTS Warmup] ${data.toString().trim()}`);
+        });
+        warmupProcess.stderr.on('data', (data) => {
+            console.error(`[TTS Warmup Error] ${data.toString().trim()}`);
+        });
+        warmupProcess.on('close', (code) => {
+            console.log(`[TTS Warmup] Process exited with code ${code}`);
+            resolve();
+        });
+        // Timeout after 5 minutes (should be enough for warmup)
+        setTimeout(() => {
+            console.log('[TTS Warmup] Timeout - proceeding anyway');
+            resolve();
+        }, 300000);
+    });
+}
+electron_1.app.whenReady().then(async () => {
+    // Start TTS warmup in background
+    warmupTTSService().catch(e => console.error('[TTS Warmup] Failed:', e));
+    // Create window immediately (don't wait for warmup)
+    createWindow();
+});
 electron_1.app.on('window-all-closed', () => {
+    isShuttingDown = true;
+    console.log('[App] window-all-closed: Cleaning up...');
+    // Kill all active Python processes
+    killAllActiveProcesses();
+    // Stop TTS service
+    const projectRoot = path.resolve(__dirname, '../../../');
+    try {
+        const { execSync } = require('child_process');
+        execSync('uv run python src/scripts/stop_tts_service.py --silent', {
+            cwd: projectRoot,
+            timeout: 10000,
+            stdio: 'ignore'
+        });
+        console.log('[App] TTS service stopped');
+    }
+    catch (e) {
+        console.log('[App] TTS service stop (may not be running)');
+    }
     if (process.platform !== 'darwin') {
         electron_1.app.quit();
+    }
+});
+// Also handle before-quit for macOS and other cases
+electron_1.app.on('before-quit', (event) => {
+    isShuttingDown = true;
+    console.log('[App] before-quit: Cleaning up...');
+    // Kill all active Python processes
+    killAllActiveProcesses();
+    // Stop TTS service
+    const projectRoot = path.resolve(__dirname, '../../../');
+    try {
+        const { execSync } = require('child_process');
+        execSync('uv run python src/scripts/stop_tts_service.py --silent', {
+            cwd: projectRoot,
+            timeout: 10000,
+            stdio: 'ignore'
+        });
+        console.log('[App] TTS service stopped');
+    }
+    catch (e) {
+        console.log('[App] TTS service stop (may not be running)');
     }
 });
 electron_1.app.on('activate', () => {
@@ -144,7 +245,7 @@ electron_1.ipcMain.handle('kill-process', async (event, matchString) => {
     // We need to look through the active processes to see if the matchString
     // is found either in the key (the name/args) or in the general target.
     // In the case of audio, the key is audio-<filename>
-    for (const [key, proc] of activeProcesses.entries()) {
+    Array.from(activeProcesses.entries()).forEach(([key, proc]) => {
         // A more generous matching scheme to catch audio play commands
         if (key.includes(matchString) || (key.startsWith('audio-') && matchString.includes('.xml'))) {
             console.log(`[IPC] Killing process: ${key}`);
@@ -152,7 +253,7 @@ electron_1.ipcMain.handle('kill-process', async (event, matchString) => {
             proc.kill('SIGKILL');
             killed = true;
         }
-    }
+    });
     return killed;
 });
 electron_1.ipcMain.handle('read-file', async (event, filePath) => {

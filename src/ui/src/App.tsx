@@ -1,10 +1,12 @@
-import { useEffect, useCallback, useState } from 'react';
+import { useEffect, useCallback, useState, useRef } from 'react';
 import './App.css';
 import { PythonBridgeService } from './services/pythonBridge';
 import type { StoryConfig } from './models/types';
 import { TopBar } from './components/TopBar';
 import { DialogBar } from './components/DialogBar';
-import { useChapter, useMarkdown } from './hooks';
+import { AlertContainer } from './components/AlertContainer';
+import { useChapter, useMarkdown, useAlerts, useTtsAlerts, type AlertType } from './hooks';
+import { alertService, alerts } from './services/alertService';
 import { generateXMLFromChapter } from './services/chapterService';
 
 function App() {
@@ -33,6 +35,58 @@ function App() {
   const [showChapterMenu, setShowChapterMenu] = useState(false);
   const [menuPos, setMenuPos] = useState({ x: 0, y: 0 });
 
+  // Alert system state
+  const { alerts: alertList, addAlert, removeAlert } = useAlerts();
+  const [ttsServiceReady, setTtsServiceReady] = useState(false);
+  
+  // Ref to prevent double initialization in React StrictMode
+  const initStarted = useRef(false);
+
+  // Subscribe to internal alerts
+  useEffect(() => {
+    const unsubscribe = alertService.subscribe((message, type, duration) => {
+      addAlert(message, type, 'internal', duration);
+    });
+    return unsubscribe;
+  }, [addAlert]);
+
+  // Subscribe to TTS service alerts via WebSocket (only when service is ready)
+  const handleTtsAlert = useCallback((alert: { alertType: AlertType; message: string; metadata?: Record<string, string> }) => {
+    let fullMsg = alert.message;
+    if (alert.metadata) {
+      if (alert.metadata.character) fullMsg += ` - Character: ${alert.metadata.character}`;
+      if (alert.metadata.chapter) fullMsg += ` - Chapter ${alert.metadata.chapter}`;
+      if (alert.metadata.section) fullMsg += `, Section ${alert.metadata.section}`;
+      if (alert.metadata.dialog) fullMsg += `, Dialog ${alert.metadata.dialog}`;
+    }
+    addAlert(fullMsg, alert.alertType, 'tts-service');
+  }, [addAlert]);
+
+  const handleTtsStatus = useCallback((status: { status: string; ready: boolean }) => {
+    if (status.ready) {
+      alerts.success('TTS Service: Ready');
+    } else if (status.status === 'warming_up') {
+      alerts.info('TTS Service: Warming up...');
+    }
+  }, []);
+
+  const handleTtsConnect = useCallback(() => {
+    console.log('[App] Connected to TTS alerts');
+    alerts.success('TTS Service: Connected');
+  }, []);
+
+  const handleTtsDisconnect = useCallback(() => {
+    console.log('[App] Disconnected from TTS alerts');
+  }, []);
+
+  useTtsAlerts({
+    enabled: ttsServiceReady,
+    onAlert: handleTtsAlert,
+    onStatus: handleTtsStatus,
+    onConnect: handleTtsConnect,
+    onDisconnect: handleTtsDisconnect,
+  });
+
   // Window resize handler
   useEffect(() => {
     const handleResize = () => setWindowWidth(window.innerWidth);
@@ -42,6 +96,10 @@ function App() {
 
   // Initialize app
   useEffect(() => {
+    // Prevent double initialization in React StrictMode
+    if (initStarted.current) return;
+    initStarted.current = true;
+    
     const init = async () => {
       try {
         setLoading(true);
@@ -51,6 +109,16 @@ function App() {
         const list = await PythonBridgeService.listChapterFiles();
         setChapterList(list);
         if (list.length > 0) await handleChapterSelect(list[0], cfg);
+        
+        // Start TTS service and enable alerts once it's ready
+        alerts.info('Starting TTS Service...', 5000);
+        const ttsUrl = await PythonBridgeService.ensureTtsService();
+        if (ttsUrl) {
+          alerts.success('TTS Service: Started', 3000);
+          setTtsServiceReady(true);
+        } else {
+          alerts.warning('TTS Service: Failed to start', 5000);
+        }
       } catch (err: unknown) {
         setError((err as Error).message || 'Unknown error');
       } finally {
@@ -315,6 +383,9 @@ function App() {
           })}
         </div>
       )}
+
+      {/* Alert notifications container */}
+      <AlertContainer alerts={alertList} onDismiss={removeAlert} />
     </div>
   );
 }

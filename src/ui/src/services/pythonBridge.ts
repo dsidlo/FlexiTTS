@@ -298,17 +298,34 @@ export const PythonBridgeService = {
   },
 
   /**
-   * Check if the TTS service is running
-   * @returns Promise<boolean> - true if service is running
+   * Check if the TTS service process exists (running or warming up)
+   * @returns Promise<boolean> - true if service process exists
    */
   isTtsServiceRunning: async (): Promise<boolean> => {
     try {
       if (typeof window !== 'undefined' && window.api && window.api.runPythonScript) {
         const out = await window.api.runPythonScript('src/scripts/check_tts_service.py', []);
-        return out.includes('running') || out.includes('true');
+        // Service exists if output is 'ready' or 'starting' (warming up)
+        return out.includes('ready') || out.includes('starting');
       }
     } catch (e) {
       console.warn('TTS service check failed:', e);
+    }
+    return false;
+  },
+
+  /**
+   * Check if the TTS service is fully ready (warmed up)
+   * @returns Promise<boolean> - true if service is ready
+   */
+  isTtsServiceReady: async (): Promise<boolean> => {
+    try {
+      if (typeof window !== 'undefined' && window.api && window.api.runPythonScript) {
+        const out = await window.api.runPythonScript('src/scripts/check_tts_service.py', []);
+        return out.includes('ready');
+      }
+    } catch (e) {
+      console.warn('TTS service ready check failed:', e);
     }
     return false;
   },
@@ -322,7 +339,8 @@ export const PythonBridgeService = {
       if (typeof window !== 'undefined' && window.api && window.api.runPythonScript) {
         // Use nohup to start service in background
         const out = await window.api.runPythonScript('src/scripts/start_tts_service.py', []);
-        return out.includes('started') || out.includes('success');
+        // Service started successfully or was already running
+        return out.includes('started') || out.includes('success') || out.includes('already running');
       }
     } catch (e) {
       console.error('Failed to start TTS service:', e);
@@ -338,13 +356,29 @@ export const PythonBridgeService = {
   ensureTtsService: async (): Promise<string> => {
     const maxRetries = 4;
     const delays = [1000, 2000, 4000, 8000]; // 1s, 2s, 4s, 8s
+    const pollInterval = 2000; // Poll every 2 seconds for readiness
+    const maxWaitTime = 300000; // Max 5 minutes wait for warmup (models take time to load)
 
     const serviceUrl = 'ws://localhost:8765';
 
-    // First check if already running
-    if (await PythonBridgeService.isTtsServiceRunning()) {
-      console.log('[TTS] Service is already running');
+    // First check if already ready
+    if (await PythonBridgeService.isTtsServiceReady()) {
+      console.log('[TTS] Service is already running and ready');
       return serviceUrl;
+    }
+
+    // Check if service is running but warming up
+    if (await PythonBridgeService.isTtsServiceRunning()) {
+      console.log('[TTS] Service is running, waiting for warmup...');
+      const startTime = Date.now();
+      while (Date.now() - startTime < maxWaitTime) {
+        if (await PythonBridgeService.isTtsServiceReady()) {
+          console.log('[TTS] Service is now ready');
+          return serviceUrl;
+        }
+        await new Promise(resolve => setTimeout(resolve, pollInterval));
+      }
+      throw new Error('TTS service warmup timed out after 5 minutes');
     }
 
     console.log('[TTS] Service not running, attempting to start...');
@@ -354,27 +388,42 @@ export const PythonBridgeService = {
         const started = await PythonBridgeService.startTtsService();
         
         if (started) {
-          // Wait a moment for service to initialize
-          await new Promise(resolve => setTimeout(resolve, delays[attempt]));
+          console.log(`[TTS] Service start command completed on attempt ${attempt + 1}`);
           
-          // Verify service is now running - return URL so Python can use remote mode
-          if (await PythonBridgeService.isTtsServiceRunning()) {
-            console.log(`[TTS] Service started successfully on attempt ${attempt + 1}`);
-            return serviceUrl;
+          // Poll for service to be ready (it may still be warming up)
+          const startTime = Date.now();
+          while (Date.now() - startTime < maxWaitTime) {
+            if (await PythonBridgeService.isTtsServiceReady()) {
+              console.log(`[TTS] Service is now ready (attempt ${attempt + 1})`);
+              return serviceUrl;
+            }
+            if (!(await PythonBridgeService.isTtsServiceRunning())) {
+              console.log(`[TTS] Service process disappeared`);
+              break; // Service died, retry
+            }
+            await new Promise(resolve => setTimeout(resolve, pollInterval));
           }
         }
 
-        console.log(`[TTS] Start attempt ${attempt + 1} failed, waiting ${delays[attempt]}ms before retry...`);
-        await new Promise(resolve => setTimeout(resolve, delays[attempt]));
-      } catch (e) {
-        console.error(`[TTS] Attempt ${attempt + 1} error:`, e);
         if (attempt < maxRetries - 1) {
+          console.log(`[TTS] Start attempt ${attempt + 1} incomplete, waiting ${delays[attempt]}ms before retry...`);
           await new Promise(resolve => setTimeout(resolve, delays[attempt]));
         }
+      } catch (e) {
+        console.error(`[TTS] Attempt ${attempt + 1} error:`, e);
+        if (attempt === maxRetries - 1) throw e;
+        await new Promise(resolve => setTimeout(resolve, delays[attempt]));
       }
     }
 
     // All attempts failed
+    const isRunning = await PythonBridgeService.isTtsServiceRunning();
+    if (isRunning) {
+      // Service is running but not ready - show warning but don't throw
+      console.warn('[TTS] Service is running but not ready after all attempts');
+      return serviceUrl; // Return URL anyway so UI can connect and receive alerts
+    }
+
     const userMessage = 'Unable to start the TTS service after multiple attempts. ' +
       'Please check that:\n' +
       '1. Python dependencies are installed (pip install -r requirements.txt)\n' +

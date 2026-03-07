@@ -65,7 +65,7 @@ characters:
   #    Sohee: Warm Korean female voice with rich emotion.                  | Korean
   - name: Narrator
     # The narrator voice uses voice cloning and a post-effect to make it a bit louder.
-    voice-sample: dgs-voice.wav
+    voice-sample: Story-Entanglement/refs/dgs-voice.wav
     sox-effects:
       - gain +4
   - name: Narrator-cv
@@ -93,9 +93,9 @@ characters:
     sox-effects:
       - pitch -250 equalizer 1800 +4 1.8 equalizer 3200 +3 2.2 bass +2 120 gain -n -1.5
   - name: Ayana
-    voice-sample: Ayana-voice.wav
+    voice-sample: Story-Entanglement/refs/Ayana-voice.wav
   - name: Juko
-    voice-sample: Juko-voice.wav
+    voice-sample: Story-Entanglement/refs/Juko-voice.wav
   - name: Hayden
     custom-voice:
       language: English
@@ -110,16 +110,16 @@ characters:
       - pitch -400   echo 0.8 0.88 60 0.4 120 0.3 reverb gain +3
   # Examples Voice Configurations
   - name: Hendrix-vc
-    voice-sample: Hendricks-voice.wav
+    voice-sample: Story-Entanglement/refs/Hendricks-voice.wav
   - name: Yamato-vc
-    voice-sample: Yamato-voice.wav
+    voice-sample: Story-Entanglement/refs/Yamato-voice.wav
   - name: Hendrix-echo
-    voice-sample: Hendricks-voice.wav
+    voice-sample: Story-Entanglement/refs/Hendricks-voice.wav
     dialog-effects:
       # named dialog-effects can be layered
       - cave
   - name: Ayana-echo
-    voice-sample: Ayana-voice.wav
+    voice-sample: Story-Entanglement/refs/Ayana-voice.wav
     sox-effects:
       - pitch -400   echo 0.8 0.88 60 0.4 120 0.3 reverb
   - name: Hayden-echo

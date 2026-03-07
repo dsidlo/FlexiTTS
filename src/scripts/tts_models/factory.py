@@ -18,13 +18,13 @@ class ModelFactory:
     
     Thread Safety Status: THREAD-SAFE
     
-    All factory operations are protected by a class-level lock
-to ensure thread-safe singleton behavior.
+    All factory operations are protected by a class-level RLock
+    to ensure thread-safe singleton behavior.
     """
     
     _registry: Dict[str, Type[TTSModel]] = {}
     _instances: Dict[str, TTSModel] = {}
-    _lock = threading.Lock()  # Class-level lock for thread safety
+    _lock = threading.RLock()  # Re-entrant lock to prevent deadlock with auto-registration
     
     # Minimum VRAM required per model (MB)
     _MODEL_MEMORY_REQUIREMENTS = {

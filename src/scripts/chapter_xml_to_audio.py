@@ -17,9 +17,19 @@ from chapter_validate_xml import validate_and_fix_xml
 
 try:
     from tts_factory import create_tts_provider, TTSProviderFactory as TTSFactory
+    from tts_interface import (
+        TTSError,
+        TTSConnectionError,
+        TTSGenerationError,
+        CharacterNotSupportedError
+    )
 except ImportError as e:
     TTSFactory = None
     create_tts_provider = None
+    TTSError = None
+    TTSConnectionError = None
+    TTSGenerationError = None
+    CharacterNotSupportedError = None
     print(f"WARNING: TTS provider imports failed: {e}", file=sys.stderr)
     print("Audio generation will fail. Ensure GPU dependencies are installed.", file=sys.stderr)
 
@@ -162,11 +172,55 @@ def main():
     if not args.dry_run and create_tts_provider:
         tts_type = "remote" if args.tts_service else "local"
         print(f"Loading {tts_type} TTS provider...")
+        
+        # TTS provider configuration with timeout and retry settings
+        tts_config = {
+            "timeout": float(global_cfg.get("tts-timeout", 60.0)),
+            "max_retries": int(global_cfg.get("tts-max-retries", 3)),
+            "connection_timeout": float(global_cfg.get("tts-connection-timeout", 10.0)),
+            "generation_timeout": float(global_cfg.get("tts-generation-timeout", 120.0))
+        }
+        
         try:
-            provider = create_tts_provider(
+            import time
+            print("  [TTS] Creating remote TTS provider...")
+            provider_start = time.time()
+            from tts_factory import TTSProviderFactory
+            factory = TTSProviderFactory()
+            # Use reasonable timeout (60s) for remote generation - should be fast when cached
+            tts_config = {
+                "timeout": 60.0,  # 60 seconds for generation
+                "max_retries": 3
+            }
+            provider = factory.create_provider(
                 service_url=args.tts_service,
-                voices_dir=voices_dir
+                voices_dir=voices_dir,
+                enable_fallback=False,  # Don't create local fallback - use remote only
+                config=tts_config
             )
+            provider_elapsed = time.time() - provider_start
+            print(f"  [TTS] Provider created in {provider_elapsed:.1f}s (remote only, no fallback)")
+            
+            # Check service warmup status
+            print("  [TTS] Checking service warmup status...")
+            try:
+                from tts_service import RemoteTTSProvider
+                import asyncio
+                health_provider = RemoteTTSProvider(args.tts_service)
+                health = asyncio.run(health_provider.health_check())
+                print(f"  [TTS] Service status: {health.get('status', 'unknown')}, ready: {health.get('ready', False)}, cached: {health.get('model_cached', False)}")
+                health_provider.close()
+            except Exception as e:
+                print(f"  [TTS] Could not check warmup status: {e}")
+        except TTSConnectionError as e:
+            print(f"ERROR: TTS connection failed: {e}", file=sys.stderr)
+            raise RuntimeError(f"TTS connection failed: {e}") from e
+        except TTSGenerationError as e:
+            print(f"ERROR: TTS initialization failed: {e}", file=sys.stderr)
+            raise RuntimeError(f"TTS provider initialization failed: {e}") from e
+        except TTSError as e:
+            print(f"ERROR: TTS provider error: {e}", file=sys.stderr)
+            raise RuntimeError(f"TTS provider error: {e}") from e
         except Exception as e:
             print(f"ERROR: Failed to initialize TTS provider: {e}", file=sys.stderr)
             raise RuntimeError(f"TTS provider initialization failed: {e}") from e
@@ -176,132 +230,167 @@ def main():
             "Check that GPU dependencies are installed: pip install -r requirements.txt"
         )
 
-    chapter_clip_dir = clips_dir / xml_path.stem
-    chapter_clip_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        chapter_clip_dir = clips_dir / xml_path.stem
+        chapter_clip_dir.mkdir(parents=True, exist_ok=True)
 
-    all_generated_clips = []
+        all_generated_clips = []
 
-    for character, utts in by_character.items():
-        print(f"Generating audio for {character}...")
-        char_cfg = char_configs.get(character.lower())
-        if not char_cfg:
-            print(f"No config for {character}, skipping")
-            continue
-
-        for utt in utts:
-            base = f"chapter_{utt.chapter_num}_{utt.section_num}_{utt.dlgseq}_{utt.speaker}"
-            out_path = chapter_clip_dir / f"{base}.wav"
-
-            if args.create_missing_clips and out_path.exists():
-                print(f"  Skipping {base} (exists)")
-                all_generated_clips.append((utt, out_path, 0))
-                continue
-
+        for character, utts in by_character.items():
+            print(f"Generating audio for {character}...")
+            char_cfg = char_configs.get(character.lower())
             if not char_cfg:
+                print(f"No config for {character}, skipping")
                 continue
 
-            is_custom = "custom-voice" in char_cfg
-            if is_custom:
-                cv = char_cfg["custom-voice"]
-                lang = cv.get("language", "English")
-                base_instruct = cv.get("instruct", "")
-                instruct = f"{base_instruct}. Speak in a {utt.emotion} tone.".strip(". ")
-            else:
-                lang = "English"
-                instruct = f"Speak in a {utt.emotion} tone."
+            for utt in utts:
+                base = f"chapter_{utt.chapter_num}_{utt.section_num}_{utt.dlgseq}_{utt.speaker}"
+                out_path = chapter_clip_dir / f"{base}.wav"
 
-            print(f"  Generating {base}...")
-
-            # Validate text length limit (2K character max)
-            if len(utt.text) > 2000:
-                print(f"    ERROR: Text too long: {len(utt.text)} chars (max 2000)")
-                print(f"    Truncating...")
-                utt.text = utt.text[:2000]
-
-            if not args.dry_run and provider:
-                try:
-                    wavs, sr = provider.generate(
-                        text=utt.text,
-                        speaker=utt.speaker,
-                        emotion=utt.emotion,
-                        language=lang,
-                        output_path=out_path,
-                        instruct=instruct,
-                        char_config=char_cfg
-                    )
-                    for i, wav in enumerate(wavs):
-                        suffix = f"_s{str(i+1).zfill(3)}" if len(wavs) > 1 else ""
-                        sf.write(str(chapter_clip_dir / f"{base}{suffix}.wav"), wav, sr)
-                except Exception as e:
-                    print(f"    Error: {e}")
+                if args.create_missing_clips and out_path.exists():
+                    print(f"  Skipping {base} (exists)")
+                    all_generated_clips.append((utt, out_path, 0))
                     continue
+
+                if not char_cfg:
+                    continue
+
+                is_custom = "custom-voice" in char_cfg
+                if is_custom:
+                    cv = char_cfg["custom-voice"]
+                    lang = cv.get("language", "English")
+                    base_instruct = cv.get("instruct", "")
+                    instruct = f"{base_instruct}. Speak in a {utt.emotion} tone.".strip(". ")
+                else:
+                    lang = "English"
+                    instruct = f"Speak in a {utt.emotion} tone."
+
+                print(f"  Generating {base}...")
+                import time
+                gen_start = time.time()
+
+                # Validate text length limit (2K character max)
+                if len(utt.text) > 2000:
+                    print(f"    ERROR: Text too long: {len(utt.text)} chars (max 2000)")
+                    print(f"    Truncating...")
+                    utt.text = utt.text[:2000]
+
+                # Check if provider supports this character configuration
+                if not args.dry_run and provider:
+                    try:
+                        if char_cfg and not provider.supports_character(char_cfg):
+                            print(f"    WARNING: Provider does not fully support character config for {character}")
+                            print(f"    Attempting generation anyway...")
+                    except Exception as e:
+                        print(f"    WARNING: Could not verify character support: {e}")
+
+                    try:
+                        print(f"    [{time.strftime('%H:%M:%S')}] Starting generation...")
+                        wavs, sr = provider.generate(
+                            text=utt.text,
+                            speaker=utt.speaker,
+                            emotion=utt.emotion,
+                            language=lang,
+                            output_path=out_path,
+                            instruct=instruct,
+                            char_config=char_cfg
+                        )
+                        gen_elapsed = time.time() - gen_start
+                        print(f"    [{time.strftime('%H:%M:%S')}] Generation complete in {gen_elapsed:.1f}s")
+                        for i, wav in enumerate(wavs):
+                            suffix = f"_s{str(i+1).zfill(3)}" if len(wavs) > 1 else ""
+                            sf.write(str(chapter_clip_dir / f"{base}{suffix}.wav"), wav, sr)
+                    except CharacterNotSupportedError as e:
+                        print(f"    ERROR: Character not supported by TTS provider: {e}")
+                        continue
+                    except TTSConnectionError as e:
+                        print(f"    ERROR: TTS connection failed: {e}")
+                        print(f"    Check TTS service availability and network connectivity.")
+                        # Don't fall back - --tts-service was explicitly requested
+                        raise RuntimeError(f"TTS service connection failed: {e}") from e
+                    except TTSGenerationError as e:
+                        print(f"    ERROR: TTS generation failed: {e}")
+                        print(f"    Text may be too complex or unsupported.")
+                        continue
+                    except TTSError as e:
+                        print(f"    ERROR: TTS error: {e}")
+                        continue
+                    except Exception as e:
+                        import traceback
+                        print(f"    ERROR: Unexpected error during generation: {type(e).__name__}: {e}")
+                        traceback.print_exc()
+                        continue
+                else:
+                    print(f"    [Dry-run] Would generate: {base}")
+                    sr = 24000
+
+                all_generated_clips.append((utt, out_path, 0))
+
+                # Apply effects
+                final_effects = []
+                if "dialog-effects" in char_cfg:
+                    for name in char_cfg["dialog-effects"] if isinstance(char_cfg["dialog-effects"], list) else [char_cfg["dialog-effects"]]:
+                        final_effects.extend(dialog_effects_cfg.get(name, []))
+                final_effects.extend(char_cfg.get("sox-effects", []))
+                if final_effects and not args.dry_run:
+                    apply_sox_effects(out_path, final_effects)
+
+                if utt.post_effects and not args.dry_run:
+                    for name in utt.post_effects.split(","):
+                        effects = dialog_effects_cfg.get(name.strip())
+                        if effects:
+                            apply_sox_effects(out_path, effects)
+
+                if args.create_silent_clips and clip_separation > 0 and not args.dry_run:
+                    silence_path = chapter_clip_dir / f"chapter_{utt.chapter_num}_{utt.section_num}_{utt.dlgseq}_~silence.wav"
+                    sf.write(str(silence_path), generate_silence(clip_separation, sr), sr)
+                    silence_utt = Utterance(
+                        chapter_num=utt.chapter_num, section_num=utt.section_num, dlgseq=utt.dlgseq,
+                        speaker="~silence", emotion="neutral", text="", kind="silence"
+                    )
+                    all_generated_clips.append((silence_utt, silence_path, 999))
+
+        # Concatenate final audio
+        if all_generated_clips:
+            if args.section or args.dlgseq:
+                print("Selective regeneration - final audio not updated")
+                return
+
+            all_generated_clips.sort(key=lambda x: (x[0].section_num, x[0].dlgseq, x[2]))
+
+            if args.dry_run:
+                print(f"[Dry-run] Would create chapter audio")
             else:
-                print(f"    [Dry-run] Would generate: {base}")
-                sr = 24000
+                combined = []
+                final_sr = 24000
+                for utt, path, subseq in all_generated_clips:
+                    try:
+                        data, sr = sf.read(str(path))
+                        combined.append(data)
+                        final_sr = sr
+                        if clip_separation > 0 and not args.create_silent_clips:
+                            if (utt, path, subseq) != all_generated_clips[-1]:
+                                combined.append(generate_silence(clip_separation, sr))
+                    except Exception as e:
+                        print(f"Error reading {path}: {e}")
 
-            all_generated_clips.append((utt, out_path, 0))
+                if combined:
+                    final_path = story_audio_dir / (xml_path.stem + ".wav")
+                    sf.write(str(final_path), np.concatenate(combined), final_sr)
+                    print(f"Final audio: {final_path}")
 
-            # Apply effects
-            final_effects = []
-            if "dialog-effects" in char_cfg:
-                for name in char_cfg["dialog-effects"] if isinstance(char_cfg["dialog-effects"], list) else [char_cfg["dialog-effects"]]:
-                    final_effects.extend(dialog_effects_cfg.get(name, []))
-            final_effects.extend(char_cfg.get("sox-effects", []))
-            if final_effects and not args.dry_run:
-                apply_sox_effects(out_path, final_effects)
+                    post_effects = config.get("story-audio-post-process", {}).get("sox-effects", [])
+                    if post_effects:
+                        apply_sox_effects(final_path, post_effects if isinstance(post_effects, list) else [post_effects])
 
-            if utt.post_effects and not args.dry_run:
-                for name in utt.post_effects.split(","):
-                    effects = dialog_effects_cfg.get(name.strip())
-                    if effects:
-                        apply_sox_effects(out_path, effects)
-
-            if args.create_silent_clips and clip_separation > 0 and not args.dry_run:
-                silence_path = chapter_clip_dir / f"chapter_{utt.chapter_num}_{utt.section_num}_{utt.dlgseq}_~silence.wav"
-                sf.write(str(silence_path), generate_silence(clip_separation, sr), sr)
-                silence_utt = Utterance(
-                    chapter_num=utt.chapter_num, section_num=utt.section_num, dlgseq=utt.dlgseq,
-                    speaker="~silence", emotion="neutral", text="", kind="silence"
-                )
-                all_generated_clips.append((silence_utt, silence_path, 999))
-
-    # Concatenate final audio
-    if all_generated_clips:
-        if args.section or args.dlgseq:
-            print("Selective regeneration - final audio not updated")
-            if provider:
+    finally:
+        # Guaranteed cleanup: Close TTS provider to free resources
+        if provider:
+            try:
                 provider.close()
-            return
-
-        all_generated_clips.sort(key=lambda x: (x[0].section_num, x[0].dlgseq, x[2]))
-
-        if args.dry_run:
-            print(f"[Dry-run] Would create chapter audio")
-        else:
-            combined = []
-            final_sr = 24000
-            for utt, path, subseq in all_generated_clips:
-                try:
-                    data, sr = sf.read(str(path))
-                    combined.append(data)
-                    final_sr = sr
-                    if clip_separation > 0 and not args.create_silent_clips:
-                        if (utt, path, subseq) != all_generated_clips[-1]:
-                            combined.append(generate_silence(clip_separation, sr))
-                except Exception as e:
-                    print(f"Error reading {path}: {e}")
-
-            if combined:
-                final_path = story_audio_dir / (xml_path.stem + ".wav")
-                sf.write(str(final_path), np.concatenate(combined), final_sr)
-                print(f"Final audio: {final_path}")
-
-                post_effects = config.get("story-audio-post-process", {}).get("sox-effects", [])
-                if post_effects:
-                    apply_sox_effects(final_path, post_effects if isinstance(post_effects, list) else [post_effects])
-
-    if provider:
-        provider.close()
+                print("TTS provider closed successfully.")
+            except Exception as e:
+                print(f"Warning: Error closing TTS provider: {e}", file=sys.stderr)
 
 
 if __name__ == "__main__":

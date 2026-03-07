@@ -180,7 +180,7 @@ class TestTTSServer(unittest.TestCase):
     """Test TTS WebSocket server functionality."""
     
     @patch('websockets.server.serve')
-    async def test_server_start_stop(self, mock_serve):
+    def test_server_start_stop(self, mock_serve):
         """Test server start and stop."""
         from tts_ws_server import TTSServer
         
@@ -190,9 +190,7 @@ class TestTTSServer(unittest.TestCase):
         mock_server = MagicMock()
         mock_serve.return_value = mock_server
         
-        # Test start
-        import asyncio
-        # Can't easily test async here, but verify structure
+        # Test structure (not async functionality in unittest)
         self.assertEqual(server.port, 8765)
     
     @patch.dict('sys.modules', {'websockets': MagicMock()})
