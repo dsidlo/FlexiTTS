@@ -37,7 +37,11 @@ class TTSInterface(ABC):
         language: str,
         output_path: Path,
         instruct: str = "",
-        char_config: Optional[Dict[str, Any]] = None
+        char_config: Optional[Dict[str, Any]] = None,
+        story: Optional[str] = None,
+        chapter: Optional[str] = None,
+        section: Optional[str] = None,
+        dialog: Optional[str] = None
     ) -> tuple[List[Any], int]:
         """Generate audio from text.
         
@@ -49,6 +53,10 @@ class TTSInterface(ABC):
             output_path: Where to save the generated audio.
             instruct: Additional instruction/prompt for the TTS model.
             char_config: Character-specific configuration (optional).
+            story: Story name for tracking (optional).
+            chapter: Chapter number for tracking (optional).
+            section: Section number for tracking (optional).
+            dialog: Dialog sequence for tracking (optional).
             
         Returns:
             A tuple of (list of audio segments, sample_rate).

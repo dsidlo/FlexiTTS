@@ -20,7 +20,9 @@ vi.mock('../services/pythonBridge', () => ({
     readFile: vi.fn(),
     playSoundFile: vi.fn(),
     killProcess: vi.fn(),
+    startAndConnectTtsService: vi.fn(),
   },
+  setTtsWsStatus: vi.fn(),
 }));
 
 // Mock components

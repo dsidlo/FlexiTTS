@@ -31,9 +31,13 @@ class TestTTSServiceStartup(unittest.TestCase):
         if self.pid_file.exists():
             self.pid_file.unlink()
     
+    @patch('start_tts_service.wait_for_ready')
     @patch('subprocess.Popen')
-    def test_start_service_success(self, mock_popen):
+    def test_start_service_success(self, mock_popen, mock_wait_ready):
         """Test successful service startup."""
+        # Mock wait_for_ready to return success
+        mock_wait_ready.return_value = 0
+        
         # Mock the Popen process
         mock_process = MagicMock()
         mock_process.pid = 12345
@@ -44,10 +48,9 @@ class TestTTSServiceStartup(unittest.TestCase):
         # Import and run the function
         from start_tts_service import start_tts_service
         
-        with self.assertRaises(SystemExit) as cm:
-            start_tts_service()
+        result = start_tts_service(wait_ready=True)
         
-        self.assertEqual(cm.exception.code, 0)
+        self.assertEqual(result, 0)
         
         # Verify PID file was written
         self.assertTrue(self.pid_file.exists())
@@ -64,10 +67,10 @@ class TestTTSServiceStartup(unittest.TestCase):
         
         from start_tts_service import start_tts_service
         
-        with self.assertRaises(SystemExit) as cm:
-            start_tts_service()
+        # Process exits immediately - wait_for_ready is not called
+        result = start_tts_service(wait_ready=True)
         
-        self.assertEqual(cm.exception.code, 1)
+        self.assertEqual(result, 1)
     
     def test_start_service_script_not_found(self):
         """Test behavior when service script doesn't exist."""
@@ -81,17 +84,19 @@ class TestTTSServiceStartup(unittest.TestCase):
         try:
             from start_tts_service import start_tts_service
             
-            with self.assertRaises(SystemExit) as cm:
-                start_tts_service()
+            result = start_tts_service()
             
-            self.assertEqual(cm.exception.code, 1)
+            self.assertEqual(result, 1)
         finally:
             # Restore
             if backup_path.exists():
                 backup_path.rename(server_script)
     
-    def test_pid_file_creation(self):
+    @patch('start_tts_service.wait_for_ready')
+    def test_pid_file_creation(self, mock_wait_ready):
         """Test that PID file is created correctly."""
+        mock_wait_ready.return_value = 0
+        
         with patch('subprocess.Popen') as mock_popen:
             mock_process = MagicMock()
             mock_process.pid = 54321
@@ -100,11 +105,9 @@ class TestTTSServiceStartup(unittest.TestCase):
             
             from start_tts_service import start_tts_service
             
-            try:
-                start_tts_service()
-            except SystemExit:
-                pass
+            result = start_tts_service(wait_ready=True)
             
+            self.assertEqual(result, 0)
             self.assertTrue(self.pid_file.exists())
             self.assertEqual(self.pid_file.read_text().strip(), "54321")
 

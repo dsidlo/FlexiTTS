@@ -1,22 +1,29 @@
 import type { StoryConfig } from '../models/types';
 import jsyaml from 'js-yaml';
+import { debugLog } from '../utils/debugLogger';
 
-// Declaration to satisfy TypeScript for window.api
-declare global {
-  interface Window {
-    api?: {
-      runPythonScript: (scriptPath: string, args: string[]) => Promise<string>;
-      readFile: (filePath: string) => Promise<string>;
-      writeFile: (filePath: string, content: string) => Promise<boolean>;
-      showErrorDialog: (title: string, content: string) => Promise<void>;
-      showConfirmDialog?: (title: string, message: string, detail: string) => Promise<number>;
-      listChapterClips?: (chapterName: string) => Promise<string[]>;
-      checkChapterAudio?: (chapterName: string) => Promise<boolean>;
-      checkXmlExists?: (chapterStem: string) => Promise<boolean>;
-      listChapterFiles?: () => Promise<string[]>;
-      playSoundFile?: (filePath: string) => Promise<void>;
-      killProcess?: (matchString: string) => Promise<boolean>;
-    };
+const LOG_ID = '[pythonBridge]';
+
+// Module-level WebSocket connection status (set by useTtsAlerts hook)
+let wsConnectionStatus: { isConnected: boolean; isReady: boolean; lastConnectedAt: number | null } = {
+  isConnected: false,
+  isReady: false,
+  lastConnectedAt: null
+};
+
+/**
+ * Set WebSocket connection status from useTtsAlerts hook
+ * This allows the bridge to check service status via WebSocket when Python check fails
+ */
+export function setTtsWsStatus(connected: boolean, ready: boolean = false) {
+  debugLog.info(`${LOG_ID}:setTtsWsStatus`, 'Updating WebSocket status', { connected, ready, previous: { ...wsConnectionStatus } });
+  wsConnectionStatus.isConnected = connected;
+  wsConnectionStatus.isReady = ready;
+  if (connected) {
+    wsConnectionStatus.lastConnectedAt = Date.now();
+    debugLog.info(`${LOG_ID}:setTtsWsStatus`, 'WebSocket connected, timestamp set');
+  } else {
+    debugLog.info(`${LOG_ID}:setTtsWsStatus`, 'WebSocket disconnected, ready cleared');
   }
 }
 
@@ -94,98 +101,149 @@ export const PythonBridgeService = {
   },
 
   readChapterFile: async (filePath: string): Promise<string> => {
+    const id = `${LOG_ID}:readChapterFile`;
+    debugLog.info(id, 'ENTER readChapterFile', { filePath });
+    
     // If the python bridge exists (i.e. running inside electron), use it
     if (typeof window !== 'undefined' && window.api && window.api.readFile) {
       try {
         const fileContent = await window.api.readFile(filePath);
-        if (fileContent) return fileContent;
+        if (fileContent) {
+          debugLog.info(id, 'Successfully read file via Electron IPC', { filePath, length: fileContent.length });
+          return fileContent;
+        }
       } catch (e) {
-        console.warn(`Could not read file natively: ${filePath}`, e);
+        debugLog.exception(id, 'Electron IPC readFile', e, { filePath });
+        // Don't fall through - in production, we need the real file
+        throw new Error(`Failed to read file ${filePath}: ${e}`);
       }
     }
     
-    // Otherwise fallback to Vite import.meta.glob to read the raw file
-    console.log(`Mocking read for ${filePath}`);
+    // Fallback for browser/dev mode - try Vite import.meta.glob
+    debugLog.warn(id, 'Electron IPC not available, falling back to Vite glob', { filePath });
     
     try {
       const xmlFiles = import.meta.glob('/../../Story-Entanglement/story-xml/*.xml', { query: '?raw', import: 'default' });
       for (const path in xmlFiles) {
         if (path.includes(filePath.split('/').pop() || '')) {
           const content = await xmlFiles[path]();
+          debugLog.info(id, 'Successfully read file via Vite glob', { filePath, matchedPath: path });
           return content as string;
         }
       }
+      debugLog.error(id, 'File not found in Vite glob patterns', { filePath });
+      throw new Error(`File not found: ${filePath}`);
     } catch(e) {
-      console.warn("Failed to fetch real file via glob:", e);
+      debugLog.exception(id, 'Vite glob fallback', e, { filePath });
+      throw e;
     }
-    
-    return `<story><section><narration emotion="neutral" dlgseq="1">Fallback mock data for ${filePath}.</narration></section></story>`;
   },
 
   listChapterFiles: async (): Promise<string[]> => {
+    const id = `${LOG_ID}:listChapterFiles`;
+    debugLog.info(id, 'ENTER listChapterFiles');
+    
     if (typeof window !== 'undefined' && window.api && window.api.listChapterFiles) {
-      return await window.api.listChapterFiles();
+      try {
+        const files = await window.api.listChapterFiles();
+        debugLog.info(id, 'Successfully retrieved chapter files', { count: files?.length });
+        return files;
+      } catch (e) {
+        debugLog.exception(id, 'listChapterFiles IPC call', e);
+        throw e; // Rethrow so caller can handle appropriately
+      }
     }
     
-    console.log(`Mocking list for chapters`);
-    // Simulate real delay
-    await new Promise(resolve => setTimeout(resolve, 300));
-    
-    // Hardcode fallback paths if glob isn't working right
-    return [
-      'Story-Entanglement/story-chapters/01-Hendrix.md',
-      'Story-Entanglement/story-chapters/02-Tech.md',
-      'Story-Entanglement/story-chapters/03-Yamato.md',
-      'Story-Entanglement/story-chapters/04-Manus Labs.md'
-    ];
+    debugLog.error(id, 'window.api.listChapterFiles not available - must run in Electron');
+    throw new Error('listChapterFiles requires Electron IPC - window.api.listChapterFiles not available');
   },
 
   checkXmlExists: async (chapterStem: string): Promise<boolean> => {
+    const id = `${LOG_ID}:checkXmlExists`;
+    debugLog.info(id, 'ENTER checkXmlExists', { chapterStem });
+    
     if (typeof window !== 'undefined' && window.api && window.api.checkXmlExists) {
-      return await window.api.checkXmlExists(chapterStem);
+      try {
+        const exists = await window.api.checkXmlExists(chapterStem);
+        debugLog.info(id, 'Successfully checked XML existence', { chapterStem, exists });
+        return exists;
+      } catch (e) {
+        debugLog.exception(id, 'checkXmlExists IPC call', e, { chapterStem });
+        throw e;
+      }
     }
-    return true; // Mock true for browser testing
+    
+    debugLog.error(id, 'window.api.checkXmlExists not available', { chapterStem });
+    throw new Error('checkXmlExists requires Electron IPC');
   },
 
   readFile: async (filePath: string): Promise<string> => {
+    const id = `${LOG_ID}:readFile`;
+    debugLog.info(id, 'ENTER readFile', { filePath });
+    
     if (typeof window !== 'undefined' && window.api && window.api.readFile) {
-      return await window.api.readFile(filePath);
+      try {
+        const content = await window.api.readFile(filePath);
+        debugLog.info(id, 'Successfully read file', { filePath, length: content?.length });
+        return content;
+      } catch (e) {
+        debugLog.exception(id, 'readFile IPC call', e, { filePath });
+        throw e;
+      }
     }
-    console.warn(`Mock: Reading file ${filePath}`);
-    return `Mock content for ${filePath}`;
+    
+    debugLog.error(id, 'window.api.readFile not available', { filePath });
+    throw new Error('readFile requires Electron IPC');
   },
 
   writeChapterFile: async (filePath: string, xmlContent: string): Promise<boolean> => {
+    const id = `${LOG_ID}:writeChapterFile`;
+    debugLog.info(id, 'ENTER writeChapterFile', { filePath, contentLength: xmlContent?.length });
+    
     if (typeof window !== 'undefined' && window.api && window.api.writeFile) {
       try {
         await window.api.writeFile(filePath, xmlContent);
+        debugLog.info(id, 'Successfully wrote file', { filePath });
         return true;
       } catch (err: unknown) {
+        debugLog.exception(id, 'writeFile IPC call', err, { filePath });
         if (window.api.showErrorDialog) {
            await window.api.showErrorDialog('Save Error', (err as Error).message || 'Failed to write chapter file.');
         }
         throw err;
       }
     }
-    console.log(`Mock: Wrote file ${filePath}`, xmlContent);
-    return true;
+    
+    debugLog.error(id, 'window.api.writeFile not available', { filePath });
+    throw new Error('writeChapterFile requires Electron IPC');
   },
 
-  playAudio: async (chapterName: string, sectionNum: string, dlgseqNum: string, onGenerationComplete?: () => void, skipPlay: boolean = false): Promise<void> => {
-    console.log(`[playAudio] Starting generation/play for chapter=${chapterName} section=${sectionNum} dlgseq=${dlgseqNum}`);
+  playAudio: async (chapterName: string, sectionNum: string, dlgseqNum: string, onGenerationComplete?: () => void, skipPlay: boolean = false, onPlay?: (dataUrl: string) => void): Promise<string | void> => {
+    const id = `${LOG_ID}:playAudio`;
+    debugLog.info(id, 'ENTER playAudio', { chapterName, sectionNum, dlgseqNum, skipPlay, hasOnPlay: !!onPlay });
+    
     if (typeof window !== 'undefined' && window.api && window.api.runPythonScript) {
       try {
         // Start TTS WebSocket service for fast GPU-accelerated rendering (required)
+        debugLog.info(id, 'Calling ensureTtsService for TTS WebSocket service');
         const ttsServiceUrl = await PythonBridgeService.ensureTtsService();
+        debugLog.info(id, 'ensureTtsService completed', { ttsServiceUrl });
         
-        console.log(`[playAudio] Calling runPythonScript with chapter_xml_to_audio.py, tts-service=${ttsServiceUrl}`);
+        debugLog.info(id, 'Calling chapter_xml_to_audio.py', { 
+          script: 'src/scripts/chapter_xml_to_audio.py',
+          chapter: chapterName,
+          section: sectionNum,
+          dlgseq: dlgseqNum,
+          ttsService: ttsServiceUrl
+        });
+        
         const out = await window.api.runPythonScript('src/scripts/chapter_xml_to_audio.py', [
             `Story-Entanglement/story-xml/${chapterName}`,
             `--section`, sectionNum,
             `--dlgseq`, dlgseqNum,
             `--tts-service`, ttsServiceUrl
         ]);
-        console.log("[playAudio] Audio generation output:", out);
+        debugLog.info(id, 'Audio generation completed', { outputLength: out?.length });
 
         // Parse stdout to find the generated WAV file path
         let wavName = '';
@@ -224,76 +282,117 @@ export const PythonBridgeService = {
         }
 
         if (wavName) {
+            debugLog.info(id, 'Found WAV filename', { wavName, chapterStem: chapterName.replace('.xml', '') });
+            
             // Generation is done
-            if (onGenerationComplete) onGenerationComplete();
+            if (onGenerationComplete) {
+                debugLog.info(id, 'Calling onGenerationComplete callback');
+                onGenerationComplete();
+            }
             
             // Reconstruct the full path
-            // Format is Story-Entanglement/story-audio/clips/<chapter-stem>/<wavName>
             const chapterStem = chapterName.replace('.xml', '');
-            const fullPath = `Story-Entanglement/story-audio/clips/${chapterStem}/${wavName}`;
+            const relativePath = `Story-Entanglement/story-audio/clips/${chapterStem}/${wavName}`;
+            debugLog.info(id, 'Reconstructed audio path', { relativePath });
             
-            console.log(`[playAudio] Attempting to play parsed path: ${fullPath}`);
-            
-            // To play this in the browser, we need to read it as a buffer or use a custom protocol
+            // Client-side playback via data URL with onPlay callback
             if (!skipPlay) {
-                if (window.api && window.api.playSoundFile) {
-                    console.log(`[playAudio] Calling window.api.playSoundFile...`);
+                debugLog.info(id, 'Starting audio playback', { skipPlay, hasOnPlay: !!onPlay });
+                if (window.api && window.api.readAudioFile) {
                     try {
-                        await window.api.playSoundFile(fullPath);
-                        console.log(`[playAudio] Finished playback.`);
+                        const dataUrl = await window.api.readAudioFile(relativePath);
+                        if (onPlay) {
+                            // Use caller's play function (e.g., useAudioPlayer)
+                            debugLog.info(id, 'Using onPlay callback for audio playback');
+                            await onPlay(dataUrl);
+                        } else {
+                            // Fallback: create Audio element directly
+                            debugLog.warn(id, 'No onPlay callback, using direct Audio element');
+                            const audio = new Audio(dataUrl);
+                            await audio.play();
+                        }
+                        debugLog.info(id, 'Audio playback completed successfully');
                     } catch (playErr) {
-                        console.error(`[playAudio] Error during audio playback API call:`, playErr);
+                        debugLog.exception(id, 'readAudioFile/playback', playErr, { relativePath });
                     }
                 } else if (window.api) {
-                    console.warn(`[playAudio] Need an electron API to play ${fullPath}`);
+                    debugLog.warn(id, 'readAudioFile not available', { relativePath });
                 }
             } else {
-                console.log(`[playAudio] SkipPlay flag true. Generation complete.`);
+                debugLog.info(id, 'SkipPlay flag true, skipping playback');
             }
         } else {
-            console.error("[playAudio] Could not parse output filename from Python stdout", out);
+            debugLog.error(id, 'Failed to parse WAV filename from output', { output: out });
             throw new Error("Could not parse output filename from Python stdout");
         }
         
       } catch (err) {
-        console.error("[playAudio] Failed to generate/play audio", err);
+        debugLog.exception(id, 'playAudio main try-block', err, { chapterName, sectionNum, dlgseqNum });
         throw err;
       }
+      debugLog.info(id, 'EXIT playAudio - SUCCESS');
     } else {
-        console.log(`Mock: Generating audio for ${chapterName} s:${sectionNum} d:${dlgseqNum}...`);
-        await new Promise(resolve => setTimeout(resolve, 2000)); // Simulate generation time
+        debugLog.warn(id, 'Running in mock mode (window.api not available)');
+        await new Promise(resolve => setTimeout(resolve, 2000));
         if (onGenerationComplete) onGenerationComplete();
-        await new Promise(resolve => setTimeout(resolve, 2000)); // Simulate play time
-        console.log(`Mock: Played audio.`);
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        debugLog.info(id, 'Mock playback completed');
     }
   },
 
   listChapterClips: async (chapterName: string): Promise<string[]> => {
+    const id = `${LOG_ID}:listChapterClips`;
+    debugLog.info(id, 'ENTER listChapterClips', { chapterName });
+    
     if (typeof window !== 'undefined' && window.api && window.api.listChapterClips) {
       try {
-        return await window.api.listChapterClips(chapterName);
+        const clips = await window.api.listChapterClips(chapterName);
+        debugLog.info(id, 'Successfully listed chapter clips', { chapterName, count: clips?.length });
+        return clips;
       } catch (e) {
-        console.warn('Failed to list chapter clips', e);
+        debugLog.exception(id, 'listChapterClips IPC call', e, { chapterName });
+        throw e;
       }
     }
-    return [];
+    
+    debugLog.error(id, 'window.api.listChapterClips not available', { chapterName });
+    throw new Error('listChapterClips requires Electron IPC');
   },
 
   checkChapterAudio: async (chapterName: string): Promise<boolean> => {
+    const id = `${LOG_ID}:checkChapterAudio`;
+    debugLog.info(id, 'ENTER checkChapterAudio', { chapterName });
+    
     if (typeof window !== 'undefined' && window.api && window.api.checkChapterAudio) {
       try {
-        return await window.api.checkChapterAudio(chapterName);
+        const hasAudio = await window.api.checkChapterAudio(chapterName);
+        debugLog.info(id, 'Successfully checked chapter audio', { chapterName, hasAudio });
+        return hasAudio;
       } catch (e) {
-        console.warn('Failed to check chapter audio', e);
+        debugLog.exception(id, 'checkChapterAudio IPC call', e, { chapterName });
+        throw e;
       }
     }
-    return false;
+    
+    debugLog.error(id, 'window.api.checkChapterAudio not available', { chapterName });
+    throw new Error('checkChapterAudio requires Electron IPC');
   },
 
   cancelAudio: async (matchString: string): Promise<void> => {
+    const id = `${LOG_ID}:cancelAudio`;
+    debugLog.info(id, 'ENTER cancelAudio', { matchString });
+    
     if (typeof window !== 'undefined' && window.api && window.api.killProcess) {
-       console.log(`[PythonBridge] Attempting to kill process matching: ${matchString}`);
-       await window.api.killProcess(matchString);
+      try {
+        await window.api.killProcess(matchString);
+        debugLog.info(id, 'Successfully cancelled audio process', { matchString });
+      } catch (e) {
+        debugLog.exception(id, 'killProcess IPC call', e, { matchString });
+        throw e;
+      }
+    } else {
+      debugLog.error(id, 'window.api.killProcess not available', { matchString });
+      throw new Error('cancelAudio requires Electron IPC');
     }
   },
 
@@ -302,15 +401,38 @@ export const PythonBridgeService = {
    * @returns Promise<boolean> - true if service process exists
    */
   isTtsServiceRunning: async (): Promise<boolean> => {
+    const id = `${LOG_ID}:isTtsServiceRunning`;
+    debugLog.info(id, 'ENTER isTtsServiceRunning');
+    
+    // Check WebSocket connection status first (most reliable)
+    if (wsConnectionStatus.isConnected || 
+        (wsConnectionStatus.lastConnectedAt && Date.now() - wsConnectionStatus.lastConnectedAt < 10000)) {
+      debugLog.info(id, 'Service detected via WebSocket connection', { 
+        isConnected: wsConnectionStatus.isConnected, 
+        lastConnectedAt: wsConnectionStatus.lastConnectedAt,
+        timeSinceLastConnection: wsConnectionStatus.lastConnectedAt ? Date.now() - wsConnectionStatus.lastConnectedAt : null
+      });
+      return true;
+    }
+    
     try {
       if (typeof window !== 'undefined' && window.api && window.api.runPythonScript) {
+        debugLog.info(id, 'Running Python check script');
         const out = await window.api.runPythonScript('src/scripts/check_tts_service.py', []);
         // Service exists if output is 'ready' or 'starting' (warming up)
-        return out.includes('ready') || out.includes('starting');
+        const isRunning = out.includes('ready') || out.includes('starting');
+        debugLog.info(id, 'Python check completed', { output: out.trim(), isRunning });
+        return isRunning;
       }
     } catch (e) {
-      console.warn('TTS service check failed:', e);
+      debugLog.exception(id, 'Python service check', e);
+      // If Python check fails but WebSocket shows recent connection, trust WebSocket
+      if (wsConnectionStatus.lastConnectedAt && Date.now() - wsConnectionStatus.lastConnectedAt < 30000) {
+        debugLog.info(id, 'Falling back to WebSocket status after Python check failure');
+        return true;
+      }
     }
+    debugLog.info(id, 'Service not running (all checks failed)');
     return false;
   },
 
@@ -319,14 +441,27 @@ export const PythonBridgeService = {
    * @returns Promise<boolean> - true if service is ready
    */
   isTtsServiceReady: async (): Promise<boolean> => {
+    const id = `${LOG_ID}:isTtsServiceReady`;
+    debugLog.info(id, 'ENTER isTtsServiceReady');
+    
+    // Check WebSocket status first
+    if (wsConnectionStatus.isReady) {
+      debugLog.info(id, 'Service ready via WebSocket status');
+      return true;
+    }
+    
     try {
       if (typeof window !== 'undefined' && window.api && window.api.runPythonScript) {
+        debugLog.info(id, 'Running Python ready check');
         const out = await window.api.runPythonScript('src/scripts/check_tts_service.py', []);
-        return out.includes('ready');
+        const isReady = out.includes('ready');
+        debugLog.info(id, 'Python ready check completed', { output: out.trim(), isReady });
+        return isReady;
       }
     } catch (e) {
-      console.warn('TTS service ready check failed:', e);
+      debugLog.exception(id, 'Python ready check', e);
     }
+    debugLog.info(id, 'Service not ready');
     return false;
   },
 
@@ -335,17 +470,25 @@ export const PythonBridgeService = {
    * @returns Promise<boolean> - true if service started successfully
    */
   startTtsService: async (): Promise<boolean> => {
+    const id = `${LOG_ID}:startTtsService`;
+    debugLog.info(id, 'ENTER startTtsService');
+    
     try {
       if (typeof window !== 'undefined' && window.api && window.api.runPythonScript) {
-        // Use nohup to start service in background
+        debugLog.info(id, 'Calling start_tts_service.py via IPC');
         const out = await window.api.runPythonScript('src/scripts/start_tts_service.py', []);
         // Service started successfully or was already running
-        return out.includes('started') || out.includes('success') || out.includes('already running');
+        const success = out.includes('started') || out.includes('success') || out.includes('already running');
+        debugLog.info(id, 'start_tts_service.py completed', { success, output: out?.trim() });
+        return success;
       }
     } catch (e) {
-      console.error('Failed to start TTS service:', e);
+      debugLog.exception(id, 'startTtsService IPC call', e);
+      throw e;
     }
-    return false;
+    
+    debugLog.error(id, 'window.api.runPythonScript not available');
+    throw new Error('startTtsService requires Electron IPC');
   },
 
   /**
@@ -354,76 +497,91 @@ export const PythonBridgeService = {
    * @returns Promise<string> - service URL ws://localhost:8765 if running
    */
   ensureTtsService: async (): Promise<string> => {
+    const id = `${LOG_ID}:ensureTtsService`;
     const maxRetries = 4;
     const delays = [1000, 2000, 4000, 8000]; // 1s, 2s, 4s, 8s
     const pollInterval = 2000; // Poll every 2 seconds for readiness
     const maxWaitTime = 300000; // Max 5 minutes wait for warmup (models take time to load)
 
     const serviceUrl = 'ws://localhost:8765';
+    
+    debugLog.info(id, 'ENTER ensureTtsService', { maxRetries, maxWaitTime, pollInterval });
 
-    // First check if already ready
-    if (await PythonBridgeService.isTtsServiceReady()) {
-      console.log('[TTS] Service is already running and ready');
-      return serviceUrl;
-    }
-
-    // Check if service is running but warming up
-    if (await PythonBridgeService.isTtsServiceRunning()) {
-      console.log('[TTS] Service is running, waiting for warmup...');
-      const startTime = Date.now();
-      while (Date.now() - startTime < maxWaitTime) {
-        if (await PythonBridgeService.isTtsServiceReady()) {
-          console.log('[TTS] Service is now ready');
-          return serviceUrl;
-        }
-        await new Promise(resolve => setTimeout(resolve, pollInterval));
+    try {
+      // First check if already ready
+      debugLog.info(id, 'Checking if service is already ready');
+      if (await PythonBridgeService.isTtsServiceReady()) {
+        debugLog.info(id, 'Service already running and ready');
+        return serviceUrl;
       }
-      throw new Error('TTS service warmup timed out after 5 minutes');
+
+      // Check if service is running but warming up
+      debugLog.info(id, 'Checking if service is running but warming up');
+      if (await PythonBridgeService.isTtsServiceRunning()) {
+        debugLog.info(id, 'Service is running, waiting for warmup...');
+        const startTime = Date.now();
+        while (Date.now() - startTime < maxWaitTime) {
+          if (await PythonBridgeService.isTtsServiceReady()) {
+            debugLog.info(id, 'Service is now ready after waiting', { waitedMs: Date.now() - startTime });
+            return serviceUrl;
+          }
+          debugLog.debug(id, 'Still waiting for warmup...', { waitedMs: Date.now() - startTime });
+          await new Promise(resolve => setTimeout(resolve, pollInterval));
+        }
+        debugLog.error(id, 'TTS service warmup timed out after 5 minutes');
+        throw new Error('TTS service warmup timed out after 5 minutes');
+      }
+    } catch (e) {
+      debugLog.exception(id, 'ensureTtsService initial checks', e);
+      throw e;
     }
 
-    console.log('[TTS] Service not running, attempting to start...');
+    debugLog.info(id, 'Service not running, attempting to start...');
 
     for (let attempt = 0; attempt < maxRetries; attempt++) {
+      debugLog.info(id, `Attempting to start service (attempt ${attempt + 1}/${maxRetries})`);
       try {
         const started = await PythonBridgeService.startTtsService();
         
         if (started) {
-          console.log(`[TTS] Service start command completed on attempt ${attempt + 1}`);
+          debugLog.info(id, `Service start command completed on attempt ${attempt + 1}`);
           
           // Poll for service to be ready (it may still be warming up)
           const startTime = Date.now();
           while (Date.now() - startTime < maxWaitTime) {
             if (await PythonBridgeService.isTtsServiceReady()) {
-              console.log(`[TTS] Service is now ready (attempt ${attempt + 1})`);
+              debugLog.info(id, `Service is now ready (attempt ${attempt + 1})`);
               return serviceUrl;
             }
             if (!(await PythonBridgeService.isTtsServiceRunning())) {
-              console.log(`[TTS] Service process disappeared`);
+              debugLog.error(id, `Service process disappeared during warmup`);
               break; // Service died, retry
             }
+            debugLog.debug(id, `Waiting for service ready...`, { waitedMs: Date.now() - startTime });
             await new Promise(resolve => setTimeout(resolve, pollInterval));
           }
         }
 
         if (attempt < maxRetries - 1) {
-          console.log(`[TTS] Start attempt ${attempt + 1} incomplete, waiting ${delays[attempt]}ms before retry...`);
+          debugLog.info(id, `Start attempt ${attempt + 1} incomplete, waiting before retry`, { waitMs: delays[attempt] });
           await new Promise(resolve => setTimeout(resolve, delays[attempt]));
         }
       } catch (e) {
-        console.error(`[TTS] Attempt ${attempt + 1} error:`, e);
+        debugLog.exception(id, `startTtsService attempt ${attempt + 1}`, e);
         if (attempt === maxRetries - 1) throw e;
         await new Promise(resolve => setTimeout(resolve, delays[attempt]));
       }
     }
 
     // All attempts failed
+    debugLog.warn(id, 'All start attempts failed, checking final state');
     const isRunning = await PythonBridgeService.isTtsServiceRunning();
     if (isRunning) {
-      // Service is running but not ready - show warning but don't throw
-      console.warn('[TTS] Service is running but not ready after all attempts');
+      debugLog.warn(id, 'Service is running but not ready after all attempts');
       return serviceUrl; // Return URL anyway so UI can connect and receive alerts
     }
 
+    debugLog.error(id, 'Failed to start TTS service after all attempts');
     const userMessage = 'Unable to start the TTS service after multiple attempts. ' +
       'Please check that:\n' +
       '1. Python dependencies are installed (pip install -r requirements.txt)\n' +
@@ -437,5 +595,71 @@ export const PythonBridgeService = {
     );
     
     throw new Error('TTS service failed to start after ' + maxRetries + ' attempts');
+  },
+
+  /**
+   * Start TTS service and enable WebSocket connection as soon as service is running.
+   * Returns true if service is running (WebSocket will connect), false otherwise.
+   * @param onRunningCallback - Called when service is running (enables WebSocket)
+   * @returns Promise<boolean> - true if service was started
+   */
+  startAndConnectTtsService: async (onRunningCallback?: (ready: boolean) => void): Promise<boolean> => {
+    const id = `${LOG_ID}:startAndConnectTtsService`;
+    const pollInterval = 2000;
+    const maxStartTime = 60000; // 60 seconds to start process
+    const maxWaitTime = 300000; // 5 minutes for warmup
+    
+    debugLog.info(id, 'ENTER startAndConnectTtsService', { maxStartTime, maxWaitTime, pollInterval });
+    
+    try {
+      // Check if already running
+      debugLog.info(id, 'Checking if service is already running');
+      if (await PythonBridgeService.isTtsServiceRunning()) {
+        debugLog.info(id, 'Service already running, invoking onRunningCallback');
+        onRunningCallback?.(true);
+        return true;
+      }
+
+      // Start the service
+      debugLog.info(id, 'Starting TTS service...');
+      const started = await PythonBridgeService.startTtsService();
+      
+      if (!started) {
+        debugLog.error(id, 'Failed to start service');
+        return false;
+      }
+      debugLog.info(id, 'Service start command succeeded, waiting for it to be running');
+
+      // Poll for service to be running (process exists, WebSocket accepting)
+      const startTime = Date.now();
+      while (Date.now() - startTime < maxStartTime) {
+        if (await PythonBridgeService.isTtsServiceRunning()) {
+          debugLog.info(id, 'Service is running, enabling WebSocket connection');
+          // Enable WebSocket NOW - this allows receiving warmup alerts
+          onRunningCallback?.(true);
+          
+          // Continue polling for full readiness (warmup complete)
+          const warmupStart = Date.now();
+          while (Date.now() - warmupStart < maxWaitTime) {
+            if (await PythonBridgeService.isTtsServiceReady()) {
+              debugLog.info(id, 'Service is fully ready (warmup complete)', { waitedMs: Date.now() - warmupStart });
+              return true;
+            }
+            debugLog.debug(id, 'Waiting for warmup complete...', { waitedMs: Date.now() - warmupStart });
+            await new Promise(resolve => setTimeout(resolve, pollInterval));
+          }
+          debugLog.warn(id, 'Warmup timed out, but service is running', { waitedMs: Date.now() - warmupStart });
+          return true; // Still return true since service is running
+        }
+        debugLog.debug(id, 'Waiting for service to start...', { waitedMs: Date.now() - startTime });
+        await new Promise(resolve => setTimeout(resolve, pollInterval));
+      }
+
+      debugLog.error(id, 'Service failed to start within timeout', { waitedMs: Date.now() - startTime });
+      return false;
+    } catch (e) {
+      debugLog.exception(id, 'startAndConnectTtsService', e);
+      return false;
+    }
   }
 };

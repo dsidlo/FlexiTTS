@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import type { DialogElement } from '../models/types';
 import { getColorForCharacter } from '../utils/colors';
+import { useAudioPlayer } from '../hooks/useAudioPlayer';
 
 import { PythonBridgeService } from '../services/pythonBridge';
 
@@ -26,8 +27,10 @@ export const DialogBar: React.FC<DialogBarProps> = ({
   const [editingAttr, setEditingAttr] = useState<string | null>(null);
   const [attrEditValue, setAttrEditValue] = useState<string>('');
   const [isGeneratingAudio, setIsGeneratingAudio] = useState(false);
-  const [isPlayingAudio, setIsPlayingAudio] = useState(false);
   const [isEditingCharacter, setIsEditingCharacter] = useState(false);
+  
+  // Client-side audio player hook
+  const { isPlaying: isPlayingAudio, play: playAudio, stop: stopAudio } = useAudioPlayer();
 
   const bgColor = getColorForCharacter(dialog.character, parseInt(dialog.id) || 0);
 
@@ -180,8 +183,8 @@ export const DialogBar: React.FC<DialogBarProps> = ({
               
               setIsGeneratingAudio(true);
               try {
-                  // Pass false to play audio immediately after generation
-                  await PythonBridgeService.playAudio(chapterName, sectionNum, dlgseq, undefined, false); 
+                  // Pass playAudio as the onPlay callback to use useAudioPlayer state management
+                  await PythonBridgeService.playAudio(chapterName, sectionNum, dlgseq, undefined, false, playAudio); 
                   if (onRefreshClips) onRefreshClips();
               } finally {
                   setIsGeneratingAudio(false);
@@ -231,39 +234,34 @@ export const DialogBar: React.FC<DialogBarProps> = ({
             <button 
               onClick={async (e) => { 
                 e.stopPropagation(); 
-                const chapterName = chapterFileName?.replace('.md', '.xml') || 'Unknown.xml';
                 
                 if (isPlayingAudio) {
-                    await PythonBridgeService.cancelAudio(chapterName);
-                    setIsPlayingAudio(false);
+                    stopAudio();
                     return;
                 }
                 
-                setIsPlayingAudio(true);
+                // Construct the file path
+                const chapterName = chapterFileName?.replace('.md', '.xml') || 'Unknown.xml';
+                const sectionNum = (dialog.sectionId || '1').padStart(3, '0');
+                const dlgseq = dialog.id.replace('dialog-', '').padStart(3, '0');
+                const character = dialog.character === 'Narrator' ? 'narrator' : dialog.character;
+                const chapterStem = chapterName.replace('.xml', '');
+                const chapMatch = chapterName.match(/(\d+)/);
+                const chapNum = chapMatch ? chapMatch[1].padStart(3, '0') : '000';
+                
+                const wavName = `chapter_${chapNum}_${sectionNum}_${dlgseq}_${character}.wav`;
+                const relativePath = `Story-Entanglement/story-audio/clips/${chapterStem}/${wavName}`;
+                
+                // Read audio file via Electron IPC and play as data URL
                 try {
-                    // Try to guess the wav file format based on the standard python output
-                    // e.g. chapter_001_001_001_narrator.wav
-                    // Or we can let pythonBridge have a direct play existing audio function.
-                    const sectionNum = (dialog.sectionId || '1').padStart(3, '0');
-                    const dlgseq = dialog.id.replace('dialog-', '').padStart(3, '0');
-                    const character = dialog.character === 'Narrator' ? 'narrator' : dialog.character;
-                    const chapterStem = chapterName.replace('.xml', '');
-                    const chapMatch = chapterName.match(/(\d+)/);
-                    const chapNum = chapMatch ? chapMatch[1].padStart(3, '0') : '000';
-                    
-                    // Possible filename format based on chapter_xml_to_audio.py:
-                    // chapter_{chapter_num}_{section_num}_{dlgseq}_{speaker}.wav
-                    const wavName = `chapter_${chapNum}_${sectionNum}_${dlgseq}_${character}.wav`;
-                    const fullPath = `Story-Entanglement/story-audio/clips/${chapterStem}/${wavName}`;
-                    
-                    if (window.api && window.api.playSoundFile) {
-                        await window.api.playSoundFile(fullPath);
-                    } else {
-                        console.log("Mock Play", fullPath);
-                        await new Promise(r => setTimeout(r, 1000));
-                    }
-                } finally {
-                    setIsPlayingAudio(false);
+                  const dataUrl = await window.api?.readAudioFile?.(relativePath);
+                  if (dataUrl) {
+                    await playAudio(dataUrl);
+                  } else {
+                    console.error('Failed to read audio file: no data returned');
+                  }
+                } catch (err) {
+                  console.error('Failed to play audio:', err);
                 }
               }}
               style={{ 
@@ -286,7 +284,7 @@ export const DialogBar: React.FC<DialogBarProps> = ({
                   width: '10px',
                   height: '10px',
                   backgroundColor: 'rgba(255,100,100,0.9)'
-                }}></span>
+                }}>■</span>
               ) : '▶'}
             </button>
           )}

@@ -4,25 +4,21 @@
 	  Alice walked into the room.
 	</narration>
 	<dialog character="Alice" emotion="friendly" dlgseq="2">
-	  "Hello," she said.
+	  Hello,
 	</dialog>
-  </section>
-  <section seq="2">
-	<narration emotion="ominous" dlgseq="3">
+	<narration emotion="mysterious" dlgseq="3">
 	  The room was dark and mysterious.
 	</narration>
   </section>
-  <section seq="3">
-	<dialog character="Bob" emotion="startled" dlgseq="4">
-	  "Who's there?"
+  <section seq="2">
+	<dialog character="Bob" emotion="alert" dlgseq="4">
+	  Who's there?
 	</dialog>
 	<narration emotion="neutral" dlgseq="5">
 	  called Bob from the corner.
 	</narration>
-  </section>
-  <section seq="4">
 	<dialog character="Alice" emotion="reassuring" dlgseq="6">
-	  "It's just me," Alice replied.
+	  It's just me,
 	</dialog>
   </section>
 </story>

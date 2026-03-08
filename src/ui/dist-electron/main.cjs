@@ -46,15 +46,37 @@ let isShuttingDown = false;
 // Kill all active Python processes
 function killAllActiveProcesses() {
     console.log(`[Cleanup] Killing ${activeProcesses.size} active Python processes...`);
-    Array.from(activeProcesses.entries()).forEach(([id, proc]) => {
+    const procsToKill = Array.from(activeProcesses.entries());
+    activeProcesses.clear(); // Clear immediately to prevent re-kill attempts
+    procsToKill.forEach(([id, proc]) => {
         try {
-            console.log(`[Cleanup] Killing ${id} (PID ${proc.pid})`);
-            proc.kill('SIGTERM');
-            // Force kill after 2 seconds if still running
-            setTimeout(() => {
-                if (proc.pid && !proc.killed) {
+            if (proc.pid && !proc.killed) {
+                console.log(`[Cleanup] Killing ${id} (PID ${proc.pid})`);
+                proc.kill('SIGTERM');
+                // Force kill after 2 seconds if still running
+                setTimeout(() => {
                     try {
                         process.kill(proc.pid, 'SIGKILL');
+                    }
+                    catch (e) {
+                        // Already dead
+                    }
+                }, 2000);
+            }
+        }
+        catch (e) {
+            console.log(`[Cleanup] Failed to kill ${id}:`, e);
+        }
+    });
+    // Also kill TTS warmup process if running
+    if (ttsServiceProcess?.pid && !ttsServiceProcess.killed) {
+        try {
+            console.log(`[Cleanup] Killing TTS warmup process (PID ${ttsServiceProcess.pid})`);
+            ttsServiceProcess.kill('SIGTERM');
+            setTimeout(() => {
+                if (ttsServiceProcess?.pid && !ttsServiceProcess.killed) {
+                    try {
+                        process.kill(ttsServiceProcess.pid, 'SIGKILL');
                     }
                     catch (e) {
                         // Already dead
@@ -63,10 +85,51 @@ function killAllActiveProcesses() {
             }, 2000);
         }
         catch (e) {
-            console.log(`[Cleanup] Failed to kill ${id}:`, e);
+            console.log('[Cleanup] Failed to kill TTS warmup process:', e);
         }
+    }
+}
+// Force exit after cleanup timeout
+function forceExitAfterDelay() {
+    setTimeout(() => {
+        console.log('[App] Force quitting after cleanup timeout');
+        process.exit(0);
+    }, 5000);
+}
+// Kill dev server processes (vite, npm, concurrently) when app exits
+function killDevServerProcesses() {
+    const { exec } = require('child_process');
+    console.log('[Cleanup] Killing dev server processes...');
+    // Kill vite dev server on port 5173
+    exec('pkill -f "vite --port 5173" 2>/dev/null || true', (err) => {
+        if (!err)
+            console.log('[Cleanup] Vite dev server killed');
     });
-    activeProcesses.clear();
+    // Kill npm processes related to our Electron app
+    exec('pkill -f "npm run electron:dev" 2>/dev/null || true', () => { });
+    exec('pkill -f "concurrently" 2>/dev/null || true', () => { });
+    exec('pkill -f "wait-on" 2>/dev/null || true', () => { });
+    // Try to kill by parent process chain - find and kill the npm start process
+    // Get our parent PID and traverse up
+    try {
+        const ppid = process.ppid;
+        if (ppid) {
+            console.log(`[Cleanup] Our parent PID is ${ppid}`);
+            // Kill the parent process group (npm/concurrently)
+            setTimeout(() => {
+                try {
+                    process.kill(ppid, 'SIGTERM');
+                    console.log(`[Cleanup] Sent SIGTERM to parent ${ppid}`);
+                }
+                catch (e) {
+                    // Parent may already be dead
+                }
+            }, 500);
+        }
+    }
+    catch (e) {
+        console.log('[Cleanup] Could not kill parent process:', e);
+    }
 }
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 try {
@@ -109,20 +172,21 @@ async function warmupTTSService() {
     console.log('[TTS Warmup] Starting TTS service warmup...');
     const projectRoot = path.resolve(__dirname, '../../../');
     return new Promise((resolve) => {
-        const warmupProcess = (0, child_process_1.spawn)('uv', ['run', 'python', 'src/scripts/start_tts_service.py'], {
+        ttsServiceProcess = (0, child_process_1.spawn)('uv', ['run', 'python', 'src/scripts/start_tts_service.py'], {
             cwd: projectRoot,
             stdio: 'pipe'
         });
         let output = '';
-        warmupProcess.stdout.on('data', (data) => {
+        ttsServiceProcess.stdout?.on('data', (data) => {
             output += data.toString();
             console.log(`[TTS Warmup] ${data.toString().trim()}`);
         });
-        warmupProcess.stderr.on('data', (data) => {
+        ttsServiceProcess.stderr?.on('data', (data) => {
             console.error(`[TTS Warmup Error] ${data.toString().trim()}`);
         });
-        warmupProcess.on('close', (code) => {
+        ttsServiceProcess.on('close', (code) => {
             console.log(`[TTS Warmup] Process exited with code ${code}`);
+            ttsServiceProcess = null;
             resolve();
         });
         // Timeout after 5 minutes (should be enough for warmup)
@@ -143,20 +207,24 @@ electron_1.app.on('window-all-closed', () => {
     console.log('[App] window-all-closed: Cleaning up...');
     // Kill all active Python processes
     killAllActiveProcesses();
-    // Stop TTS service
+    // Stop TTS service (runs in background, don't wait)
     const projectRoot = path.resolve(__dirname, '../../../');
-    try {
-        const { execSync } = require('child_process');
-        execSync('uv run python src/scripts/stop_tts_service.py --silent', {
-            cwd: projectRoot,
-            timeout: 10000,
-            stdio: 'ignore'
-        });
-        console.log('[App] TTS service stopped');
-    }
-    catch (e) {
-        console.log('[App] TTS service stop (may not be running)');
-    }
+    const { exec } = require('child_process');
+    exec('uv run python src/scripts/stop_tts_service.py --silent', {
+        cwd: projectRoot,
+        timeout: 10000
+    }, (err) => {
+        if (err) {
+            console.log('[App] TTS service stop (may not be running)');
+        }
+        else {
+            console.log('[App] TTS service stopped');
+        }
+    });
+    // Kill dev server processes (vite, npm, concurrently)
+    killDevServerProcesses();
+    // Force exit after delay to ensure app quits
+    forceExitAfterDelay();
     if (process.platform !== 'darwin') {
         electron_1.app.quit();
     }
@@ -167,20 +235,24 @@ electron_1.app.on('before-quit', (event) => {
     console.log('[App] before-quit: Cleaning up...');
     // Kill all active Python processes
     killAllActiveProcesses();
-    // Stop TTS service
+    // Stop TTS service (async - don't block)
     const projectRoot = path.resolve(__dirname, '../../../');
-    try {
-        const { execSync } = require('child_process');
-        execSync('uv run python src/scripts/stop_tts_service.py --silent', {
-            cwd: projectRoot,
-            timeout: 10000,
-            stdio: 'ignore'
-        });
-        console.log('[App] TTS service stopped');
-    }
-    catch (e) {
-        console.log('[App] TTS service stop (may not be running)');
-    }
+    const { exec } = require('child_process');
+    exec('uv run python src/scripts/stop_tts_service.py --silent', {
+        cwd: projectRoot,
+        timeout: 10000
+    }, (err) => {
+        if (err) {
+            console.log('[App] TTS service stop (may not be running)');
+        }
+        else {
+            console.log('[App] TTS service stopped');
+        }
+    });
+    // Kill dev server processes (vite, npm, concurrently)
+    killDevServerProcesses();
+    // Force exit after delay
+    forceExitAfterDelay();
 });
 electron_1.app.on('activate', () => {
     if (electron_1.BrowserWindow.getAllWindows().length === 0) {
@@ -267,14 +339,33 @@ electron_1.ipcMain.handle('read-file', async (event, filePath) => {
     }
 });
 electron_1.ipcMain.handle('write-file', async (event, filePath, content) => {
-    const projectRoot = path.resolve(__dirname, '../../../');
-    const fullPath = path.join(projectRoot, filePath);
     try {
+        // Handle absolute paths (starting with /) vs relative paths
+        const fullPath = path.isAbsolute(filePath)
+            ? filePath
+            : path.join(path.resolve(__dirname, '../../../'), filePath);
+        // Ensure directory exists
+        const dir = path.dirname(fullPath);
+        if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
+        }
         fs.writeFileSync(fullPath, content, 'utf-8');
         return true;
     }
     catch (err) {
         throw new Error(`Failed to write file ${filePath}: ${err.message}`);
+    }
+});
+electron_1.ipcMain.handle('read-audio-file', async (event, filePath) => {
+    const projectRoot = path.resolve(__dirname, '../../../');
+    const fullPath = path.join(projectRoot, filePath);
+    try {
+        const data = fs.readFileSync(fullPath);
+        const base64 = data.toString('base64');
+        return `data:audio/wav;base64,${base64}`;
+    }
+    catch (err) {
+        throw new Error(`Failed to read audio file ${filePath}: ${err.message}`);
     }
 });
 electron_1.ipcMain.handle('list-chapter-files', async () => {

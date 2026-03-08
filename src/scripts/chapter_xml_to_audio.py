@@ -135,6 +135,7 @@ def main():
 
     global_cfg = config.get("global", {})
     story_dir = Path(global_cfg.get("story-dir", "."))
+    story_name = story_dir.name.replace("-", " ").title() if story_dir.name != "." else "Story"
     story_xml_dir = story_dir / global_cfg.get("story-xml", "story-xml")
     story_audio_dir = story_dir / global_cfg.get("story-audio", "story-audio")
     clips_dir = story_dir / global_cfg.get("clips", "clips")
@@ -293,7 +294,11 @@ def main():
                             language=lang,
                             output_path=out_path,
                             instruct=instruct,
-                            char_config=char_cfg
+                            char_config=char_cfg,
+                            story=story_name,
+                            chapter=utt.chapter_num,
+                            section=utt.section_num,
+                            dialog=utt.dlgseq
                         )
                         gen_elapsed = time.time() - gen_start
                         print(f"    [{time.strftime('%H:%M:%S')}] Generation complete in {gen_elapsed:.1f}s")

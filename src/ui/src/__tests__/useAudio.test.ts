@@ -23,18 +23,41 @@ vi.mock('../services/pythonBridge', () => ({
 Object.defineProperty(window, 'api', {
   value: {
     runPythonScript: vi.fn(),
-    playSoundFile: vi.fn(),
+    readAudioFile: vi.fn(),
     killProcess: vi.fn(),
   },
   writable: true,
 });
 
+// Mock HTML5 Audio element
+const mockAudioPlay = vi.fn().mockResolvedValue(undefined);
+const mockAudioPause = vi.fn();
+
+class MockAudio {
+  src = '';
+  play = mockAudioPlay;
+  pause = mockAudioPause;
+  addEventListener = vi.fn();
+  removeEventListener = vi.fn();
+  
+  constructor(url: string) {
+    this.src = url;
+  }
+}
+
+Object.defineProperty(globalThis, 'Audio', {
+  value: MockAudio,
+  writable: true,
+});
+
 describe('useAudio', () => {
   const mockRunPython = safeMock(window.api?.runPythonScript);
-  const mockPlaySound = safeMock(window.api?.playSoundFile);
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // Reset Audio mock
+    mockAudioPlay.mockClear();
+    mockAudioPause.mockClear();
     // Default mock implementations for TTS service methods
     vi.mocked(PythonBridgeService.isTtsServiceRunning).mockResolvedValue(true);
     vi.mocked(PythonBridgeService.startTtsService).mockResolvedValue(true);
@@ -207,6 +230,9 @@ describe('useAudio', () => {
       // The non-greedy .*? should match the path and capture the filename
       mockRunPython.mockResolvedValueOnce('saved to output/clips/chapter_001_002_003_bob.wav');
       
+      // Mock readAudioFile to return a data URL
+      vi.mocked(window.api?.readAudioFile).mockResolvedValueOnce('data:audio/wav;base64,dummy');
+      
       await act(async () => {
         await result.current.generateAudio({
           chapterName: 'chapter_001.xml',
@@ -216,10 +242,11 @@ describe('useAudio', () => {
         });
       });
       
-      // Should parse and play the file - note: depends on regex behavior in useAudio.ts
-      // The regex saved to .*?(chapter_.*?\.wav) with non-greedy matching
-      // captures minimal chars, so it may capture 'chapter_001_002_003_bob.wav'
-      expect(mockPlaySound).toHaveBeenCalled();
+      // Should parse and read the audio file, then play via HTML5 Audio
+      expect(window.api?.readAudioFile).toHaveBeenCalledWith(
+        'Story-Entanglement/story-audio/clips/chapter_001/chapter_001_002_003_bob.wav'
+      );
+      expect(mockAudioPlay).toHaveBeenCalled();
     });
 
     it('should throw error if filename cannot be parsed', async () => {
@@ -258,7 +285,9 @@ describe('useAudio', () => {
         });
       });
       
-      expect(mockPlaySound).not.toHaveBeenCalled();
+      // Should not read audio file or play when skipPlay is true
+      expect(window.api?.readAudioFile).not.toHaveBeenCalled();
+      expect(mockAudioPlay).not.toHaveBeenCalled();
     });
 
     it('should use mock fallback when window.api is unavailable', async () => {

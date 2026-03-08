@@ -242,7 +242,11 @@ class RemoteTTSProvider(TTSInterface):
         language: str,
         output_path: Path,
         instruct: str = "",
-        char_config: Optional[Dict[str, Any]] = None
+        char_config: Optional[Dict[str, Any]] = None,
+        chapter: Optional[str] = None,
+        section: Optional[str] = None,
+        dialog: Optional[str] = None,
+        story: Optional[str] = None
     ) -> Tuple[List[np.ndarray], int]:
         """Generate audio using remote WebSocket service.
 
@@ -254,6 +258,10 @@ class RemoteTTSProvider(TTSInterface):
             output_path: Where to save audio.
             instruct: Instruction for TTS model.
             char_config: Character configuration.
+            chapter: Chapter number for alerts.
+            section: Section number for alerts.
+            dialog: Dialog sequence for alerts.
+            story: Story name for alerts.
 
         Returns:
             Tuple of (audio segments list, sample rate).
@@ -265,7 +273,8 @@ class RemoteTTSProvider(TTSInterface):
         try:
             return asyncio.run(
                 self._generate_remote(
-                    text, speaker, emotion, language, output_path, instruct, char_config
+                    text, speaker, emotion, language, output_path, instruct, char_config,
+                    chapter, section, dialog, story
                 )
             )
         except TTSConnectionError as e:
@@ -283,7 +292,11 @@ class RemoteTTSProvider(TTSInterface):
         language: str,
         output_path: Path,
         instruct: str,
-        char_config: Optional[Dict[str, Any]]
+        char_config: Optional[Dict[str, Any]],
+        chapter: Optional[str] = None,
+        section: Optional[str] = None,
+        dialog: Optional[str] = None,
+        story: Optional[str] = None
     ) -> Tuple[List[np.ndarray], int]:
         """Async internal method for remote generation."""
         websocket = await self._connect_with_retry()
@@ -298,6 +311,16 @@ class RemoteTTSProvider(TTSInterface):
                 "instruct": instruct,
                 "output_format": "wav"
             }
+            
+            # Add context metadata for alerts
+            if story:
+                request["story"] = story
+            if chapter:
+                request["chapter"] = chapter
+            if section:
+                request["section"] = section
+            if dialog:
+                request["dialog"] = dialog
 
             # Add character config if provided
             if char_config:

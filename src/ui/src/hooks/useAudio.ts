@@ -143,10 +143,14 @@ export const useAudio = (): UseAudioReturn => {
           
           if (!skipPlay && !isCancelledRef.current) {
             const chapterStem = chapterName.replace('.xml', '');
-            const fullPath = `Story-Entanglement/story-audio/clips/${chapterStem}/${wavName}`;
+            const relativePath = `Story-Entanglement/story-audio/clips/${chapterStem}/${wavName}`;
             
-            if (window.api?.playSoundFile) {
-              await window.api.playSoundFile(fullPath);
+            // Read audio file via Electron IPC and play as data URL (client-side)
+            if (window.api?.readAudioFile) {
+              const dataUrl = await window.api.readAudioFile(relativePath);
+              // Create temporary audio element for playback
+              const audio = new Audio(dataUrl);
+              await audio.play();
             }
           }
         } else {

@@ -46,12 +46,16 @@ class TestIntegrationTTSServiceManagement(unittest.TestCase):
                     self.pid_file.unlink()
     
     @patch('subprocess.Popen')
-    def test_service_startup_integration(self, mock_popen):
+    @patch('start_tts_service.wait_for_ready')
+    def test_service_startup_integration(self, mock_wait_ready, mock_popen):
         """Test complete service startup from cold state."""
         # Verify service is not running
         self.assertFalse(self.pid_file.exists())
         
-        # Mock the startup to avoid actually starting a server
+        # Mock wait_for_ready to return success immediately
+        mock_wait_ready.return_value = 0
+        
+        # Mock the startup process
         mock_process = MagicMock()
         mock_process.pid = 12345
         mock_process.wait.side_effect = subprocess.TimeoutExpired("wait", 2)
@@ -61,14 +65,16 @@ class TestIntegrationTTSServiceManagement(unittest.TestCase):
         sys.path.insert(0, str(self.script_dir))
         from start_tts_service import start_tts_service
         
-        with self.assertRaises(SystemExit) as cm:
-            start_tts_service()
+        # Call the function directly (doesn't call sys.exit when imported)
+        result = start_tts_service(wait_ready=True)
         
-        # Verify successful exit
-        self.assertEqual(cm.exception.code, 0)
+        # Verify successful return code
+        self.assertEqual(result, 0)
         
         # Verify it attempted to start
         mock_popen.assert_called_once()
+        # Verify wait_for_ready was called
+        mock_wait_ready.assert_called_once()
     
     def test_health_check_flow(self):
         """Test health check when service is in various states."""

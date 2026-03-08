@@ -37,36 +37,43 @@ function App() {
 
   // Alert system state
   const { alerts: alertList, addAlert, removeAlert } = useAlerts();
-  const [ttsServiceReady, setTtsServiceReady] = useState(false);
+  const [, setTtsServiceReady] = useState(false);  // State tracked but value unused (WebSocket always enabled)
   
   // Ref to prevent double initialization in React StrictMode
   const initStarted = useRef(false);
+  
+  // Ref to track if we've already shown TTS ready alert
+  const ttsReadyShownRef = useRef(false);
 
-  // Subscribe to internal alerts
-  useEffect(() => {
-    const unsubscribe = alertService.subscribe((message, type, duration) => {
-      addAlert(message, type, 'internal', duration);
-    });
-    return unsubscribe;
-  }, [addAlert]);
-
-  // Subscribe to TTS service alerts via WebSocket (only when service is ready)
+  // TTS alert handlers (defined before useEffects)
   const handleTtsAlert = useCallback((alert: { alertType: AlertType; message: string; metadata?: Record<string, string> }) => {
-    let fullMsg = alert.message;
+    // Build rich context message from metadata
+    const parts: string[] = [];
     if (alert.metadata) {
-      if (alert.metadata.character) fullMsg += ` - Character: ${alert.metadata.character}`;
-      if (alert.metadata.chapter) fullMsg += ` - Chapter ${alert.metadata.chapter}`;
-      if (alert.metadata.section) fullMsg += `, Section ${alert.metadata.section}`;
-      if (alert.metadata.dialog) fullMsg += `, Dialog ${alert.metadata.dialog}`;
+      if (alert.metadata.story) parts.push(alert.metadata.story);
+      if (alert.metadata.chapter) parts.push(`Ch${alert.metadata.chapter}`);
+      if (alert.metadata.section) parts.push(`Sec${alert.metadata.section}`);
+      if (alert.metadata.dialog) parts.push(`Dlg${alert.metadata.dialog}`);
+      if (alert.metadata.character && alert.metadata.character !== 'narrator') {
+        parts.push(alert.metadata.character);
+      }
+    }
+    
+    let fullMsg = alert.message;
+    if (parts.length > 0) {
+      fullMsg = `${alert.message} – ${parts.join(", ")}`;
     }
     addAlert(fullMsg, alert.alertType, 'tts-service');
   }, [addAlert]);
 
   const handleTtsStatus = useCallback((status: { status: string; ready: boolean }) => {
+    // Only update internal state, don't show alerts for status messages
+    // (status alerts come via HTTP channel to avoid duplicates)
     if (status.ready) {
-      alerts.success('TTS Service: Ready');
-    } else if (status.status === 'warming_up') {
-      alerts.info('TTS Service: Warming up...');
+      setTtsServiceReady(true);
+      ttsReadyShownRef.current = true;
+    } else if (status.status === 'warming_up' || status.status === 'starting') {
+      setTtsServiceReady(false);
     }
   }, []);
 
@@ -79,8 +86,16 @@ function App() {
     console.log('[App] Disconnected from TTS alerts');
   }, []);
 
+  // Subscribe to internal alerts
+  useEffect(() => {
+    const unsubscribe = alertService.subscribe((message, type, duration) => {
+      addAlert(message, type, 'internal', duration);
+    });
+    return unsubscribe;
+  }, [addAlert]);
+  
   useTtsAlerts({
-    enabled: ttsServiceReady,
+    enabled: true,  // Always enabled to receive startup alerts via WebSocket
     onAlert: handleTtsAlert,
     onStatus: handleTtsStatus,
     onConnect: handleTtsConnect,
@@ -110,13 +125,12 @@ function App() {
         setChapterList(list);
         if (list.length > 0) await handleChapterSelect(list[0], cfg);
         
-        // Start TTS service and enable alerts once it's ready
+        // Start TTS service - service will broadcast warmup alerts via WebSocket
         alerts.info('Starting TTS Service...', 5000);
-        const ttsUrl = await PythonBridgeService.ensureTtsService();
-        if (ttsUrl) {
-          alerts.success('TTS Service: Started', 3000);
-          setTtsServiceReady(true);
-        } else {
+        
+        // enableWebSocket connects when service is running (not waiting for full warmup)
+        const success = await PythonBridgeService.startAndConnectTtsService(setTtsServiceReady);
+        if (!success) {
           alerts.warning('TTS Service: Failed to start', 5000);
         }
       } catch (err: unknown) {

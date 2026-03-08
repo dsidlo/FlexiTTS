@@ -14,7 +14,7 @@
     "test:report:legacy": "npm run test:report && node scripts/json-to-html-report.js",
     "test:watch": "vitest",
     "electron:build": "rm -rf dist-electron && tsc -p tsconfig.electron.json && node -e \"const fs = require('fs'); fs.renameSync('dist-electron/main.js', 'dist-electron/main.cjs'); fs.renameSync('dist-electron/preload.js', 'dist-electron/preload.cjs');\"",
-    "electron:dev": "npm run electron:build && concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
+    "electron:dev": "npm run electron:build && concurrently \"vite --port 5173 --strictPort\" \"wait-on http://localhost:5173 && electron .\"",
     "start": "npm run electron:dev"
   },
   "main": "dist-electron/main.cjs",

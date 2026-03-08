@@ -129,7 +129,13 @@ class LocalTTSProvider(TTSInterface):
             Voice cloning prompt from model.
         """
         if voice_sample not in self._voice_prompts:
-            ref_path = self.voices_dir / voice_sample
+            # Try raw path first (in case it's a full path)
+            raw_path = Path(voice_sample)
+            if raw_path.exists():
+                ref_path = raw_path
+            else:
+                # Fall back to voices_dir relative path
+                ref_path = self.voices_dir / voice_sample
             if not ref_path.exists():
                 raise CharacterNotSupportedError(
                     f"Voice sample not found: {ref_path}"
@@ -168,7 +174,11 @@ class LocalTTSProvider(TTSInterface):
         language: str,
         output_path: Path,
         instruct: str = "",
-        char_config: Optional[Dict[str, Any]] = None
+        char_config: Optional[Dict[str, Any]] = None,
+        story: Optional[str] = None,
+        chapter: Optional[str] = None,
+        section: Optional[str] = None,
+        dialog: Optional[str] = None
     ) -> Tuple[List[np.ndarray], int]:
         """Generate audio using local Qwen3-TTS model.
         
@@ -180,6 +190,10 @@ class LocalTTSProvider(TTSInterface):
             output_path: Output file path.
             instruct: Instruction/prompt for the model.
             char_config: Character configuration.
+            story: Story name for tracking (optional, ignored by local provider).
+            chapter: Chapter number for tracking (optional, ignored by local provider).
+            section: Section number for tracking (optional, ignored by local provider).
+            dialog: Dialog sequence for tracking (optional, ignored by local provider).
             
         Returns:
             Tuple of (audio segments list, sample rate).

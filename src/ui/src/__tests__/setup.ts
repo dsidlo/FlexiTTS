@@ -9,6 +9,7 @@ Object.defineProperty(window, 'api', {
   value: {
     runPythonScript: vi.fn(),
     readFile: vi.fn(),
+    readAudioFile: vi.fn(),
     writeFile: vi.fn(),
     showErrorDialog: vi.fn(),
     showConfirmDialog: vi.fn(),

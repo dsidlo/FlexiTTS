@@ -11,7 +11,7 @@ import time
 import uuid
 from pathlib import Path
 from datetime import datetime
-from typing import Any, Dict, Optional, Set
+from typing import Any, Dict, List, Optional, Set
 
 # Try to import websockets
 try:
@@ -60,12 +60,72 @@ logger.handlers = []
 logger.addHandler(handler)
 logger.setLevel(logging.INFO)
 
+# Debug log file for detailed client/server tracing
+DEBUG_LOG_FILE = Path("/tmp/FlexiTTS_app.log")
+
+def debug_log(component: str, message: str, data: Optional[Dict] = None, level: str = "INFO"):
+    """Log with unique identifier [component] for traceability.
+    
+    Logs to both service logger and debug log file.
+    """
+    import traceback
+    import inspect
+    
+    # Get caller info
+    frame = inspect.currentframe()
+    if frame and frame.f_back:
+        line_no = frame.f_back.f_lineno
+    else:
+        line_no = 0
+    
+    log_id = f"[{component}:{line_no}]"
+    full_message = f"{log_id} {message}"
+    
+    if data:
+        try:
+            data_str = json.dumps(data, default=str)[:500]  # Limit data size
+            full_message += f" | DATA: {data_str}"
+        except:
+            full_message += f" | DATA: {str(data)[:500]}"
+    
+    # Log to service logger
+    if level == "ERROR":
+        logger.error(full_message)
+    elif level == "WARN":
+        logger.warning(full_message)
+    elif level == "DEBUG":
+        logger.debug(full_message)
+    else:
+        logger.info(full_message)
+    
+    # Also write to debug log file
+    try:
+        timestamp = datetime.now().isoformat()
+        with open(DEBUG_LOG_FILE, "a") as f:
+            f.write(f"[{timestamp}] {level} {full_message}\n")
+    except Exception as e:
+        pass  # Silent fail - console logging already done
+
+def log_exception(component: str, context: str, exception: Exception, extra_data: Optional[Dict] = None):
+    """Log exception with full traceback and unique identifier."""
+    import traceback
+    
+    tb_str = traceback.format_exc()
+    data = {
+        'error_type': type(exception).__name__,
+        'error_message': str(exception),
+        'traceback': tb_str,
+        **(extra_data or {})
+    }
+    
+    debug_log(component, f"EXCEPTION in {context}", data, level="ERROR")
+
 # Default port
 DEFAULT_PORT = 8765
 PID_FILE = Path("/tmp/tts_service.pid")
 
 # GPU log file path
-GPU_LOG_FILE = Path("story-entanglement/logs/tts-gpu-service.log")
+GPU_LOG_FILE = Path("/tmp/tts_gpu-service.log")
 
 
 def log_gpu_stats(
@@ -119,6 +179,10 @@ class TTSServer:
         self._warmup_error: Optional[str] = None
         self._connected_clients: Set[Any] = set()  # Track connected WebSocket clients
         self._clients_lock = threading.Lock()
+        self._alert_queue: List[Dict[str, Any]] = []  # Queue for missed alerts (max 20)
+        self._queue_lock = threading.Lock()
+        self._max_queue_size = 20
+        self._main_loop: Optional[asyncio.AbstractEventLoop] = None  # Main event loop for thread-safe operations
 
     @property
     def is_ready(self) -> bool:
@@ -149,13 +213,15 @@ class TTSServer:
             return
 
         logger.info(f"🚀 Background warmup starting for '{self.default_model}'...")
+        logger.info(f"[Warmup] Broadcasting 'Warming up' alert from thread '{threading.current_thread().name}'")
         
         # Broadcast warmup started alert (from background thread, use sync)
         self.broadcast_alert_sync(
-            "TTS Service: Warming up models",
+            "TTS Service: Warming up",
             "info",
             {"model": self.default_model, "stage": "started"}
         )
+        logger.info(f"[Warmup] 'Warming up' alert broadcast scheduled")
         
         start_time = datetime.now()
 
@@ -261,11 +327,13 @@ class TTSServer:
             logger.info("  → Server ready for TTS generation")
             
             # Broadcast warmup complete alert (from background thread, use sync)
+            logger.info(f"[Warmup] Broadcasting 'Ready' alert from thread '{threading.current_thread().name}'")
             self.broadcast_alert_sync(
-                f"TTS Service: Warmup complete ({load_time:.1f}s)",
+                "TTS Service: Ready",
                 "success",
                 {"model": self.default_model, "stage": "complete", "duration_seconds": load_time}
             )
+            logger.info(f"[Warmup] 'Ready' alert broadcast scheduled")
 
             with open("/tmp/tts_warmup.log", "a") as f:
                 f.write(f"SUCCESS: Model loaded in {load_time:.1f}s\n")
@@ -302,24 +370,96 @@ class TTSServer:
         """Add client to connected clients set."""
         with self._clients_lock:
             self._connected_clients.add(websocket)
-        logger.info(f"Client added. Total connected: {len(self._connected_clients)}")
+        logger.info(f"[ClientMgmt] Client added. Total connected: {len(self._connected_clients)}")
 
     async def _remove_client(self, websocket: Any) -> None:
         """Remove client from connected clients set."""
         with self._clients_lock:
             self._connected_clients.discard(websocket)
-        logger.info(f"Client removed. Total connected: {len(self._connected_clients)}")
+        logger.info(f"[ClientMgmt] Client removed. Total connected: {len(self._connected_clients)}")
+
+    def _queue_alert(self, message: str, alert_type: str = "info", metadata: Optional[Dict[str, Any]] = None) -> None:
+        """Store alert in queue for future clients."""
+        alert_data = {
+            "type": "alert",
+            "alertType": alert_type,
+            "message": message,
+            "source": "tts-service",
+            "timestamp": datetime.now().isoformat(),
+            "metadata": metadata or {}
+        }
+        with self._queue_lock:
+            self._alert_queue.append(alert_data)
+            current_size = len(self._alert_queue)
+            # Keep only last N alerts
+            if len(self._alert_queue) > self._max_queue_size:
+                self._alert_queue.pop(0)
+                logger.debug(f"[AlertQueue] Alert queued (trimmed): '{message}' (size={current_size}, max={self._max_queue_size})")
+            else:
+                logger.debug(f"[AlertQueue] Alert queued: '{message}' (size={current_size})")
+
+    async def _send_queued_alerts(self, websocket: Any) -> None:
+        """Send queued alerts to newly connected client."""
+        with self._queue_lock:
+            alerts_to_send = list(self._alert_queue)
+            queue_size = len(self._alert_queue)
+        
+        if alerts_to_send:
+            logger.info(f"[AlertQueue] Sending {len(alerts_to_send)}/{queue_size} queued alerts to new client")
+        
+        sent_count = 0
+        for alert in alerts_to_send:
+            try:
+                await websocket.send(json.dumps(alert))
+                sent_count += 1
+                logger.debug(f"[AlertQueue] Sent queued alert: {alert['message']}")
+            except Exception as e:
+                logger.warning(f"[AlertQueue] Failed to send queued alert: {e}")
+                break
+        
+        if sent_count > 0:
+            logger.info(f"[AlertQueue] Successfully sent {sent_count} queued alerts")
 
     def broadcast_alert_sync(self, message: str, alert_type: str = "info", metadata: Optional[Dict[str, Any]] = None) -> None:
-        """Schedule an alert to be broadcast from any thread (sync version)."""
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                asyncio.create_task(self.broadcast_alert(message, alert_type, metadata))
-            else:
-                loop.run_until_complete(self.broadcast_alert(message, alert_type, metadata))
-        except Exception as e:
-            logger.warning(f"Failed to schedule alert: {e}")
+        """Schedule an alert to be broadcast from any thread (sync version).
+        
+        Alerts are queued for clients that connect later, and broadcast
+        to currently connected WebSocket clients.
+        """
+        import threading
+        current_thread = threading.current_thread().name
+        
+        logger.debug(f"[AlertBroadcast] broadcast_alert_sync called from thread '{current_thread}': {message}")
+        
+        # 1. Always queue the alert so clients connecting later will see it
+        self._queue_alert(message, alert_type, metadata)
+        logger.debug(f"[AlertBroadcast] Alert queued: {message}")
+        
+        # 2. Broadcast to connected WebSocket clients
+        # Use stored main loop for thread-safe operations from background threads
+        if self._main_loop and self._main_loop.is_running():
+            try:
+                logger.debug(f"[AlertBroadcast] Using stored main loop (running={self._main_loop.is_running()})")
+                asyncio.run_coroutine_threadsafe(
+                    self.broadcast_alert(message, alert_type, metadata),
+                    self._main_loop
+                )
+                logger.debug(f"[AlertBroadcast] Successfully scheduled alert via main loop")
+            except Exception as e:
+                logger.warning(f"[AlertBroadcast] Failed to schedule alert via main loop: {e}")
+        else:
+            # Fallback: try current thread's loop (for calls from main thread)
+            logger.debug(f"[AlertBroadcast] Falling back to current thread loop (main_loop={self._main_loop})")
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    asyncio.create_task(self.broadcast_alert(message, alert_type, metadata))
+                    logger.debug(f"[AlertBroadcast] Scheduled alert via create_task")
+                else:
+                    loop.run_until_complete(self.broadcast_alert(message, alert_type, metadata))
+                    logger.debug(f"[AlertBroadcast] Executed alert via run_until_complete")
+            except Exception as e:
+                logger.warning(f"[AlertBroadcast] Failed to schedule alert: {e}")
 
     async def broadcast_alert(
         self,
@@ -343,13 +483,23 @@ class TTSServer:
         with self._clients_lock:
             clients = list(self._connected_clients)
         
+        client_count = len(clients)
+        logger.debug(f"[AlertBroadcast] Broadcasting to {client_count} clients: {message}")
+        
         disconnected = []
+        sent_count = 0
         for client in clients:
             try:
                 await client.send(message_json)
+                sent_count += 1
             except Exception as e:
-                logger.warning(f"Failed to send alert to client: {e}")
+                logger.warning(f"[AlertBroadcast] Failed to send alert to client: {e}")
                 disconnected.append(client)
+        
+        if sent_count > 0:
+            logger.info(f"[AlertBroadcast] Sent '{message}' to {sent_count}/{client_count} clients")
+        elif client_count > 0:
+            logger.warning(f"[AlertBroadcast] Failed to send to any of {client_count} clients")
         
         # Clean up disconnected clients
         if disconnected:
@@ -360,9 +510,29 @@ class TTSServer:
     async def handle_request(self, websocket: Any, path: str) -> None:
         """Handle incoming WebSocket connection."""
         client_addr = websocket.remote_address if hasattr(websocket, 'remote_address') else 'unknown'
-        logger.info(f"Client connected: {client_addr}")
-        
+        logger.info(f"[WebSocket] Client connected: {client_addr}")
+        logger.debug(f"[WebSocket] Server state: ready={self.is_ready}, queue_size={len(self._alert_queue)}, clients={len(self._connected_clients)}")
+
         await self._add_client(websocket)
+
+        # Send any queued alerts (e.g., warmup messages sent before client connected)
+        logger.debug(f"[WebSocket] Sending queued alerts to {client_addr}")
+        await self._send_queued_alerts(websocket)
+
+        # Send current status immediately on connect so client knows warmup state
+        try:
+            status_msg = {
+                'type': 'status',
+                'status': 'ready' if self.is_ready else 'warming_up',
+                'ready': self.is_ready,
+                'model': self.default_model,
+                'cached': self.default_model in self._model_cache,
+                'message': 'Model loading in progress...' if not self.is_ready else 'Ready'
+            }
+            await websocket.send(json.dumps(status_msg))
+            logger.info(f"[WebSocket] Sent initial status to {client_addr}: ready={self.is_ready}")
+        except Exception as e:
+            logger.warning(f"[WebSocket] Failed to send initial status to {client_addr}: {e}")
         
         try:
             async for message in websocket:
@@ -463,6 +633,7 @@ class TTSServer:
 
                             # Extract generation metadata for alerts
                             metadata = {
+                                "story": data.get("story"),
                                 "chapter": data.get("chapter"),
                                 "section": data.get("section"),
                                 "dialog": data.get("dialog"),
@@ -606,6 +777,10 @@ class TTSServer:
     async def start(self) -> None:
         """Start the WebSocket server."""
         logger.info(f"Starting TTS server on ws://localhost:{self.port}")
+
+        # Store reference to main event loop for thread-safe operations
+        self._main_loop = asyncio.get_event_loop()
+        logger.info(f"  → Stored main event loop: {self._main_loop}")
 
         # Log initial GPU stats
         if TTS_MODELS_AVAILABLE:
