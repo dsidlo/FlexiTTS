@@ -1,0 +1,901 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FlexiTTS Test Results</title>
+  <style>
+    /* Dark Theme CSS */
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #1a1a2e !important;
+      color: #eaeaea !important;
+      padding: 20px;
+      line-height: 1.6;
+    }
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    header {
+      background: #16213e !important;
+      padding: 30px;
+      border-radius: 8px;
+      border: 1px solid #0f3460 !important;
+      margin-bottom: 20px;
+    }
+    h1 { color: #eaeaea !important; margin-bottom: 10px; }
+    .nav-banner {
+      background: #3b82f6;
+      color: white;
+      padding: 12px 20px;
+      text-align: center;
+      margin: -30px -30px 20px -30px;
+      border-radius: 8px 8px 0 0;
+    }
+    .nav-banner a {
+      color: white;
+      text-decoration: none;
+      font-weight: 500;
+    }
+    .nav-banner a:hover {
+      text-decoration: underline;
+    }
+    .meta { color: #a0a0a0 !important; font-size: 14px; }
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 15px;
+      margin: 20px 0;
+    }
+    .summary-card {
+      background: #16213e !important;
+      padding: 20px;
+      border-radius: 8px;
+      border: 1px solid #0f3460 !important;
+      text-align: center;
+    }
+    .summary-card h2 {
+      font-size: 36px;
+      margin-bottom: 5px;
+    }
+    .summary-card.passed h2 { color: #22c55e !important; }
+    .summary-card.failed h2 { color: #ef4444 !important; }
+    .summary-card.total h2 { color: #3b82f6 !important; }
+    .summary-card.rate h2 { color: #8b5cf6 !important; }
+    .summary-card p { color: #a0a0a0 !important; font-size: 14px; }
+    .test-files {
+      display: grid;
+      gap: 15px;
+    }
+    .test-file {
+      background: #16213e !important;
+      border-radius: 8px;
+      border: 1px solid #0f3460 !important;
+      overflow: hidden;
+    }
+    .test-file.passed { border-left: 4px solid #22c55e; }
+    .test-file.failed { border-left: 4px solid #ef4444; }
+    .file-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 15px 20px;
+      background: #0f3460 !important;
+      border-bottom: 1px solid #0f3460;
+    }
+    .file-header h3 { color: #eaeaea !important; font-size: 16px; }
+    .file-stats {
+      background: #1a1a2e !important;
+      padding: 4px 12px;
+      border-radius: 12px;
+      font-size: 12px;
+      color: #a0a0a0 !important;
+    }
+    .tests-list {
+      padding: 15px 20px;
+      background: #16213e !important;
+    }
+    .test-item {
+      padding: 10px 0;
+      border-bottom: 1px solid #0f3460;
+      font-size: 14px;
+      color: #eaeaea !important;
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+    }
+    .test-item:last-child { border-bottom: none; }
+    .test-icon { 
+      flex-shrink: 0; 
+      width: 20px;
+      text-align: center;
+    }
+    .test-pass { color: #22c55e !important; }
+    .test-fail { color: #ef4444 !important; }
+    .test-skip { color: #f59e0b !important; }
+    .test-title {
+      flex: 1;
+      word-break: break-word;
+    }
+    .test-duration {
+      color: #6b7280;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+    .footer {
+      margin-top: 30px;
+      padding: 20px;
+      text-align: center;
+      background: #16213e !important;
+      border: 1px solid #0f3460 !important;
+      border-radius: 8px;
+      color: #a0a0a0 !important;
+      font-size: 12px;
+    }
+    .footer p {
+      color: #a0a0a0 !important;
+    }
+    .nav-links {
+      margin-top: 15px;
+    }
+    .nav-links a {
+      color: #4fc3f7 !important;
+      text-decoration: none;
+      margin: 0 10px;
+    }
+    .nav-links a:hover {
+      color: #80d8ff !important;
+      text-decoration: underline;
+    }
+    .error-message {
+      color: #ef4444;
+      font-size: 12px;
+      margin-top: 4px;
+      padding: 8px;
+      background: rgba(239, 68, 68, 0.1);
+      border-radius: 4px;
+      width: 100%;
+    }
+    .test-content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="nav-banner">
+        <a href="coverage/index.html">📊 View Coverage Report →</a>
+      </div>
+      <h1>🧪 FlexiTTS Test Results</h1>
+      <div class="meta">
+        <p>Started: 3/7/2026, 5:23:21 PM</p>
+        <p>Duration: 3.06s</p>
+      </div>
+    </header>
+    
+    <div class="summary">
+      <div class="summary-card total">
+        <h2>72</h2>
+        <p>Total Tests</p>
+      </div>
+      <div class="summary-card passed">
+        <h2>72</h2>
+        <p>Passed</p>
+      </div>
+      <div class="summary-card failed">
+        <h2>0</h2>
+        <p>Failed</p>
+      </div>
+      <div class="summary-card rate">
+        <h2>100%</h2>
+        <p>Success Rate</p>
+      </div>
+    </div>
+    
+    <div class="test-files">
+      
+        <div class="test-file passed">
+          <div class="file-header">
+            <h3>App.test.tsx</h3>
+            <span class="file-stats">13/13 passed</span>
+          </div>
+          <div class="tests-list">
+            
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should show loading screen initially</div>
+              
+            </div>
+            <span class="test-duration">39.259667000000036ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should show error on initialization failure</div>
+              
+            </div>
+            <span class="test-duration">21.02519200000006ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should load initial chapter after mounting</div>
+              
+            </div>
+            <span class="test-duration">48.998473000000104ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should display chapter data after load</div>
+              
+            </div>
+            <span class="test-duration">20.31010500000002ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should show context menu on right click</div>
+              
+            </div>
+            <span class="test-duration">23.684266999999863ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should close menu on click elsewhere</div>
+              
+            </div>
+            <span class="test-duration">21.039044999999987ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should trigger save when save button is clicked</div>
+              
+            </div>
+            <span class="test-duration">11.292537000000038ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should toggle editor mode</div>
+              
+            </div>
+            <span class="test-duration">8.75361399999997ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should show markdown editor when in editor mode</div>
+              
+            </div>
+            <span class="test-duration">15.79958600000009ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should run pipeline when XML does not exist</div>
+              
+            </div>
+            <span class="test-duration">13.573987999999872ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should show error when pipeline fails</div>
+              
+            </div>
+            <span class="test-duration">11.066479999999956ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should show confirmation when switching chapters with unsaved changes</div>
+              
+            </div>
+            <span class="test-duration">9.581513000000086ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should handle window resize</div>
+              
+            </div>
+            <span class="test-duration">11.15087799999992ms</span>
+          </div>
+        
+          </div>
+        </div>
+      
+        <div class="test-file passed">
+          <div class="file-header">
+            <h3>chapterService.test.ts</h3>
+            <span class="file-stats">22/22 passed</span>
+          </div>
+          <div class="tests-list">
+            
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should wrap text at word boundaries</div>
+              
+            </div>
+            <span class="test-duration">6.580110999999988ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should handle short text without wrapping</div>
+              
+            </div>
+            <span class="test-duration">0.4961160000000291ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should apply indentation to wrapped lines</div>
+              
+            </div>
+            <span class="test-duration">0.4300470000000587ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should handle empty text</div>
+              
+            </div>
+            <span class="test-duration">0.25232199999993554ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should return "story" for Story-Entanglement files</div>
+              
+            </div>
+            <span class="test-duration">0.28789299999994ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should return "chapter" for other files</div>
+              
+            </div>
+            <span class="test-duration">0.2883920000000444ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should filter out structural attributes</div>
+              
+            </div>
+            <span class="test-duration">1.3060140000000047ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should return empty string for no valid attributes</div>
+              
+            </div>
+            <span class="test-duration">1.3399819999999636ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should return "narration" for Narrator in story format</div>
+              
+            </div>
+            <span class="test-duration">0.47492800000009083ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should return "dialog" for other characters in story format</div>
+              
+            </div>
+            <span class="test-duration">0.19571800000005624ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should return "dialog" for all characters in chapter format</div>
+              
+            </div>
+            <span class="test-duration">0.12691800000004605ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should return "dlgseq" for story format</div>
+              
+            </div>
+            <span class="test-duration">0.11453100000005634ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should return "id" for chapter format</div>
+              
+            </div>
+            <span class="test-duration">0.07621200000005501ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should generate basic chapter XML</div>
+              
+            </div>
+            <span class="test-duration">1.4759629999999788ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should generate story format XML for Story-Entanglement files</div>
+              
+            </div>
+            <span class="test-duration">0.27711199999998826ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should include character attribute for non-narrator dialogs</div>
+              
+            </div>
+            <span class="test-duration">0.15700600000002396ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should wrap dialogs in sections for story format</div>
+              
+            </div>
+            <span class="test-duration">0.2406220000000303ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should use narration node for Narrator in story format</div>
+              
+            </div>
+            <span class="test-duration">0.22623399999997673ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should preserve custom attributes</div>
+              
+            </div>
+            <span class="test-duration">0.21027400000002672ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should wrap long text content</div>
+              
+            </div>
+            <span class="test-duration">0.26140699999996286ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should match snapshot for basic chapter</div>
+              
+            </div>
+            <span class="test-duration">1.573566000000028ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should match snapshot for story format</div>
+              
+            </div>
+            <span class="test-duration">0.4520039999999881ms</span>
+          </div>
+        
+          </div>
+        </div>
+      
+        <div class="test-file passed">
+          <div class="file-header">
+            <h3>useAudio.test.ts</h3>
+            <span class="file-stats">19/19 passed</span>
+          </div>
+          <div class="tests-list">
+            
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should initialize with empty clips and no audio</div>
+              
+            </div>
+            <span class="test-duration">15.134239999999977ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should set available clips</div>
+              
+            </div>
+            <span class="test-duration">3.78148699999997ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should set chapter audio status</div>
+              
+            </div>
+            <span class="test-duration">3.966038000000026ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should fetch and set clips for chapter</div>
+              
+            </div>
+            <span class="test-duration">4.720289999999977ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should handle empty chapter file gracefully</div>
+              
+            </div>
+            <span class="test-duration">5.547761000000037ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should handle errors gracefully</div>
+              
+            </div>
+            <span class="test-duration">3.9043000000000347ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should check and set audio status</div>
+              
+            </div>
+            <span class="test-duration">2.294377999999938ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should handle check errors</div>
+              
+            </div>
+            <span class="test-duration">2.15146500000003ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should cancel audio generation</div>
+              
+            </div>
+            <span class="test-duration">3.1481249999999363ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should handle cancel errors</div>
+              
+            </div>
+            <span class="test-duration">2.1150700000000597ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should generate audio for a dialog</div>
+              
+            </div>
+            <span class="test-duration">3.327096000000097ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should parse filename from different output formats</div>
+              
+            </div>
+            <span class="test-duration">2.4713669999999865ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should throw error if filename cannot be parsed</div>
+              
+            </div>
+            <span class="test-duration">10.701801000000046ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should handle generation errors</div>
+              
+            </div>
+            <span class="test-duration">3.3579129999999395ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should skip playback when skipPlay is true</div>
+              
+            </div>
+            <span class="test-duration">1.96277699999996ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should use mock fallback when window.api is unavailable</div>
+              
+            </div>
+            <span class="test-duration">2003.5220780000002ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should handle cancellation during generation</div>
+              
+            </div>
+            <span class="test-duration">1.6185910000003787ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should handle null currentChapterFile in refreshClips</div>
+              
+            </div>
+            <span class="test-duration">0.7042200000000776ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should handle file paths without extension</div>
+              
+            </div>
+            <span class="test-duration">1.0623820000000705ms</span>
+          </div>
+        
+          </div>
+        </div>
+      
+        <div class="test-file passed">
+          <div class="file-header">
+            <h3>useChapter.test.ts</h3>
+            <span class="file-stats">18/18 passed</span>
+          </div>
+          <div class="tests-list">
+            
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should initialize with null values</div>
+              
+            </div>
+            <span class="test-duration">16.388115000000084ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should set config</div>
+              
+            </div>
+            <span class="test-duration">5.42145400000004ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should set chapter list</div>
+              
+            </div>
+            <span class="test-duration">3.4890870000000405ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should update selected character filter</div>
+              
+            </div>
+            <span class="test-duration">2.5662929999999733ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should track available clips</div>
+              
+            </div>
+            <span class="test-duration">3.0586739999999963ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should track chapter audio status</div>
+              
+            </div>
+            <span class="test-duration">1.7959760000001097ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should load and parse chapter XML</div>
+              
+            </div>
+            <span class="test-duration">22.811519999999973ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should set available clips</div>
+              
+            </div>
+            <span class="test-duration">13.203156000000035ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should check chapter audio status</div>
+              
+            </div>
+            <span class="test-duration">7.057521999999949ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should reset character filter on load</div>
+              
+            </div>
+            <span class="test-duration">4.923535000000129ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should set XML content after load</div>
+              
+            </div>
+            <span class="test-duration">5.153441000000157ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should update dialog and mark changes</div>
+              
+            </div>
+            <span class="test-duration">3.9432749999998578ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should match dialog by _index when available</div>
+              
+            </div>
+            <span class="test-duration">2.7477409999999054ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should load chapter when XML exists</div>
+              
+            </div>
+            <span class="test-duration">4.404628000000002ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should sync ref with state</div>
+              
+            </div>
+            <span class="test-duration">3.1197669999999107ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should allow direct ref value updates</div>
+              
+            </div>
+            <span class="test-duration">0.9035100000000966ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should handle XML validation warnings gracefully</div>
+              
+            </div>
+            <span class="test-duration">6.420086000000083ms</span>
+          </div>
+        
+          <div class="test-item">
+            <span class="test-icon test-pass">✓</span>
+            <div class="test-content">
+              <div class="test-title">should not update dialog if chapter is null</div>
+              
+            </div>
+            <span class="test-duration">1.223222000000078ms</span>
+          </div>
+        
+          </div>
+        </div>
+      
+    </div>
+    
+    <footer>
+      <div class="nav-links">
+        <a href="coverage/index.html">View Coverage Report →</a>
+        <a href="test-results.json">View JSON Data</a>
+      </div>
+      <p>Generated by Vitest Dark Theme Reporter • FlexiTTS</p>
+    </footer>
+  </div>
+</body>
+</html>
