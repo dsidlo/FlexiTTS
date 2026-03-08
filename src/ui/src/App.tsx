@@ -1,7 +1,7 @@
 import { useEffect, useCallback, useState, useRef } from 'react';
 import './App.css';
 import { PythonBridgeService } from './services/pythonBridge';
-import type { StoryConfig } from './models/types';
+import type { StoryConfig, StoryInfo } from './models/types';
 import { TopBar } from './components/TopBar';
 import { DialogBar } from './components/DialogBar';
 import { AlertContainer } from './components/AlertContainer';
@@ -20,6 +20,9 @@ function App() {
     setLastSavedXmlValue, setHasUnsavedChangesValue,
     loadChapter, handleUpdateDialog,
   } = useChapter();
+
+  // Story management state
+  const [currentStory, setCurrentStory] = useState<StoryInfo | null>(null);
 
   // Markdown state from hook
   const {
@@ -119,10 +122,65 @@ function App() {
       try {
         setLoading(true);
         await PythonBridgeService.validateConfig();
-        const cfg = await PythonBridgeService.loadStoryConfig();
+        
+        // Load available stories and set current story
+        let stories = [];
+        try {
+          stories = await PythonBridgeService.listStories();
+        } catch (storyErr) {
+          console.warn('Failed to list stories, falling back to default:', storyErr);
+          stories = [];
+        }
+        
+        let current = '';
+        try {
+          current = await PythonBridgeService.getCurrentStory();
+        } catch (err) {
+          console.warn('Failed to get current story:', err);
+        }
+        
+        // Default to first story or use Story-Default for backward compatibility
+        let selectedStory = stories[0] || null;
+        if (current) {
+          const found = stories.find(s => s.directory_name === current);
+          if (found) selectedStory = found;
+        }
+        
+        setCurrentStory(selectedStory);
+        
+        // Set current story in main process
+        if (selectedStory) {
+          try {
+            await PythonBridgeService.setCurrentStory(selectedStory.directory_name);
+          } catch (err) {
+            console.warn('Failed to set current story:', err);
+          }
+        }
+        
+        // Load story config for selected story
+        let cfg;
+        try {
+          cfg = selectedStory 
+            ? await PythonBridgeService.loadStoryConfigForStory(selectedStory.directory_name)
+            : await PythonBridgeService.loadStoryConfig();
+        } catch (err) {
+          console.error('Failed to load story config:', err);
+          throw err;
+        }
         setConfig(cfg);
-        const list = await PythonBridgeService.listChapterFiles();
+        
+        // Load chapter files for selected story
+        let list = [];
+        try {
+          list = selectedStory
+            ? await PythonBridgeService.listChapterFilesForStory(selectedStory.directory_name)
+            : await PythonBridgeService.listChapterFiles();
+        } catch (err) {
+          console.warn('Failed to list chapter files:', err);
+          list = [];
+        }
         setChapterList(list);
+        
         if (list.length > 0) await handleChapterSelect(list[0], cfg);
         
         // Start TTS service - service will broadcast warmup alerts via WebSocket
@@ -149,9 +207,11 @@ function App() {
     setGenerateAttempt(attempt);
     try {
       if (window.api?.runPythonScript) {
-        await window.api.runPythonScript('src/scripts/chapter_to_xml.py', [`Story-Entanglement/story-chapters/${stem}.md`]);
-        await window.api.runPythonScript('src/scripts/chapter_seq_xml.py', [`Story-Entanglement/story-xml/${stem}.xml`]);
-        await window.api.runPythonScript('src/scripts/chapter_validate_xml.py', [`Story-Entanglement/story-xml/${stem}.xml`]);
+        // Use current story directory dynamically
+        const storyDir = currentStory?.directory_name || 'Story-Default';
+        await window.api.runPythonScript('src/scripts/chapter_to_xml.py', [`${storyDir}/story-chapters/${stem}.md`]);
+        await window.api.runPythonScript('src/scripts/chapter_seq_xml.py', [`${storyDir}/story-xml/${stem}.xml`]);
+        await window.api.runPythonScript('src/scripts/chapter_validate_xml.py', [`${storyDir}/story-xml/${stem}.xml`]);
       } else {
         console.log(`[Mock] Attempt ${attempt}`);
         await new Promise(r => setTimeout(r, 2000));
@@ -175,16 +235,18 @@ function App() {
       if (res === 0) {
         try {
           const stem = currentChapterFile.split('/').pop()?.replace('.md', '') || 'unknown';
+          const storyDir = currentStory?.directory_name || 'Story-Default';
           if (hasUnsavedChangesRef.current) {
             await PythonBridgeService.writeChapterFile(
-              `Story-Entanglement/story-xml/${stem}.xml`, 
+              `${storyDir}/story-xml/${stem}.xml`, 
               xmlContentRef.current
             );
             setLastSavedXmlValue(xmlContentRef.current);
           }
           if (hasUnsavedMarkdownChangesRef.current) {
+            const storyDir = currentStory?.directory_name || 'Story-Default';
             await PythonBridgeService.writeChapterFile(
-              `Story-Entanglement/story-chapters/${stem}.md`, 
+              `${storyDir}/story-chapters/${stem}.md`, 
               markdownContent
             );
             setLastSavedMarkdownValue(markdownContent);
@@ -204,7 +266,8 @@ function App() {
     
     await loadMarkdown(stem);
     
-    const xmlPath = `Story-Entanglement/story-xml/${stem}.xml`;
+    const storyDir = currentStory?.directory_name || 'Story-Default';
+    const xmlPath = `${storyDir}/story-xml/${stem}.xml`;
     if (await PythonBridgeService.checkXmlExists(stem)) {
       await loadChapter(xmlPath, loadedConfig);
     } else {
@@ -221,24 +284,65 @@ function App() {
       }
     }
     setLoading(false);
-  }, [currentChapterFile, hasUnsavedChangesRef, hasUnsavedMarkdownChangesRef, xmlContentRef, 
+  }, [currentChapterFile, currentStory, hasUnsavedChangesRef, hasUnsavedMarkdownChangesRef, xmlContentRef, 
       markdownContent, setLastSavedXmlValue, setLastSavedMarkdownValue, setHasUnsavedMarkdownChangesValue,
       setCurrentChapterFile, loadMarkdown, loadChapter, setIsGeneratingStructure, setGenerateAttempt,
       setLoading, resetMarkdown]);
+
+  // Story selection handler
+  const handleStorySelect = useCallback(async (story: StoryInfo | null) => {
+    if (!story) return;
+    
+    // Check for unsaved changes
+    if ((hasUnsavedChangesRef.current || hasUnsavedMarkdownChangesRef.current) && currentChapterFile) {
+      const res = await PythonBridgeService.showConfirmDialog(
+        'Unsaved Changes',
+        'You have unsaved changes.',
+        'Save before switching stories?'
+      );
+      if (res === 2) return; // Cancel
+      if (res === 0) {
+        // Save current chapter before switching
+        await handleSave();
+      }
+    }
+    
+    setLoading(true);
+    setCurrentStory(story);
+    await PythonBridgeService.setCurrentStory(story.directory_name);
+    
+    // Load config for new story
+    const cfg = await PythonBridgeService.loadStoryConfigForStory(story.directory_name);
+    setConfig(cfg);
+    
+    // Load chapters for new story
+    const files = await PythonBridgeService.listChapterFilesForStory(story.directory_name);
+    setChapterList(files);
+    
+    // Select first chapter of new story
+    if (files.length > 0) {
+      await handleChapterSelect(files[0], cfg);
+    }
+    
+    setLoading(false);
+  }, [hasUnsavedChangesRef, hasUnsavedMarkdownChangesRef, currentChapterFile, 
+      setLoading, setCurrentStory, setConfig, setChapterList, handleChapterSelect]);
 
   // Save handler
   const handleSave = useCallback(async () => {
     try {
       const stem = currentChapterFile.split('/').pop()?.replace('.md', '') || 'unknown';
+      const storyDir = currentStory?.directory_name || 'Story-Default';
+      
       if (hasUnsavedChangesRef.current && chapter) {
         const xml = generateXMLFromChapter(chapter);
-        await PythonBridgeService.writeChapterFile(`Story-Entanglement/story-xml/${stem}.xml`, xml);
-        await PythonBridgeService.validateChapterXML(`Story-Entanglement/story-xml/${stem}.xml`);
+        await PythonBridgeService.writeChapterFile(`${storyDir}/story-xml/${stem}.xml`, xml);
+        await PythonBridgeService.validateChapterXML(`${storyDir}/story-xml/${stem}.xml`);
         setLastSavedXmlValue(xml);
         setHasUnsavedChangesValue(false);
       }
       if (hasUnsavedMarkdownChangesRef.current) {
-        const mdPath = `Story-Entanglement/story-chapters/${stem}.md`;
+        const mdPath = `${storyDir}/story-chapters/${stem}.md`;
         await PythonBridgeService.writeChapterFile(mdPath, markdownContent);
         setLastSavedMarkdownValue(markdownContent);
         setHasUnsavedMarkdownChangesValue(false);
@@ -246,7 +350,7 @@ function App() {
     } catch (e) {
       console.error('Save failed:', e);
     }
-  }, [currentChapterFile, chapter, hasUnsavedChangesRef, hasUnsavedMarkdownChangesRef, 
+  }, [currentChapterFile, currentStory, chapter, hasUnsavedChangesRef, hasUnsavedMarkdownChangesRef, 
       markdownContent, setLastSavedXmlValue, setHasUnsavedChangesValue,
       setLastSavedMarkdownValue, setHasUnsavedMarkdownChangesValue]);
 
@@ -315,6 +419,8 @@ function App() {
           hasUnsavedChanges={hasAnyUnsaved}
           editorMode={editorMode}
           onToggleEditor={handleToggleEditor}
+          currentStory={currentStory}
+          onStorySelect={handleStorySelect}
         />
       )}
 

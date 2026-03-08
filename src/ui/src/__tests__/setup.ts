@@ -19,6 +19,14 @@ Object.defineProperty(window, 'api', {
     listChapterFiles: vi.fn(),
     playSoundFile: vi.fn(),
     killProcess: vi.fn(),
+    // Story management IPC methods
+    listStories: vi.fn(),
+    setCurrentStory: vi.fn(),
+    getCurrentStory: vi.fn(),
+    loadStoryConfig: vi.fn(),
+    loadGlobalConfig: vi.fn(),
+    listChapterFilesForStory: vi.fn(),
+    checkXmlExistsForStory: vi.fn(),
   },
   writable: true,
 });

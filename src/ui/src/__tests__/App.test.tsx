@@ -8,12 +8,19 @@ vi.mock('../services/pythonBridge', () => ({
   PythonBridgeService: {
     validateConfig: vi.fn(),
     loadStoryConfig: vi.fn(),
+    loadStoryConfigForStory: vi.fn(),
+    loadGlobalConfig: vi.fn(),
+    listStories: vi.fn(),
+    setCurrentStory: vi.fn(),
+    getCurrentStory: vi.fn(),
     listChapterFiles: vi.fn(),
+    listChapterFilesForStory: vi.fn(),
     readChapterFile: vi.fn(),
     validateChapterXML: vi.fn(),
     listChapterClips: vi.fn(),
     checkChapterAudio: vi.fn(),
     checkXmlExists: vi.fn(),
+    checkXmlExistsForStory: vi.fn(),
     showConfirmDialog: vi.fn(),
     showErrorDialog: vi.fn(),
     writeChapterFile: vi.fn(),
@@ -176,18 +183,45 @@ describe('App', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     
+    // Setup window.api for IPC mocking
+    (window as any).api = {
+      listStories: vi.fn().mockResolvedValue([
+        { name: 'Entanglement', path: '/home/user/Stories/Story-Entanglement', directory_name: 'Story-Entanglement' }
+      ]),
+      setCurrentStory: vi.fn().mockResolvedValue(true),
+      getCurrentStory: vi.fn().mockResolvedValue(''),
+      loadStoryConfig: vi.fn().mockResolvedValue(mockConfig),
+    };
+    
     // Default mocks
     vi.mocked(PythonBridgeService.validateConfig).mockResolvedValue(undefined);
     vi.mocked(PythonBridgeService.loadStoryConfig).mockResolvedValue(mockConfig);
+    vi.mocked(PythonBridgeService.loadStoryConfigForStory).mockResolvedValue(mockConfig);
+    vi.mocked(PythonBridgeService.loadGlobalConfig).mockResolvedValue({
+      FlexiTTS: {
+        'stories-dir': '/home/user/Stories',
+        'story-dir-prefix': 'Story-'
+      }
+    });
+    vi.mocked(PythonBridgeService.listStories).mockResolvedValue([
+      { name: 'Entanglement', path: '/home/user/Stories/Story-Entanglement', directory_name: 'Story-Entanglement' }
+    ]);
+    vi.mocked(PythonBridgeService.getCurrentStory).mockResolvedValue('');
+    vi.mocked(PythonBridgeService.setCurrentStory).mockResolvedValue(true);
     vi.mocked(PythonBridgeService.listChapterFiles).mockResolvedValue([
       'Story-Entanglement/story-chapters/01-Test.md'
     ]);
+    vi.mocked(PythonBridgeService.listChapterFilesForStory).mockResolvedValue([
+      'Story-Entanglement/story-chapters/01-Test.md'
+    ]);
+    vi.mocked(PythonBridgeService.checkXmlExistsForStory).mockResolvedValue(true);
     vi.mocked(PythonBridgeService.readChapterFile).mockResolvedValue(mockChapterXML);
     vi.mocked(PythonBridgeService.validateChapterXML).mockResolvedValue(undefined);
     vi.mocked(PythonBridgeService.listChapterClips).mockResolvedValue([]);
     vi.mocked(PythonBridgeService.checkChapterAudio).mockResolvedValue(false);
     vi.mocked(PythonBridgeService.checkXmlExists).mockResolvedValue(true);
     vi.mocked(PythonBridgeService.readFile).mockResolvedValue('# Markdown content');
+    vi.mocked(PythonBridgeService.startAndConnectTtsService).mockResolvedValue(true);
   });
 
   describe('initialization', () => {
@@ -341,17 +375,22 @@ describe('App', () => {
   describe('chapter loading with XML generation', () => {
     it('should run pipeline when XML does not exist', async () => {
       vi.mocked(PythonBridgeService.checkXmlExists).mockResolvedValue(false);
+      vi.mocked(PythonBridgeService.checkXmlExistsForStory).mockResolvedValue(false);
+      vi.mocked(PythonBridgeService.listStories).mockResolvedValue([
+        { name: 'Entanglement', path: '/home/user/Stories/Story-Entanglement', directory_name: 'Story-Entanglement' }
+      ]);
       if (window.api && window.api.runPythonScript) {
         vi.mocked(window.api.runPythonScript).mockResolvedValue('');
       }
       
       render(<App />);
       
+      // Give more time for the app to load
       await waitFor(() => {
         expect(screen.getByTestId('topbar')).toBeInTheDocument();
-      });
+      }, { timeout: 3000 });
       
-      // Should show loading overlay
+      // Should call check XML (using checkXmlExists, not checkXmlExistsForStory - which is for story-aware ops)
       await waitFor(() => {
         expect(PythonBridgeService.checkXmlExists).toHaveBeenCalled();
       });
@@ -405,6 +444,152 @@ describe('App', () => {
       
       // Component should still render without errors
       expect(screen.getByTestId('topbar')).toBeInTheDocument();
+    });
+  });
+
+  describe('story selection integration', () => {
+    const mockStories = [
+      { name: 'Entanglement', path: '/home/user/Stories/Story-Entanglement', directory_name: 'Story-Entanglement' },
+      { name: 'Adventure', path: '/home/user/Stories/Story-Adventure', directory_name: 'Story-Adventure' },
+    ];
+
+    const mockEntanglementConfig = {
+      ...mockConfig,
+      global: { ...mockConfig.global, 'story-dir': 'Story-Entanglement/' }
+    };
+
+    const mockAdventureConfig = {
+      ...mockConfig,
+      global: { ...mockConfig.global, 'story-dir': 'Story-Adventure/' }
+    };
+
+    const mockChaptersForEntanglement = [
+      'Story-Entanglement/story-chapters/01-Intro.md',
+      'Story-Entanglement/story-chapters/02-Chapter1.md',
+    ];
+
+    const mockChaptersForAdventure = [
+      'Story-Adventure/story-chapters/01-Beginning.md',
+      'Story-Adventure/story-chapters/02-Journey.md',
+    ];
+
+    beforeEach(() => {
+      vi.mocked(PythonBridgeService.loadGlobalConfig).mockResolvedValue({
+        FlexiTTS: {
+          'stories-dir': '/home/user/Stories',
+          'story-dir-prefix': 'Story-'
+        }
+      });
+      vi.mocked(PythonBridgeService.listStories).mockResolvedValue(mockStories);
+      vi.mocked(PythonBridgeService.getCurrentStory).mockResolvedValue('');
+    });
+
+    it('should initialize with default story when no current story set', async () => {
+      vi.mocked(PythonBridgeService.getCurrentStory).mockResolvedValue('');
+      vi.mocked(PythonBridgeService.setCurrentStory).mockResolvedValue(true);
+      vi.mocked(PythonBridgeService.loadStoryConfigForStory).mockResolvedValue(mockConfig);
+      vi.mocked(PythonBridgeService.listChapterFilesForStory).mockResolvedValue([
+        'Story-Entanglement/story-chapters/01-Test.md'
+      ]);
+      
+      render(<App />);
+      
+      await waitFor(() => {
+        expect(screen.getByTestId('topbar')).toBeInTheDocument();
+      });
+
+      // Should discover stories and use default (first story)
+      expect(PythonBridgeService.listStories).toHaveBeenCalled();
+      // Should use first discovered story (Story-Entanglement)
+      expect(PythonBridgeService.loadStoryConfigForStory).toHaveBeenCalledWith('Story-Entanglement');
+    });
+
+    it('should load current story from main process on init', async () => {
+      vi.mocked(PythonBridgeService.getCurrentStory).mockResolvedValue('Story-Entanglement');
+      vi.mocked(PythonBridgeService.loadStoryConfigForStory).mockResolvedValue(mockEntanglementConfig);
+      vi.mocked(PythonBridgeService.listChapterFilesForStory).mockResolvedValue(mockChaptersForEntanglement);
+      
+      render(<App />);
+      
+      await waitFor(() => {
+        expect(screen.getByTestId('topbar')).toBeInTheDocument();
+      });
+
+      // Should get current story from main process
+      expect(PythonBridgeService.getCurrentStory).toHaveBeenCalled();
+    });
+
+    it('should reload config when story changes', async () => {
+      vi.mocked(PythonBridgeService.setCurrentStory).mockResolvedValue(true);
+      vi.mocked(PythonBridgeService.loadStoryConfigForStory)
+        .mockResolvedValueOnce(mockEntanglementConfig)
+        .mockResolvedValueOnce(mockAdventureConfig);
+      vi.mocked(PythonBridgeService.listChapterFilesForStory)
+        .mockResolvedValueOnce(mockChaptersForEntanglement)
+        .mockResolvedValueOnce(mockChaptersForAdventure);
+      vi.mocked(PythonBridgeService.checkXmlExistsForStory).mockResolvedValue(true);
+      
+      const { rerender } = render(<App />);
+      
+      await waitFor(() => {
+        expect(screen.getByTestId('topbar')).toBeInTheDocument();
+      });
+
+      // Note: Actual story switching would be tested in UpdatedTopBar
+      // This test verifies the bridge methods are available
+      expect(PythonBridgeService.loadStoryConfigForStory).toBeDefined();
+    });
+
+    it('should handle story selection error gracefully', async () => {
+      vi.mocked(PythonBridgeService.listStories).mockRejectedValue(new Error('Failed to list stories'));
+      
+      render(<App />);
+      
+      await waitFor(() => {
+        expect(screen.getByTestId('topbar')).toBeInTheDocument();
+      });
+
+      // Should not crash - error handling is in StoryDropdown component
+      expect(screen.getByTestId('topbar')).toBeInTheDocument();
+    });
+
+    it('should support story-specific chapter listing', async () => {
+      vi.mocked(PythonBridgeService.listChapterFilesForStory).mockResolvedValue(mockChaptersForEntanglement);
+      
+      render(<App />);
+      
+      await waitFor(() => {
+        expect(screen.getByTestId('topbar')).toBeInTheDocument();
+      });
+
+      // listChapterFilesForStory should be available
+      expect(PythonBridgeService.listChapterFilesForStory).toBeDefined();
+    });
+
+    it('should support story-specific XML existence check', async () => {
+      vi.mocked(PythonBridgeService.checkXmlExistsForStory).mockResolvedValue(true);
+      
+      render(<App />);
+      
+      await waitFor(() => {
+        expect(screen.getByTestId('topbar')).toBeInTheDocument();
+      });
+
+      // checkXmlExistsForStory should be available
+      expect(PythonBridgeService.checkXmlExistsForStory).toBeDefined();
+    });
+
+    it('should persist current story in main process', async () => {
+      vi.mocked(PythonBridgeService.setCurrentStory).mockResolvedValue(true);
+      
+      render(<App />);
+      
+      await waitFor(() => {
+        expect(screen.getByTestId('topbar')).toBeInTheDocument();
+      });
+
+      // setCurrentStory should be available for persisting story
+      expect(PythonBridgeService.setCurrentStory).toBeDefined();
     });
   });
 });

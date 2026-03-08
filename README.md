@@ -97,6 +97,44 @@ The idea with FlexiTTS (Flexi-tus) is to create a simple flexible text to audio-
 - **Support for other TTS Tools**: Expand compatibility with other text-to-speech tools for diverse voices and languages.
   - Leverage capabilities of other TTS tools for enhanced voice quality and language support based on their strengths and capabilities.
 
+
+## Configuration API
+
+FlexiTTS now includes a REST API for configuration management and story discovery.
+
+### Starting the API Server
+
+```bash
+# Install API dependencies
+pip install -r requirements-api.txt
+
+# Start the server
+python start_config_api.py
+
+# Start with custom port
+python start_config_api.py --port 8080
+```
+
+### API Endpoints
+
+- **Health Check**: `GET /api/system/health`
+- **System Info**: `GET /api/system/info`
+- **Global Config**: `GET /api/config/global`
+- **Stories Discovery**: `GET /api/stories`
+- **Story Details**: `GET /api/stories/{storyId}`
+- **Configuration Validation**: `POST /api/config/validate`
+
+### API Documentation
+
+Once the server is running, visit `http://localhost:8000/docs` for interactive API documentation.
+
+### Testing the API
+
+```bash
+# Run the test script
+python test_config_api.py
+```
+
 ## Help...
 
 If you are good with UI work, consider helping out by creating a web interface to manage chapters, edit XML, and generate audio. This could include features like:

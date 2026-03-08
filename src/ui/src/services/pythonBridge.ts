@@ -77,17 +77,18 @@ export const PythonBridgeService = {
   },
 
   loadStoryConfig: async (): Promise<StoryConfig> => {
+    // Legacy method - fetches current story config. New code should use loadStoryConfigForStory
     if (typeof window !== 'undefined' && window.api) {
       const yamlContent = await window.api.readFile('story-config.yml');
       return jsyaml.load(yamlContent) as StoryConfig;
     }
-    // Mock Config for browser viewing
+    // Mock Config for browser viewing - uses generic placeholder
     return {
       global: {
-        'story-dir': 'Story-Entanglement/',
+        'story-dir': 'Story-Default/',
         voices: '',
         chapters: '',
-        'story-xml': 'Story-Entanglement/story-xml/',
+        'story-xml': '',
         logs: '',
         'story-audio': '',
         clips: '',
@@ -98,6 +99,180 @@ export const PythonBridgeService = {
       'story-audio-post-process': {},
       characters: []
     } as StoryConfig;
+  },
+
+  loadStoryConfigForStory: async (storyDir: string): Promise<StoryConfig> => {
+    const id = `${LOG_ID}:loadStoryConfigForStory`;
+    debugLog.info(id, 'ENTER loadStoryConfigForStory', { storyDir });
+    
+    if (typeof window !== 'undefined' && window.api && window.api.loadStoryConfig) {
+      try {
+        const config = await window.api.loadStoryConfig(storyDir);
+        debugLog.info(id, 'Successfully loaded story config', { storyDir });
+        return config as StoryConfig;
+      } catch (e) {
+        debugLog.exception(id, 'loadStoryConfig IPC call', e, { storyDir });
+        throw e;
+      }
+    }
+    
+    // Fallback to mock config
+    debugLog.warn(id, 'window.api.loadStoryConfig not available, returning mock config');
+    return {
+      global: {
+        'story-dir': `${storyDir}/`,
+        voices: '',
+        chapters: '',
+        'story-xml': `${storyDir}/story-xml/`,
+        logs: '',
+        'story-audio': '',
+        clips: '',
+        'clip-separation': 0
+      },
+      'llm-xml-generator': [],
+      'dialog-effects': [],
+      'story-audio-post-process': {},
+      characters: []
+    } as StoryConfig;
+  },
+
+  loadGlobalConfig: async (): Promise<any> => {
+    const id = `${LOG_ID}:loadGlobalConfig`;
+    debugLog.info(id, 'ENTER loadGlobalConfig');
+    
+    if (typeof window !== 'undefined' && window.api && window.api.loadGlobalConfig) {
+      try {
+        const config = await window.api.loadGlobalConfig();
+        debugLog.info(id, 'Successfully loaded global config', { config });
+        return config;
+      } catch (e) {
+        debugLog.exception(id, 'loadGlobalConfig IPC call', e);
+        throw e;
+      }
+    }
+    
+    debugLog.error(id, 'window.api.loadGlobalConfig not available');
+    // Return default config
+    return {
+      FlexiTTS: {
+        'stories-dir': '~/workspace/FlexiTTS/Stories',
+        'story-dir-prefix': 'Story-'
+      }
+    };
+  },
+
+  saveGlobalConfig: async (configData: any): Promise<boolean> => {
+    const id = `${LOG_ID}:saveGlobalConfig`;
+    debugLog.info(id, 'ENTER saveGlobalConfig', { configData });
+    
+    if (typeof window !== 'undefined' && window.api && window.api.saveGlobalConfig) {
+      try {
+        const result = await window.api.saveGlobalConfig(configData);
+        debugLog.info(id, 'Successfully saved global config', { result });
+        return result;
+      } catch (e) {
+        debugLog.exception(id, 'saveGlobalConfig IPC call', e);
+        throw e;
+      }
+    }
+    
+    debugLog.error(id, 'window.api.saveGlobalConfig not available');
+    throw new Error('saveGlobalConfig requires Electron IPC');
+  },
+
+  listStories: async (): Promise<{ name: string; path: string; directory_name: string }[]> => {
+    const id = `${LOG_ID}:listStories`;
+    debugLog.info(id, 'ENTER listStories');
+    
+    if (typeof window !== 'undefined' && window.api && window.api.listStories) {
+      try {
+        const stories = await window.api.listStories();
+        debugLog.info(id, 'Successfully listed stories', { count: stories?.length });
+        return stories;
+      } catch (e) {
+        debugLog.exception(id, 'listStories IPC call', e);
+        throw e;
+      }
+    }
+    
+    debugLog.error(id, 'window.api.listStories not available');
+    throw new Error('listStories requires Electron IPC');
+  },
+
+  setCurrentStory: async (storyDirectory: string): Promise<boolean> => {
+    const id = `${LOG_ID}:setCurrentStory`;
+    debugLog.info(id, 'ENTER setCurrentStory', { storyDirectory });
+    
+    if (typeof window !== 'undefined' && window.api && window.api.setCurrentStory) {
+      try {
+        const result = await window.api.setCurrentStory(storyDirectory);
+        debugLog.info(id, 'Successfully set current story', { result });
+        return result;
+      } catch (e) {
+        debugLog.exception(id, 'setCurrentStory IPC call', e);
+        throw e;
+      }
+    }
+    
+    debugLog.error(id, 'window.api.setCurrentStory not available');
+    return false;
+  },
+
+  getCurrentStory: async (): Promise<string> => {
+    const id = `${LOG_ID}:getCurrentStory`;
+    debugLog.info(id, 'ENTER getCurrentStory');
+    
+    if (typeof window !== 'undefined' && window.api && window.api.getCurrentStory) {
+      try {
+        const story = await window.api.getCurrentStory();
+        debugLog.info(id, 'Successfully got current story', { story });
+        return story;
+      } catch (e) {
+        debugLog.exception(id, 'getCurrentStory IPC call', e);
+        throw e;
+      }
+    }
+    
+    debugLog.error(id, 'window.api.getCurrentStory not available');
+    return '';
+  },
+
+  listChapterFilesForStory: async (storyDir: string): Promise<string[]> => {
+    const id = `${LOG_ID}:listChapterFilesForStory`;
+    debugLog.info(id, 'ENTER listChapterFilesForStory', { storyDir });
+    
+    if (typeof window !== 'undefined' && window.api && window.api.listChapterFilesForStory) {
+      try {
+        const files = await window.api.listChapterFilesForStory(storyDir);
+        debugLog.info(id, 'Successfully listed chapter files', { count: files?.length });
+        return files;
+      } catch (e) {
+        debugLog.exception(id, 'listChapterFilesForStory IPC call', e);
+        throw e;
+      }
+    }
+    
+    debugLog.error(id, 'window.api.listChapterFilesForStory not available');
+    throw new Error('listChapterFilesForStory requires Electron IPC');
+  },
+
+  checkXmlExistsForStory: async (chapterStem: string, storyDir: string): Promise<boolean> => {
+    const id = `${LOG_ID}:checkXmlExistsForStory`;
+    debugLog.info(id, 'ENTER checkXmlExistsForStory', { chapterStem, storyDir });
+    
+    if (typeof window !== 'undefined' && window.api && window.api.checkXmlExistsForStory) {
+      try {
+        const exists = await window.api.checkXmlExistsForStory(chapterStem, storyDir);
+        debugLog.info(id, 'Successfully checked XML existence', { exists });
+        return exists;
+      } catch (e) {
+        debugLog.exception(id, 'checkXmlExistsForStory IPC call', e);
+        throw e;
+      }
+    }
+    
+    debugLog.error(id, 'window.api.checkXmlExistsForStory not available');
+    return false;
   },
 
   readChapterFile: async (filePath: string): Promise<string> => {

@@ -42,3 +42,17 @@ export interface Chapter {
   name: string;
   dialogs: DialogElement[];
 }
+
+// FlexiTTS Story Management Types (added by integration)
+export interface StoryInfo {
+  name: string;           // Display name (without prefix)
+  path: string;           // Full path to story directory
+  directory_name: string; // Full directory name (with prefix)
+}
+
+export interface FlexiTTSConfig {
+  FlexiTTS: {
+    'stories-dir': string;
+    'story-dir-prefix': string;
+  };
+}

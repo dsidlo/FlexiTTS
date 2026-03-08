@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { PythonBridgeService } from '../services/pythonBridge';
-import type { Chapter, StoryConfig } from '../models/types';
+import { StoryDropdown } from './StoryDropdown';
+import type { Chapter, StoryConfig, StoryInfo } from '../models/types';
 
 interface TopBarProps {
   config: StoryConfig | null;
@@ -16,12 +17,16 @@ interface TopBarProps {
   hasUnsavedChanges?: boolean;
   editorMode?: boolean;
   onToggleEditor?: () => void;
+  // Story selection props
+  currentStory?: StoryInfo | null;
+  onStorySelect?: (story: StoryInfo | null) => void;
 }
 
 export const TopBar: React.FC<TopBarProps> = ({ 
   config, chapter, filePath, chapterList, hasChapterAudio,
   selectedCharacter, onChapterSelect, onCharacterSelect, onSave, onRenderComplete,
-  hasUnsavedChanges, editorMode, onToggleEditor
+  hasUnsavedChanges, editorMode, onToggleEditor,
+  currentStory, onStorySelect
 }) => {
   const [isSaving, setIsSaving] = useState(false);
   const [isRendering, setIsRendering] = useState(false);
@@ -115,6 +120,12 @@ export const TopBar: React.FC<TopBarProps> = ({
 
   return (
     <div className="top-bar" style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '8px', borderBottom: '1px solid #ccc' }}>
+      {/* Story Selection Dropdown */}
+      <StoryDropdown 
+        onStorySelect={onStorySelect || (() => {})} 
+        selectedStory={currentStory}
+      />
+      
       <div className="chapter-name" style={{ display: 'flex', alignItems: 'center' }}>
         <strong>Chapter Name:</strong>{' '}
         <select 
