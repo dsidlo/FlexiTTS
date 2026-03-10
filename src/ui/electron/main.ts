@@ -239,9 +239,29 @@ app.commandLine.appendSwitch('ignore-certificate-errors');
 // Add a CSP rule to suppress the warning during development
 process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = 'true';
 
+function killExistingTtsWsServerProcesses(): Promise<void> {
+  const { exec } = require('child_process');
+  const scriptMatch = `${projectRoot}/src/scripts/tts_ws_server.py`;
+
+  log.info(`[TTS Warmup] Checking for existing TTS server processes: ${scriptMatch}`);
+
+  return new Promise((resolve) => {
+    exec(`pkill -f "${scriptMatch}" 2>/dev/null || true`, (err: any, stdout: string, stderr: string) => {
+      if (err) {
+        log.warn('[TTS Warmup] pkill returned error while stopping existing TTS server', { err: String(err), stdout, stderr });
+      } else {
+        log.info('[TTS Warmup] Existing tts_ws_server.py processes terminated (if any)');
+      }
+
+      setTimeout(() => resolve(), 1000);
+    });
+  });
+}
+
 // Start TTS service on app startup
 async function warmupTTSService() {
   log.info('[TTS Warmup] Starting TTS service warmup...');
+  await killExistingTtsWsServerProcesses();
   
   return new Promise<void>((resolve) => {
     ttsServiceProcess = spawn('uv', ['run', 'python', 'src/scripts/start_tts_service.py'], {
