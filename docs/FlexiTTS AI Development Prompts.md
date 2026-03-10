@@ -18,4 +18,13 @@
 
 /dytopo
 - Verify that UI and python script follow and respect the config files ~/.config/FlexiTTS/FlexiTTS.yaml (which indicates where the stories are located) and Story-<story_name>/story-config.yml (which indicates where the soy's resources are located).
-- The UI should refference the current-story based on the FlexiTTS.yml config file.
+- The UI should reference the current-story based on the FlexiTTS.yml config file.
+
+** Note: gpt-5.4 was required to debug and correct the config file refactoring. Kimi-k2.5 was simply incapable of handling the breadth of the changes across UI code and python scripts and various logs for clues to handling the issues resulting from the refactor.
+
+
+/dytopo
+- story-config has some slight changes.
+- "story-dir:" removed './' in front of the path, leaving only the directory name of the story directory.
+- "voice-sample:" removed the path the file voice reference audio file. The path should be derived using the "voices:" directory property.
+Given these changes, update App UI code and python scripts to reflect the config file changes.

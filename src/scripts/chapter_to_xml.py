@@ -7,16 +7,43 @@ import argparse
 from pathlib import Path
 from litellm import completion
 from dotenv import load_dotenv
+from log_utils import setup_script_logging
 
-def load_config(config_path="story-config.yml"):
+logger = setup_script_logging('chapter_to_xml')
+
+def load_config(config_path="story-config.yml", input_path=None):
+    resolved_config = Path(config_path)
+    logger.info(f"load_config start config_path={config_path} input_path={input_path}")
+
+    if not resolved_config.exists() and input_path:
+        input_path = Path(input_path)
+        candidates = []
+        if input_path.is_absolute():
+            candidates.extend([
+                input_path.parent.parent / "story-config.yml",
+                input_path.parent / "story-config.yml",
+            ])
+        else:
+            cwd_input = (Path.cwd() / input_path).resolve()
+            candidates.extend([
+                cwd_input.parent.parent / "story-config.yml",
+                cwd_input.parent / "story-config.yml",
+            ])
+
+        for candidate in candidates:
+            if candidate.exists():
+                resolved_config = candidate
+                break
+
     print(f"[RESOURCE-ACCESS] Loading story config", file=sys.stderr)
-    print(f"  config_path: {config_path}", file=sys.stderr)
+    print(f"  config_path: {resolved_config}", file=sys.stderr)
     print(f"  resourceType: yaml", file=sys.stderr)
-    with open(config_path, 'r') as f:
+    with open(resolved_config, 'r') as f:
         config = yaml.safe_load(f)
+    logger.info(f"load_config resolved_config={resolved_config}")
     print(f"[RESOURCE-ACCESS] Successfully loaded story config", file=sys.stderr)
-    print(f"  config_path: {config_path}", file=sys.stderr)
-    return config
+    print(f"  config_path: {resolved_config}", file=sys.stderr)
+    return config, resolved_config
 
 def get_prompt_template(notes_path="src/scripts/FlexiTTS-AI-Prompt-Chapter-to-XML.md"):
     print(f"[RESOURCE-ACCESS] Reading markdown prompt template", file=sys.stderr)
@@ -64,10 +91,20 @@ def main():
     parser = create_parser()
     args = parser.parse_args()
 
-    config = load_config()
-    story_dir = Path(config['global']['story-dir'])
-    chapters_dir = story_dir / config['global']['chapters']
-    xml_dir = story_dir / config['global']['story-xml']
+    config, config_path = load_config(input_path=args.file_path)
+    config_base_dir = config_path.parent.resolve()
+    logger.info(f"main args file_path={args.file_path} all_chapters={args.all_chapters} llm={args.llm} config_path={config_path}")
+
+    configured_story_dir = Path(config['global']['story-dir'])
+    story_dir = configured_story_dir if configured_story_dir.is_absolute() else (config_base_dir / configured_story_dir).resolve()
+    if not story_dir.exists():
+        story_dir = config_base_dir
+
+    chapters_cfg = Path(config['global']['chapters'])
+    xml_cfg = Path(config['global']['story-xml'])
+    chapters_dir = chapters_cfg if chapters_cfg.is_absolute() else (story_dir / chapters_cfg).resolve()
+    xml_dir = xml_cfg if xml_cfg.is_absolute() else (story_dir / xml_cfg).resolve()
+    logger.info(f"resolved resources story_dir={story_dir} chapters_dir={chapters_dir} xml_dir={xml_dir}")
 
     # Re-parse with config-aware paths
     args = parser.parse_args()

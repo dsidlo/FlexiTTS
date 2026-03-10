@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { PythonBridgeService } from '../services/pythonBridge';
+import { debugLog } from '../utils/debugLogger';
 import { StoryDropdown } from './StoryDropdown';
 import type { Chapter, StoryConfig, StoryInfo } from '../models/types';
 
@@ -97,6 +98,7 @@ export const TopBar: React.FC<TopBarProps> = ({
 
   const handlePlayChapter = async () => {
     const chapterName = filePath.split('/').pop()?.replace('.md', '.xml') || 'Unknown.xml';
+    const logId = 'TopBar:handlePlayChapter';
     
     if (isPlayingAudio) {
       // Cancel operation
@@ -110,10 +112,15 @@ export const TopBar: React.FC<TopBarProps> = ({
       if (typeof window !== 'undefined' && window.api && window.api.playSoundFile) {
          const stem = chapterName.replace('.xml', '');
          const storyDir = currentStory?.directory_name || 'Story-Default';
-         const fullPath = `${storyDir}/story-audio/${stem}.wav`;
+         const fullPath = `Stories/${storyDir}/story-audio/${stem}.wav`;
+         debugLog.info(logId, 'Attempting chapter playback', { chapterName, stem, storyDir, fullPath });
          await window.api.playSoundFile(fullPath);
+         debugLog.info(logId, 'Chapter playback completed', { chapterName, fullPath });
+      } else {
+         debugLog.warn(logId, 'playSoundFile API unavailable', { chapterName });
       }
     } catch (error) {
+      debugLog.exception(logId, 'Play chapter failed', error, { chapterName, filePath, currentStory: currentStory?.directory_name });
       console.error("[TopBar] Play chapter failed or was cancelled:", error);
     } finally {
       setIsPlayingAudio(false);

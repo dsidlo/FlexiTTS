@@ -8,8 +8,10 @@ import { AlertContainer } from './components/AlertContainer';
 import { useChapter, useMarkdown, useAlerts, useTtsAlerts, type AlertType } from './hooks';
 import { alertService, alerts } from './services/alertService';
 import { generateXMLFromChapter } from './services/chapterService';
+import { debugLog } from './utils/debugLogger';
 
 function App() {
+  const logId = 'App';
   // Story management state - MUST be declared before hooks that use it
   const [currentStory, setCurrentStory] = useState<StoryInfo | null>(null);
 
@@ -121,6 +123,7 @@ function App() {
     const init = async () => {
       try {
         setLoading(true);
+        debugLog.info(`${logId}:init`, 'Initializing app bootstrap');
         await PythonBridgeService.validateConfig();
         
         // Load available stories and set current story
@@ -172,6 +175,7 @@ function App() {
         
         setCurrentStory(selectedStory);
         console.log('[App.tsx] Selected story:', selectedStory);
+        debugLog.info(`${logId}:init`, 'Selected story resolved', { selectedStory });
         
         // Set current story in main process
         if (selectedStory) {
@@ -191,6 +195,14 @@ function App() {
           cfg = selectedStory 
             ? await PythonBridgeService.loadStoryConfigForStory(selectedStory.directory_name)
             : await PythonBridgeService.loadStoryConfig();
+          debugLog.info(`${logId}:init`, 'Story config loaded', {
+            storyDir: storyDir || 'legacy',
+            chaptersDir: cfg?.global?.chapters,
+            storyXmlDir: cfg?.global?.['story-xml'],
+            storyAudioDir: cfg?.global?.['story-audio'],
+            clipsDir: cfg?.global?.clips,
+            voicesDir: cfg?.global?.voices,
+          });
           console.log(`[App.tsx] Successfully loaded config for: ${storyDir || 'legacy'}`);
         } catch (err) {
           console.error('[App.tsx] Failed to load story config:', err);
@@ -240,16 +252,22 @@ function App() {
     setGenerateAttempt(attempt);
     try {
       if (window.api?.runPythonScript) {
-        // Use current story directory dynamically
         const storyDir = currentStory?.directory_name || 'Story-Default';
-        await window.api.runPythonScript('src/scripts/chapter_to_xml.py', [`${storyDir}/story-chapters/${stem}.md`]);
-        await window.api.runPythonScript('src/scripts/chapter_seq_xml.py', [`${storyDir}/story-xml/${stem}.xml`]);
-        await window.api.runPythonScript('src/scripts/chapter_validate_xml.py', [`${storyDir}/story-xml/${stem}.xml`]);
+        const mdPath = `${storyDir}/story-chapters/${stem}.md`;
+        const xmlPath = `${storyDir}/story-xml/${stem}.xml`;
+        debugLog.info(`${logId}:runXmlGenerationPipeline`, 'Starting XML generation pipeline', { storyDir, stem, attempt, mdPath, xmlPath });
+        await window.api.runPythonScript('src/scripts/chapter_to_xml.py', [mdPath]);
+        debugLog.info(`${logId}:runXmlGenerationPipeline`, 'chapter_to_xml.py completed', { mdPath, xmlPath });
+        await window.api.runPythonScript('src/scripts/chapter_seq_xml.py', [xmlPath]);
+        debugLog.info(`${logId}:runXmlGenerationPipeline`, 'chapter_seq_xml.py completed', { xmlPath });
+        await window.api.runPythonScript('src/scripts/chapter_validate_xml.py', [xmlPath]);
+        debugLog.info(`${logId}:runXmlGenerationPipeline`, 'chapter_validate_xml.py completed', { xmlPath });
       } else {
-        console.log(`[Mock] Attempt ${attempt}`);
+        debugLog.warn(`${logId}:runXmlGenerationPipeline`, 'Mock pipeline execution', { stem, attempt });
         await new Promise(r => setTimeout(r, 2000));
       }
     } catch (err) {
+      debugLog.exception(`${logId}:runXmlGenerationPipeline`, 'XML generation pipeline', err, { stem, attempt });
       if (attempt >= 3) throw err;
       await runXmlGenerationPipeline(stem, attempt + 1);
     }
@@ -298,10 +316,13 @@ function App() {
     const stem = filePath.split('/').pop()?.replace('.md', '')?.replace('.xml', '') || 'unknown';
     
     const storyDir = forcedStoryDir || currentStory?.directory_name || 'Story-Default';
+    debugLog.info(`${logId}:handleChapterSelect`, 'Selecting chapter', { filePath, stem, storyDir, forcedStoryDir });
     await loadMarkdown(stem, storyDir);
     
     const xmlPath = `${storyDir}/story-xml/${stem}.xml`;
-    if (await PythonBridgeService.checkXmlExistsForStory(stem, storyDir)) {
+    const xmlExists = await PythonBridgeService.checkXmlExistsForStory(stem, storyDir);
+    debugLog.info(`${logId}:handleChapterSelect`, 'XML existence decision', { stem, storyDir, xmlPath, xmlExists });
+    if (xmlExists) {
       await loadChapter(xmlPath, loadedConfig, storyDir);
     } else {
       setIsGeneratingStructure(true);
@@ -342,10 +363,19 @@ function App() {
     
     setLoading(true);
     setCurrentStory(story);
+    debugLog.info(`${logId}:handleStorySelect`, 'Switching story', { story });
     await PythonBridgeService.setCurrentStory(story.directory_name);
     
     // Load config for new story
     const cfg = await PythonBridgeService.loadStoryConfigForStory(story.directory_name);
+    debugLog.info(`${logId}:handleStorySelect`, 'Loaded story config after switch', {
+      storyDir: story.directory_name,
+      chaptersDir: cfg?.global?.chapters,
+      storyXmlDir: cfg?.global?.['story-xml'],
+      storyAudioDir: cfg?.global?.['story-audio'],
+      clipsDir: cfg?.global?.clips,
+      voicesDir: cfg?.global?.voices,
+    });
     setConfig(cfg);
     
     // Load chapters for new story

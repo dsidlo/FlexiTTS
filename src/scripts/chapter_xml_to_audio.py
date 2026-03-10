@@ -15,6 +15,9 @@ from xml.etree import ElementTree as ET
 from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass
 from chapter_validate_xml import validate_and_fix_xml
+from log_utils import setup_script_logging
+
+logger = setup_script_logging('chapter_xml_to_audio')
 
 try:
     from tts_factory import create_tts_provider, TTSProviderFactory as TTSFactory
@@ -87,6 +90,7 @@ def apply_sox_effects(input_path: Path, effects_list: List[str], dry_run: bool =
 
 
 def parse_xml(xml_path: Path) -> List[Utterance]:
+    logger.info(f"parse_xml xml_path={xml_path}")
     print(f"[RESOURCE-ACCESS] Reading XML input", file=sys.stderr)
     print(f"  xml_path: {xml_path}", file=sys.stderr)
     print(f"  resourceType: xml", file=sys.stderr)
@@ -225,6 +229,18 @@ def main():
     clip_separation = float(global_cfg.get("clip-separation", 0))
 
     story_audio_dir.mkdir(parents=True, exist_ok=True)
+
+    def resolve_voice_sample_path(voice_sample: str) -> str:
+        sample_path = Path(voice_sample)
+        if sample_path.is_absolute():
+            return str(sample_path)
+        return str((voices_dir / sample_path).resolve())
+
+    # Normalize character voice-sample paths against global.voices
+    for char_cfg in config.get("characters", []):
+        voice_sample = char_cfg.get("voice-sample")
+        if voice_sample:
+            char_cfg["voice-sample"] = resolve_voice_sample_path(voice_sample)
 
     # xml_path was determined earlier for auto-detect, but finalize it here
     if xml_path and not xml_path.is_absolute():

@@ -128,12 +128,12 @@ export const PythonBridgeService = {
     return {
       global: {
         'story-dir': `${storyDir}/`,
-        voices: '',
-        chapters: '',
-        'story-xml': `${storyDir}/story-xml/`,
-        logs: '',
-        'story-audio': '',
-        clips: '',
+        voices: 'refs/',
+        chapters: 'story-chapters/',
+        'story-xml': 'story-xml/',
+        logs: 'logs/',
+        'story-audio': 'story-audio/',
+        clips: 'story-audio/clips/',
         'clip-separation': 0
       },
       'llm-xml-generator': [],

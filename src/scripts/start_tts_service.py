@@ -5,6 +5,9 @@ import sys
 import os
 import time
 from pathlib import Path
+from log_utils import setup_script_logging
+
+logger = setup_script_logging('start_tts_service')
 
 # Add src/scripts to path for importing RemoteTTSProvider
 sys.path.insert(0, str(Path(__file__).parent))
@@ -45,7 +48,7 @@ def start_tts_service(wait_ready: bool = True, timeout: int = 180) -> int:
         # Start service with nohup so it continues running
         # Redirect output to log file
         log_file = Path("/tmp/FlexiTTS.log")
-        log_file.unlink(missing_ok=True)  # Clear old log
+        logger.info(f"Starting TTS service launcher with timeout={timeout}s script={tts_service_script}")
         
         print(f"🚀 Starting TTS service (timeout: {timeout}s)...")
         

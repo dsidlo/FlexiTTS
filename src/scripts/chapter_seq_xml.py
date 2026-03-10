@@ -5,6 +5,9 @@ import os
 import yaml
 from pathlib import Path
 from xml.etree import ElementTree as ET
+from log_utils import setup_script_logging
+
+logger = setup_script_logging('chapter_seq_xml')
 
 def indent(elem, level=0):
     i = "\n" + level*"  "
@@ -22,6 +25,7 @@ def indent(elem, level=0):
             elem.tail = i
 
 def resequence_xml(input_path, output_path=None):
+    logger.info(f"resequence_xml input_path={input_path} output_path={output_path}")
     print(f"[RESOURCE-ACCESS] Reading XML for resequencing", file=sys.stderr)
     print(f"  input_path: {input_path}", file=sys.stderr)
     print(f"  resourceType: xml", file=sys.stderr)
@@ -101,8 +105,16 @@ def main():
         config = yaml.safe_load(f)
     
     global_cfg = config.get("global", {})
-    story_dir = Path(global_cfg.get("story-dir", "."))
-    story_xml_dir = story_dir / global_cfg.get("story-xml", "story-xml")
+    config_base_dir = config_file.parent.resolve()
+
+    configured_story_dir = Path(global_cfg.get("story-dir", "."))
+    story_dir = configured_story_dir if configured_story_dir.is_absolute() else (config_base_dir / configured_story_dir).resolve()
+    if not story_dir.exists():
+        story_dir = config_base_dir
+
+    story_xml_cfg = Path(global_cfg.get("story-xml", "story-xml"))
+    story_xml_dir = story_xml_cfg if story_xml_cfg.is_absolute() else (story_dir / story_xml_cfg).resolve()
+    logger.info(f"resolved resources config_file={config_file} story_dir={story_dir} story_xml_dir={story_xml_dir} xml_arg={args.xml_file}")
 
     if args.xml_file:
         if "/" in args.xml_file or os.path.sep in args.xml_file:

@@ -6,6 +6,9 @@ import yaml
 import re
 from pathlib import Path
 from lxml import etree
+from log_utils import setup_script_logging
+
+logger = setup_script_logging('chapter_validate_xml')
 
 # Internal XSD Schema based on 01-Hendrix.xml
 XSD_SCHEMA = """<?xml version="1.0" encoding="UTF-8"?>
@@ -263,6 +266,7 @@ def validate_and_fix_xml(xml_path):
     return True
 
 def validate_xml(xml_path):
+    logger.info(f"validate_xml xml_path={xml_path}")
     print(f"[RESOURCE-ACCESS] Validating XML against XSD schema", file=sys.stderr)
     print(f"  xml_path: {xml_path}", file=sys.stderr)
     print(f"  resourceType: xml", file=sys.stderr)

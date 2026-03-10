@@ -256,8 +256,8 @@ export const useChapter = (storyDirectory?: string): UseChapterReturn => {
     const stem = filePath.split('/').pop()?.replace('.md', '')?.replace('.xml', '') || 'unknown';
     const xmlPath = `${storyDir}/story-xml/${stem}.xml`;
     
-    // Check if XML exists
-    const xmlExists = await PythonBridgeService.checkXmlExists(stem);
+    // Check if XML exists for the currently selected story
+    const xmlExists = await PythonBridgeService.checkXmlExistsForStory(stem, storyDir);
     
     if (xmlExists) {
       await loadChapter(xmlPath, loadedConfig);

@@ -1,8 +1,8 @@
 global:
   # This is the root directory for the story project
-  story-dir: Story-Entanglement/
+  story-dir: Story-Default/
   # Place character voice references here
-  voices: refs/
+  voices: story-voice-refs/
   # Place the Markdown format of original story chapters here
   chapters: story-chapters/
   # AI XML breakdown of story chapters by character is saved here
@@ -65,7 +65,7 @@ characters:
   #    Sohee: Warm Korean female voice with rich emotion.                  | Korean
   - name: Narrator
     # The narrator voice uses voice cloning and a post-effect to make it a bit louder.
-    voice-sample: dgs-voice.wav
+    voice-sample: narrator-voice.wav
     sox-effects:
       - gain +4
   - name: Narrator-cv
@@ -94,8 +94,6 @@ characters:
       - pitch -250 equalizer 1800 +4 1.8 equalizer 3200 +3 2.2 bass +2 120 gain -n -1.5
   - name: Ayana
     voice-sample: Ayana-voice.wav
-  - name: Juko
-    voice-sample: Juko-voice.wav
   - name: Hayden
     custom-voice:
       language: English
@@ -136,10 +134,3 @@ characters:
       instruct: "Wicked, Sneering"
     dialog-effects:
       - cave
-
-
-# SoX Chain for "Deeper + Slightly Asian-Timbre" Voice
-# pitch -350 equalizer 800 -4 1.5 equalizer 2200 +3 2.0 equalizer 3500 +2 2.5 treble -2 6000 compand 0.1,0.4:4:-60/-50/-20 -3 -90 0.1 gain -n -1
-
-# Best SoX Approach for Smoothing Plosives / Abrupt Pops
-# highpass 100 0.7 lowshelf -6 150 0.8 compand 0.05,0.2:6:-60/-50/-20 -3 -90 0.05 gain -n -1
