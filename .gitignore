@@ -336,3 +336,6 @@ cython_debug/
 
 # pi AI Coding
 .pi
+
+# DyTopo Workspace
+.dytopo
