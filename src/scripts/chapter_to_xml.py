@@ -9,12 +9,23 @@ from litellm import completion
 from dotenv import load_dotenv
 
 def load_config(config_path="story-config.yml"):
+    print(f"[RESOURCE-ACCESS] Loading story config", file=sys.stderr)
+    print(f"  config_path: {config_path}", file=sys.stderr)
+    print(f"  resourceType: yaml", file=sys.stderr)
     with open(config_path, 'r') as f:
-        return yaml.safe_load(f)
+        config = yaml.safe_load(f)
+    print(f"[RESOURCE-ACCESS] Successfully loaded story config", file=sys.stderr)
+    print(f"  config_path: {config_path}", file=sys.stderr)
+    return config
 
 def get_prompt_template(notes_path="src/scripts/FlexiTTS-AI-Prompt-Chapter-to-XML.md"):
+    print(f"[RESOURCE-ACCESS] Reading markdown prompt template", file=sys.stderr)
+    print(f"  notes_path: {notes_path}", file=sys.stderr)
+    print(f"  resourceType: markdown", file=sys.stderr)
     with open(notes_path, 'r') as f:
         content = f.read()
+    print(f"[RESOURCE-ACCESS] Successfully read markdown prompt template", file=sys.stderr)
+    print(f"  notes_path: {notes_path}", file=sys.stderr)
     
     # Extract the XML prompt section
     # Based on the file content, it's between ```xml and ```
@@ -101,8 +112,17 @@ def main():
         chapter_files.append(input_file)
 
     for input_file in chapter_files:
+        print(f"[RESOURCE-ACCESS] Reading markdown input", file=sys.stderr)
+        print(f"  input_path: {input_file}", file=sys.stderr)
+        print(f"  resourceType: markdown", file=sys.stderr)
+        print(f"  operation: read", file=sys.stderr)
+        if not input_file.exists():
+            print(f"[RESOURCE-ACCESS] markdown NOT found: {input_file}", file=sys.stderr)
         with open(input_file, 'r') as f:
             story_text = f.read()
+        print(f"[RESOURCE-ACCESS] Successfully read markdown input", file=sys.stderr)
+        print(f"  input_path: {input_file}", file=sys.stderr)
+        print(f"  contentLength: {len(story_text)}", file=sys.stderr)
 
         template = get_prompt_template()
 
@@ -179,10 +199,18 @@ def main():
             output_filename = input_file.stem + ".xml"
             output_path = xml_dir / output_filename
 
+            print(f"[RESOURCE-ACCESS] Writing XML output", file=sys.stderr)
+            print(f"  output_path: {output_path}", file=sys.stderr)
+            print(f"  resourceType: xml", file=sys.stderr)
+            print(f"  operation: write", file=sys.stderr)
+            print(f"  contentLength: {len(xml_output)}", file=sys.stderr)
+            
             xml_dir.mkdir(parents=True, exist_ok=True)
             with open(output_path, 'w') as f:
                 f.write(xml_output)
 
+            print(f"[RESOURCE-ACCESS] Successfully wrote XML output", file=sys.stderr)
+            print(f"  output_path: {output_path}", file=sys.stderr)
             print(f"XML saved to {output_path}")
 
         except Exception as e:

@@ -2,6 +2,7 @@ import { useState, useCallback, useRef } from 'react';
 import type { Chapter, StoryConfig, DialogElement } from '../models/types';
 import { PythonBridgeService } from '../services/pythonBridge';
 import { generateXMLFromChapter } from '../services/chapterService';
+import { debugLog } from '../utils/debugLogger';
 
 export interface UseChapterReturn {
   // State
@@ -27,7 +28,7 @@ export interface UseChapterReturn {
   setSelectedCharacterFilter: React.Dispatch<React.SetStateAction<string>>;
   
   // Actions
-  loadChapter: (filePath: string, loadedConfig?: StoryConfig) => Promise<void>;
+  loadChapter: (filePath: string, loadedConfig?: StoryConfig, forceStoryDir?: string) => Promise<void>;
   handleChapterSelect: (filePath: string, loadedConfig?: StoryConfig) => Promise<void>;
   handleUpdateDialog: (id: string, sectionId: string, updatedDialog: DialogElement) => void;
   setCurrentChapterFile: React.Dispatch<React.SetStateAction<string>>;
@@ -52,7 +53,7 @@ export interface UseChapterReturn {
  * Hook for managing chapter state and operations.
  * Handles loading, parsing, and updating chapters.
  */
-export const useChapter = (): UseChapterReturn => {
+export const useChapter = (storyDirectory?: string): UseChapterReturn => {
   const [config, setConfig] = useState<StoryConfig | null>(null);
   const [chapter, setChapter] = useState<Chapter | null>(null);
   const [chapterList, setChapterList] = useState<string[]>([]);
@@ -137,21 +138,26 @@ export const useChapter = (): UseChapterReturn => {
   /**
    * Load a chapter from file
    */
-  const loadChapter = useCallback(async (filePath: string, _loadedConfig?: StoryConfig) => {
+  const loadChapter = useCallback(async (filePath: string, _loadedConfig?: StoryConfig, forceStoryDir?: string) => {
+    const id = 'useChapter:loadChapter';
+    const chapterName = filePath.split('/').pop()?.replace('.xml', '') || 'unknown';
+    const storyDir = forceStoryDir || storyDirectory || 'Story-Default';
+    const xmlPath = `${storyDir}/story-xml/${chapterName}.xml`;
+    debugLog.info(id, '[RESOURCE-ACCESS] Loading chapter XML', { filePath, xmlPath, storyDir, resourceType: 'xml', operation: 'read' });
+    
     try {
-      console.log(`Loading chapter: ${filePath}`);
-      
       try {
         await PythonBridgeService.validateChapterXML(filePath);
+        debugLog.info(id, '[RESOURCE-ACCESS] XML validation successful', { filePath });
       } catch (validationErr: unknown) {
-        console.warn('XML validation failed:', validationErr);
+        debugLog.warn(id, `[RESOURCE-ACCESS] XML validation failed: ${validationErr}`, { filePath });
       }
 
       const loadedXml = await PythonBridgeService.readChapterFile(filePath);
-      console.log(`Loaded XML for ${filePath}:`, loadedXml.substring(0, 50) + '...');
+      debugLog.info(id, '[RESOURCE-ACCESS] Successfully read chapter XML', { filePath, length: loadedXml?.length });
       
       const parsedChapter = parseChapterXML(loadedXml, filePath);
-      console.log(`Parsed chapter:`, parsedChapter);
+      debugLog.info(id, '[RESOURCE-ACCESS] Parsed chapter', { chapter: parsedChapter.name, dialogs: parsedChapter.dialogs.length });
       
       setChapter(parsedChapter);
       setSelectedCharacterFilter('');
@@ -162,14 +168,16 @@ export const useChapter = (): UseChapterReturn => {
         setAvailableClips(clips);
         const hasAudio = await PythonBridgeService.checkChapterAudio(chapterName);
         setHasChapterAudio(hasAudio);
+        debugLog.info(id, '[RESOURCE-ACCESS] Audio clips checked', { chapterName, clipCount: clips.length, hasAudio });
       }
       
       const newXml = generateXMLFromChapter(parsedChapter);
       setXmlContent(newXml);
       setLastSavedXml(newXml);
       setHasUnsavedChanges(false);
+      debugLog.info(id, '[RESOURCE-ACCESS] Chapter loaded successfully', { filePath });
     } catch (err) {
-      console.error('Failed to load chapter:', err);
+      debugLog.exception(id, '[RESOURCE-ACCESS] Failed to load chapter', err as Error, { filePath });
       throw err;
     }
   }, [parseChapterXML]);
@@ -182,27 +190,39 @@ export const useChapter = (): UseChapterReturn => {
       throw new Error("Exceeded maximum retry attempts (3).");
     }
     setGenerateAttempt(attempt);
+    const id = 'useChapter:runXmlGenerationPipeline';
 
+    const storyDir = storyDirectory || 'Story-Default';
+    const mdInputPath = `${storyDir}/story-chapters/${stem}.md`;
+    const xmlOutputPath = `${storyDir}/story-xml/${stem}.xml`;
+    
+    debugLog.info(id, '[RESOURCE-ACCESS] Starting XML generation pipeline', { stem, attempt, mdInputPath, xmlOutputPath });
+    
     try {
       if (typeof window !== 'undefined' && window.api && window.api.runPythonScript) {
-        console.log(`[Pipeline] Attempt ${attempt}: Running chapter_to_xml.py on ${stem}`);
+        debugLog.info(id, '[RESOURCE-ACCESS] Running chapter_to_xml.py', { attempt, input: mdInputPath, resourceType: 'markdown' });
         await window.api.runPythonScript('src/scripts/chapter_to_xml.py', 
-          [`Story-Entanglement/story-chapters/${stem}.md`]);
+          [`${storyDir}/story-chapters/${stem}.md`]);
+        debugLog.info(id, '[RESOURCE-ACCESS] chapter_to_xml.py completed', { attempt, output: xmlOutputPath, resourceType: 'xml' });
         
-        console.log(`[Pipeline] Attempt ${attempt}: Running chapter_seq_xml.py on ${stem}`);
+        debugLog.info(id, '[RESOURCE-ACCESS] Running chapter_seq_xml.py', { attempt, xmlPath: xmlOutputPath });
         await window.api.runPythonScript('src/scripts/chapter_seq_xml.py', 
-          [`Story-Entanglement/story-xml/${stem}.xml`]);
+          [`${storyDir}/story-xml/${stem}.xml`]);
+        debugLog.info(id, '[RESOURCE-ACCESS] chapter_seq_xml.py completed', { attempt, xmlPath: xmlOutputPath });
         
-        console.log(`[Pipeline] Attempt ${attempt}: Running chapter_validate_xml.py on ${stem}`);
+        debugLog.info(id, '[RESOURCE-ACCESS] Running chapter_validate_xml.py', { attempt, xmlPath: xmlOutputPath });
         await window.api.runPythonScript('src/scripts/chapter_validate_xml.py', 
-          [`Story-Entanglement/story-xml/${stem}.xml`]);
+          [`${storyDir}/story-xml/${stem}.xml`]);
+        debugLog.info(id, '[RESOURCE-ACCESS] chapter_validate_xml.py completed', { attempt, xmlPath: xmlOutputPath });
       } else {
-        console.log(`[Mock Pipeline] Attempt ${attempt} for ${stem}`);
+        debugLog.warn(id, '[RESOURCE-ACCESS] Mock Pipeline', { attempt, stem });
         await new Promise(r => setTimeout(r, 2000));
       }
+      debugLog.info(id, '[RESOURCE-ACCESS] XML generation pipeline completed successfully', { stem, attempt });
     } catch (err: unknown) {
-      console.warn(`[Pipeline] Attempt ${attempt} failed:`, err);
+      debugLog.warn(id, `[RESOURCE-ACCESS] Pipeline attempt ${attempt} failed: ${err}`, { stem });
       if (attempt >= 3) {
+        debugLog.error(id, '[RESOURCE-ACCESS] Pipeline failed after all retries', { stem });
         throw err;
       }
       await runXmlGenerationPipeline(stem, attempt + 1);
@@ -229,10 +249,12 @@ export const useChapter = (): UseChapterReturn => {
       // res === 1 (Discard) just proceeds
     }
 
+    const storyDir = storyDirectory || 'Story-Default';
+    
     setCurrentChapterFile(filePath);
     
     const stem = filePath.split('/').pop()?.replace('.md', '')?.replace('.xml', '') || 'unknown';
-    const xmlPath = `Story-Entanglement/story-xml/${stem}.xml`;
+    const xmlPath = `${storyDir}/story-xml/${stem}.xml`;
     
     // Check if XML exists
     const xmlExists = await PythonBridgeService.checkXmlExists(stem);

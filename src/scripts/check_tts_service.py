@@ -16,7 +16,7 @@ debug(f"Python path: {sys.path[0]}")
 
 def check_tts_service_detailed():
     """Check if TTS service is running and ready."""
-    pid_file = Path("/tmp/tts_service.pid")
+    pid_file = Path("/tmp/FlexiTTS_tts_service.pid")
     debug(f"Checking PID file: {pid_file}")
     
     if not pid_file.exists():

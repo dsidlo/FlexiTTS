@@ -15,3 +15,7 @@
 - Scripts in src/scripts
 - App UI in src/ui
 - Goal: Implement these features and associated tests. All tests pass with no failures.
+
+/dytopo
+- Verify that UI and python script follow and respect the config files ~/.config/FlexiTTS/FlexiTTS.yaml (which indicates where the stories are located) and Story-<story_name>/story-config.yml (which indicates where the soy's resources are located).
+- The UI should refference the current-story based on the FlexiTTS.yml config file.

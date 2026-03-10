@@ -12,7 +12,7 @@ sys.modules['tts_factory'].TTSFactory = Mock()
 sys.modules['tts_interface'] = Mock()
 sys.modules['tts_local'] = Mock()
 sys.modules['tts_service'] = Mock()
-sys.modules['yaml'] = Mock()
+# yaml is NOT mocked at sys.modules level - causes test isolation issues
 sys.modules['soundfile'] = Mock()
 # Note: Do NOT mock sys.modules['numpy'] here - it causes isolation issues
 # Instead use @patch('chapter_xml_to_audio.np') in tests that need it

@@ -20,8 +20,8 @@ class TestIntegrationTTSServiceManagement(unittest.TestCase):
     def setUpClass(cls):
         """Set up test environment."""
         cls.script_dir = Path(__file__).parent.parent
-        cls.pid_file = Path("/tmp/tts_service.pid")
-        cls.log_file = Path("/tmp/tts_service.log")
+        cls.pid_file = Path("/tmp/FlexiTTS_tts_service.pid")
+        cls.log_file = Path("/tmp/FlexiTTS.log")
         
     def setUp(self):
         """Clean up before each test."""
@@ -164,7 +164,7 @@ class TestErrorHandlingIntegration(unittest.TestCase):
     
     def test_corrupted_pid_file(self):
         """Test behavior when PID file is corrupted."""
-        pid_file = Path("/tmp/tts_service.pid")
+        pid_file = Path("/tmp/FlexiTTS_tts_service.pid")
         pid_file.write_text("not_a_valid_pid")
         
         try:
@@ -179,7 +179,7 @@ class TestErrorHandlingIntegration(unittest.TestCase):
     
     def test_permission_denied_on_kill(self):
         """Test behavior when can't signal process."""
-        pid_file = Path("/tmp/tts_service.pid")
+        pid_file = Path("/tmp/FlexiTTS_tts_service.pid")
         pid_file.write_text("1")  # Init process - can't signal without root
         
         try:

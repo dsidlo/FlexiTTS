@@ -1,9 +1,9 @@
 /**
  * Debug Logger for FlexiTTS
- * Logs to /tmp/FlexiTTS_app.log with unique identifiers
+ * Logs to /tmp/FlexiTTS.log with unique identifiers
  */
 
-const LOG_FILE = '/tmp/FlexiTTS_app.log';
+const LOG_FILE = '/tmp/FlexiTTS.log';
 
 // Enable debug logging via localStorage or environment
 const isDebugEnabled = (): boolean => {
@@ -28,10 +28,11 @@ const generateId = (component: string, functionName: string, line?: string): str
 
 /**
  * Write log to file via Electron IPC if available, otherwise console
+ * All UI logs are prefixed with [UI] for easy identification
  */
 const writeLog = async (level: string, id: string, message: string, data?: unknown): Promise<void> => {
   const timestamp = new Date().toISOString();
-  const logLine = `[${timestamp}] ${level} ${id} ${message}`;
+  const logLine = `[${timestamp}] [UI] ${level} ${id} ${message}`;
   
   // Log to console first
   if (level === 'ERROR') {

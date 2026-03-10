@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef } from 'react';
 import { PythonBridgeService } from '../services/pythonBridge';
+import { debugLog } from '../utils/debugLogger';
 
 export interface UseMarkdownReturn {
   // State
@@ -19,7 +20,7 @@ export interface UseMarkdownReturn {
   setMarkdownContent: (content: string) => void;
   formatMarkdown: () => void;
   saveMarkdown: () => Promise<void>;
-  loadMarkdown: (stem: string) => Promise<void>;
+  loadMarkdown: (stem: string, forceStoryDir?: string) => Promise<void>;
   resetMarkdown: () => void;
   getMarkdownPath: (stem: string) => string;
   
@@ -78,7 +79,7 @@ export const formatMarkdownContent = (content: string, limit: number = 80): stri
  * Hook for managing markdown editor state and operations.
  * Handles loading, editing, formatting, and saving markdown content.
  */
-export const useMarkdown = (): UseMarkdownReturn => {
+export const useMarkdown = (storyDirectory?: string): UseMarkdownReturn => {
   const [editorMode, setEditorMode] = useState<boolean>(false);
   const [markdownContent, setMarkdownContentState] = useState<string>('');
   const [lastSavedMarkdown, setLastSavedMarkdown] = useState<string>('');
@@ -121,20 +122,25 @@ export const useMarkdown = (): UseMarkdownReturn => {
    * Load markdown content from file
    * @param stem - The chapter file stem (without extension)
    */
-  const loadMarkdown = useCallback(async (stem: string) => {
+  const loadMarkdown = useCallback(async (stem: string, forceStoryDir?: string) => {
+    const id = 'useMarkdown:loadMarkdown';
+    const storyDir = forceStoryDir || storyDirectory || 'Story-Default';
+    const mdPath = `${storyDir}/story-chapters/${stem}.md`;
+    debugLog.info(id, '[RESOURCE-ACCESS] Loading markdown file', { stem, mdPath, storyDir, resourceType: 'markdown', operation: 'read' });
+    
     try {
-      const mdPath = `Story-Entanglement/story-chapters/${stem}.md`;
       const mdContent = await PythonBridgeService.readFile(mdPath);
+      debugLog.info(id, '[RESOURCE-ACCESS] Successfully loaded markdown', { stem, length: mdContent?.length });
       setMarkdownContentState(mdContent);
       setLastSavedMarkdown(mdContent);
       setHasUnsavedMarkdownChanges(false);
     } catch (e) {
-      console.warn("Failed to load markdown for", stem, e);
+      debugLog.exception(id, '[RESOURCE-ACCESS] Failed to load markdown', e as Error, { stem, mdPath, storyDir });
       setMarkdownContentState("");
       setLastSavedMarkdown("");
       setHasUnsavedMarkdownChanges(false);
     }
-  }, []);
+  }, [storyDirectory]);
 
   /**
    * Reset markdown state to empty
@@ -152,8 +158,9 @@ export const useMarkdown = (): UseMarkdownReturn => {
    * @returns The full markdown file path
    */
   const getMarkdownPath = useCallback((stem: string): string => {
-    return `Story-Entanglement/story-chapters/${stem}.md`;
-  }, []);
+    const storyDir = storyDirectory || 'Story-Default';
+    return `${storyDir}/story-chapters/${stem}.md`;
+  }, [storyDirectory]);
 
   /**
    * Save the current markdown content
@@ -167,13 +174,17 @@ export const useMarkdown = (): UseMarkdownReturn => {
       return;
     }
     
+    const id = 'useMarkdown:saveMarkdown';
+    const mdPath = getMarkdownPath(stem);
+    debugLog.info(id, '[RESOURCE-ACCESS] Saving markdown file', { stem, mdPath, resourceType: 'markdown', operation: 'write', contentLength: markdownContent.length });
+    
     try {
-      const mdPath = getMarkdownPath(stem);
       await PythonBridgeService.writeChapterFile(mdPath, markdownContent);
+      debugLog.info(id, '[RESOURCE-ACCESS] Successfully saved markdown', { stem, mdPath });
       setLastSavedMarkdown(markdownContent);
       setHasUnsavedMarkdownChanges(false);
     } catch (err) {
-      console.error("Failed to save markdown:", err);
+      debugLog.exception(id, '[RESOURCE-ACCESS] Failed to save markdown', err as Error, { stem, mdPath });
       throw err;
     }
   }, [markdownContent, hasUnsavedMarkdownChanges, getMarkdownPath]);

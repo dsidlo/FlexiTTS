@@ -19,8 +19,8 @@ class TestTTSServiceStartup(unittest.TestCase):
         """Set up test fixtures."""
         self.script_dir = Path(__file__).parent.parent
         self.start_script = self.script_dir / "start_tts_service.py"
-        self.pid_file = Path("/tmp/tts_service.pid")
-        self.log_file = Path("/tmp/tts_service.log")
+        self.pid_file = Path("/tmp/FlexiTTS_tts_service.pid")
+        self.log_file = Path("/tmp/FlexiTTS.log")
         
         # Clean up any existing PID file
         if self.pid_file.exists():
@@ -117,7 +117,7 @@ class TestCheckTTSService(unittest.TestCase):
     
     def setUp(self):
         """Set up test fixtures."""
-        self.pid_file = Path("/tmp/tts_service.pid")
+        self.pid_file = Path("/tmp/FlexiTTS_tts_service.pid")
         
         # Clean up
         if self.pid_file.exists():

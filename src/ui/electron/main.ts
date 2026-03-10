@@ -5,6 +5,24 @@ import * as fs from 'fs';
 import * as jsyaml from 'js-yaml';
 import { pathToFileURL } from 'url';
 
+// Simple file logger - writes to /tmp/FlexiTTS.log only (no console output)
+const LOG_FILE = '/tmp/FlexiTTS.log';
+function writeLog(level: string, ...args: any[]) {
+  const timestamp = new Date().toISOString();
+  const message = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
+  const line = `[${timestamp}] ${level}: ${message}\n`;
+  try {
+    fs.appendFileSync(LOG_FILE, line);
+  } catch (e) {
+    // If we can't write to log file, silently fail
+  }
+}
+const log = {
+  info: (...args: any[]) => writeLog('INFO', ...args),
+  error: (...args: any[]) => writeLog('ERROR', ...args),
+  warn: (...args: any[]) => writeLog('WARN', ...args)
+};
+
 // Store active processes so they can be killed
 const activeProcesses: Map<string, ChildProcess> = new Map();
 
@@ -15,7 +33,7 @@ let ttsServiceProcess: ChildProcess | null = null;
 let isShuttingDown = false;
 
 // Store project root for path validation - initialized once at module load time
-const projectRoot: string = path.resolve(__dirname, '../../../');
+const projectRoot: string = path.resolve(__dirname, '../../../../');
 
 /**
  * Security: Validate that a path is within a parent directory
@@ -68,8 +86,13 @@ function validateScriptArguments(args: string[]): string[] {
     if (arg.includes(';') || arg.includes('&&') || arg.includes('||') || arg.includes('|')) {
       throw new Error('Invalid argument: contains shell metacharacters');
     }
+
+    // Preserve URL arguments exactly; path normalization corrupts ws:// into ws:/
+    if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(arg)) {
+      validated.push(arg);
+      continue;
+    }
     
-    // Argument looks safe
     validated.push(sanitizePath(arg));
   }
   
@@ -89,14 +112,14 @@ function expandTilde(inputPath: string): string {
 
 // Kill all active Python processes
 function killAllActiveProcesses() {
-  console.log(`[Cleanup] Killing ${activeProcesses.size} active Python processes...`);
+  log.info(`[Cleanup] Killing ${activeProcesses.size} active Python processes...`);
   const procsToKill = Array.from(activeProcesses.entries());
   activeProcesses.clear(); // Clear immediately to prevent re-kill attempts
   
   procsToKill.forEach(([id, proc]) => {
     try {
       if (proc.pid && !proc.killed) {
-        console.log(`[Cleanup] Killing ${id} (PID ${proc.pid})`);
+        log.info(`[Cleanup] Killing ${id} (PID ${proc.pid})`);
         proc.kill('SIGTERM');
         // Force kill after 2 seconds if still running
         setTimeout(() => {
@@ -108,14 +131,14 @@ function killAllActiveProcesses() {
         }, 2000);
       }
     } catch (e) {
-      console.log(`[Cleanup] Failed to kill ${id}:`, e);
+      log.error(`[Cleanup] Failed to kill ${id}:`, e);
     }
   });
   
   // Also kill TTS warmup process if running
   if (ttsServiceProcess?.pid && !ttsServiceProcess.killed) {
     try {
-      console.log(`[Cleanup] Killing TTS warmup process (PID ${ttsServiceProcess.pid})`);
+      log.info(`[Cleanup] Killing TTS warmup process (PID ${ttsServiceProcess.pid})`);
       ttsServiceProcess.kill('SIGTERM');
       setTimeout(() => {
         if (ttsServiceProcess?.pid && !ttsServiceProcess.killed) {
@@ -127,7 +150,7 @@ function killAllActiveProcesses() {
         }
       }, 2000);
     } catch (e) {
-      console.log('[Cleanup] Failed to kill TTS warmup process:', e);
+      log.info('[Cleanup] Failed to kill TTS warmup process:', e);
     }
   }
 }
@@ -135,7 +158,7 @@ function killAllActiveProcesses() {
 // Force exit after cleanup timeout
 function forceExitAfterDelay() {
   setTimeout(() => {
-    console.log('[App] Force quitting after cleanup timeout');
+    log.info('[App] Force quitting after cleanup timeout');
     process.exit(0);
   }, 5000);
 }
@@ -144,11 +167,11 @@ function forceExitAfterDelay() {
 function killDevServerProcesses() {
   const { exec } = require('child_process');
   
-  console.log('[Cleanup] Killing dev server processes...');
+  log.info('[Cleanup] Killing dev server processes...');
   
   // Kill vite dev server on port 5173
   exec('pkill -f "vite --port 5173" 2>/dev/null || true', (err: any) => {
-    if (!err) console.log('[Cleanup] Vite dev server killed');
+    if (!err) log.info('[Cleanup] Vite dev server killed');
   });
   
   // Kill npm processes related to our Electron app
@@ -161,19 +184,19 @@ function killDevServerProcesses() {
   try {
     const ppid = process.ppid;
     if (ppid) {
-      console.log(`[Cleanup] Our parent PID is ${ppid}`);
+      log.info(`[Cleanup] Our parent PID is ${ppid}`);
       // Kill the parent process group (npm/concurrently)
       setTimeout(() => {
         try {
           process.kill(ppid, 'SIGTERM');
-          console.log(`[Cleanup] Sent SIGTERM to parent ${ppid}`);
+          log.info(`[Cleanup] Sent SIGTERM to parent ${ppid}`);
         } catch (e) {
           // Parent may already be dead
         }
       }, 500);
     }
   } catch (e) {
-    console.log('[Cleanup] Could not kill parent process:', e);
+    log.info('[Cleanup] Could not kill parent process:', e);
   }
 }
 
@@ -218,7 +241,7 @@ process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = 'true';
 
 // Start TTS service on app startup
 async function warmupTTSService() {
-  console.log('[TTS Warmup] Starting TTS service warmup...');
+  log.info('[TTS Warmup] Starting TTS service warmup...');
   
   return new Promise<void>((resolve) => {
     ttsServiceProcess = spawn('uv', ['run', 'python', 'src/scripts/start_tts_service.py'], {
@@ -229,30 +252,46 @@ async function warmupTTSService() {
     let output = '';
     ttsServiceProcess.stdout?.on('data', (data) => {
       output += data.toString();
-      console.log(`[TTS Warmup] ${data.toString().trim()}`);
+      log.info(`[TTS Warmup] ${data.toString().trim()}`);
     });
     
     ttsServiceProcess.stderr?.on('data', (data) => {
-      console.error(`[TTS Warmup Error] ${data.toString().trim()}`);
+      log.error(`[TTS Warmup Error] ${data.toString().trim()}`);
     });
     
     ttsServiceProcess.on('close', (code) => {
-      console.log(`[TTS Warmup] Process exited with code ${code}`);
+      log.info(`[TTS Warmup] Process exited with code ${code}`);
       ttsServiceProcess = null;
       resolve();
     });
     
     // Timeout after 5 minutes (should be enough for warmup)
     setTimeout(() => {
-      console.log('[TTS Warmup] Timeout - proceeding anyway');
+      log.info('[TTS Warmup] Timeout - proceeding anyway');
       resolve();
     }, 300000);
   });
 }
 
 app.whenReady().then(async () => {
+  // Initialize current story from global config
+  try {
+    const config = await loadGlobalConfig();
+    log.info(`[App Init] Loaded global config:`, config);
+    if (config?.FlexiTTS?.['current-story']) {
+      const storyName = config.FlexiTTS['current-story'];
+      const prefix = config.FlexiTTS?.['story-dir-prefix'] || 'Story-';
+      currentStoryDirectory = `${prefix}${storyName}`;
+      log.info(`[App Init] Loaded current story from config: ${currentStoryDirectory} (prefix=${prefix}, name=${storyName})`);
+    } else {
+      log.warn('[App Init] No current-story in global config');
+    }
+  } catch (err) {
+    log.error('[App Init] Failed to load current story from config:', err);
+  }
+  
   // Start TTS warmup in background
-  warmupTTSService().catch(e => console.error('[TTS Warmup] Failed:', e));
+  warmupTTSService().catch(e => log.error('[TTS Warmup] Failed:', e));
   
   // Create window immediately (don't wait for warmup)
   createWindow();
@@ -260,7 +299,7 @@ app.whenReady().then(async () => {
 
 app.on('window-all-closed', () => {
   isShuttingDown = true;
-  console.log('[App] window-all-closed: Cleaning up...');
+  log.info('[App] window-all-closed: Cleaning up...');
   
   // Kill all active Python processes
   killAllActiveProcesses();
@@ -272,9 +311,9 @@ app.on('window-all-closed', () => {
     timeout: 10000
   }, (err: any) => {
     if (err) {
-      console.log('[App] TTS service stop (may not be running)');
+      log.info('[App] TTS service stop (may not be running)');
     } else {
-      console.log('[App] TTS service stopped');
+      log.info('[App] TTS service stopped');
     }
   });
   
@@ -292,7 +331,7 @@ app.on('window-all-closed', () => {
 // Also handle before-quit for macOS and other cases
 app.on('before-quit', (event) => {
   isShuttingDown = true;
-  console.log('[App] before-quit: Cleaning up...');
+  log.info('[App] before-quit: Cleaning up...');
   
   // Kill all active Python processes
   killAllActiveProcesses();
@@ -304,9 +343,9 @@ app.on('before-quit', (event) => {
     timeout: 10000
   }, (err: any) => {
     if (err) {
-      console.log('[App] TTS service stop (may not be running)');
+      log.info('[App] TTS service stop (may not be running)');
     } else {
-      console.log('[App] TTS service stopped');
+      log.info('[App] TTS service stopped');
     }
   });
   
@@ -327,13 +366,15 @@ app.on('activate', () => {
 // SECURITY: All handlers validate paths before file operations
 
 ipcMain.handle('run-python-script', async (event, scriptPath: string, args: string[]) => {
-  
+  const config = await loadGlobalConfig();
+  const storiesDir = getStoriesDirFromConfig(config);
+
   return new Promise((resolve, reject) => {
     try {
       // Validate arguments for security
       const validatedArgs = validateScriptArguments(args);
       
-      console.log(`[IPC] run-python-script called: ${scriptPath} ${validatedArgs.join(' ')}`);
+      log.info(`[IPC] run-python-script called: ${scriptPath} ${validatedArgs.join(' ')}`);
       
       // Security: Validate script path is within project
       const fullScriptPath = path.join(projectRoot, scriptPath);
@@ -341,11 +382,20 @@ ipcMain.handle('run-python-script', async (event, scriptPath: string, args: stri
         reject(new Error('Security: Script path is outside project directory'));
         return;
       }
+
+      // Resolve story-relative args using global config stories-dir
+      const resolvedArgs = validatedArgs.map((arg) => {
+        if (arg.startsWith('Story-')) {
+          return path.join(storiesDir, arg);
+        }
+        return arg;
+      });
+      log.info(`[IPC] run-python-script resolved args: ${resolvedArgs.join(' ')}`);
       
       // Check if it's the validate_config.py call that might fail silently if uv isn't set up yet
       const isValidationCall = scriptPath.includes('validate_config.py');
 
-      const pythonProcess = spawn('uv', ['run', 'python', scriptPath, ...validatedArgs], {
+      const pythonProcess = spawn('uv', ['run', 'python', scriptPath, ...resolvedArgs], {
         cwd: projectRoot
       });
       
@@ -357,18 +407,18 @@ ipcMain.handle('run-python-script', async (event, scriptPath: string, args: stri
       let errorOutput = '';
 
       pythonProcess.stdout.on('data', (data) => {
-        console.log(`[Python stdout] ${data.toString()}`);
+        log.info(`[Python stdout] ${data.toString()}`);
         output += data.toString();
       });
 
       pythonProcess.stderr.on('data', (data) => {
-        console.error(`[Python stderr] ${data.toString()}`);
+        log.error(`[Python stderr] ${data.toString()}`);
         errorOutput += data.toString();
       });
 
       pythonProcess.on('close', (code, signal) => {
         activeProcesses.delete(procId);
-        console.log(`[Python] Process exited with code ${code} signal ${signal}`);
+        log.info(`[Python] Process exited with code ${code} signal ${signal}`);
         if (signal === 'SIGTERM' || signal === 'SIGKILL') {
            reject(new Error(`Process cancelled by user`));
            return;
@@ -376,7 +426,7 @@ ipcMain.handle('run-python-script', async (event, scriptPath: string, args: stri
         
         if (code !== 0) {
           if (isValidationCall) {
-              console.warn(`[Python] Ignoring validation error code ${code}`);
+              log.warn(`[Python] Ignoring validation error code ${code}`);
               resolve(output);
           } else {
               reject(new Error(errorOutput || `Process exited with code ${code}`));
@@ -392,19 +442,19 @@ ipcMain.handle('run-python-script', async (event, scriptPath: string, args: stri
 });
 
 ipcMain.handle('kill-process', async (event, matchString: string) => {
-  console.log(`[IPC] Request to kill process matching: ${matchString}`);
+  log.info(`[IPC] Request to kill process matching: ${matchString}`);
   let killed = false;
   
   // Validate matchString to prevent injection
   if (matchString.includes(';') || matchString.includes('&&') || matchString.includes('|')) {
-    console.error('[Security] Rejecting kill-process with invalid matchString');
+    log.error('[Security] Rejecting kill-process with invalid matchString');
     return false;
   }
   
   Array.from(activeProcesses.entries()).forEach(([key, proc]) => {
      // A more generous matching scheme to catch audio play commands
      if (key.includes(matchString) || (key.startsWith('audio-') && matchString.includes('.xml'))) {
-         console.log(`[IPC] Killing process: ${key}`);
+         log.info(`[IPC] Killing process: ${key}`);
          proc.kill('SIGKILL'); 
          killed = true;
      }
@@ -413,30 +463,75 @@ ipcMain.handle('kill-process', async (event, matchString: string) => {
 });
 
 ipcMain.handle('read-file', async (event, filePath: string) => {
+  const resourceType = filePath.endsWith('.md') ? 'markdown' : filePath.endsWith('.xml') ? 'xml' : filePath.endsWith('.wav') ? 'audio' : 'unknown';
+  log.info(`[IPC][RESOURCE-ACCESS] read-file requested`, { filePath, resourceType, operation: 'read' });
   
   try {
     // Security: Sanitize input path
-    const sanitizedPath = sanitizePath(filePath);
-    const fullPath = path.join(projectRoot, sanitizedPath);
+    let sanitizedPath = sanitizePath(filePath);
+    log.info(`[IPC][RESOURCE-ACCESS] Sanitized path: ${sanitizedPath}`);
     
-    // Security: Validate path is within project
-    if (!isPathWithinParent(fullPath, projectRoot)) {
-      throw new Error('Security: File path is outside project directory');
+    // Load global config to get stories-dir
+    const configPath = getGlobalConfigPath();
+    let storiesDir: string | undefined;
+    
+    if (fs.existsSync(configPath)) {
+      try {
+        const configContent = fs.readFileSync(configPath, 'utf-8');
+        const config = jsyaml.load(configContent) as any;
+        storiesDir = config?.FlexiTTS?.['stories-dir'];
+        if (storiesDir) {
+          storiesDir = expandTilde(storiesDir);
+          log.info(`[IPC][RESOURCE-ACCESS] Using stories-dir from config: ${storiesDir}`);
+        }
+      } catch (err) {
+        log.warn(`[IPC][RESOURCE-ACCESS] Failed to load config for path resolution: ${err}`);
+      }
+    }
+    
+    // For story-related paths (starting with Story-), prepend the configured stories-dir
+    if (sanitizedPath.startsWith('Story-')) {
+      if (storiesDir) {
+        sanitizedPath = path.join(storiesDir, sanitizedPath);
+        log.info(`[IPC][RESOURCE-ACCESS] Resolved story path using config stories-dir: ${sanitizedPath}`);
+      } else {
+        // Fallback: use default Stories/ relative to project root
+        sanitizedPath = path.join(projectRoot, 'Stories', sanitizedPath);
+        log.info(`[IPC][RESOURCE-ACCESS] Resolved story path using fallback: ${sanitizedPath}`);
+      }
+    } else if (!path.isAbsolute(sanitizedPath)) {
+      // For non-story paths, resolve relative to project root
+      sanitizedPath = path.join(projectRoot, sanitizedPath);
+    }
+    
+    const fullPath = path.normalize(sanitizedPath);
+    log.info(`[IPC][RESOURCE-ACCESS] Final resolved full path: ${fullPath}`);
+    
+    // Security: Validate path is within project or stories directory
+    if (!isPathWithinParent(fullPath, projectRoot) && (!storiesDir || !isPathWithinParent(fullPath, storiesDir))) {
+      log.error(`[IPC][RESOURCE-ACCESS] Security: Path outside allowed directories: ${fullPath}`);
+      throw new Error('Security: File path is outside allowed directories');
     }
     
     if (!fs.existsSync(fullPath)) {
+      log.error(`[IPC][RESOURCE-ACCESS] File NOT found: ${fullPath}`);
       throw new Error(`File not found: ${filePath}`);
     }
     
-    return fs.readFileSync(fullPath, 'utf-8');
+    const content = fs.readFileSync(fullPath, 'utf-8');
+    log.info(`[IPC][RESOURCE-ACCESS] Successfully read file`, { filePath, fullPath, resourceType, length: content.length });
+    return content;
   } catch (err: any) {
+    log.error(`[IPC][RESOURCE-ACCESS] Error reading file: ${err.message}`, { filePath });
     throw new Error(`Failed to read file ${filePath}: ${err.message}`);
   }
 });
 
 ipcMain.handle('write-file', async (event, filePath: string, content: string) => {
+  const resourceType = filePath.endsWith('.md') ? 'markdown' : filePath.endsWith('.xml') ? 'xml' : 'unknown';
+  log.info(`[IPC][RESOURCE-ACCESS] write-file requested`, { filePath, resourceType, operation: 'write', contentLength: content.length });
+  
   try {
-    
     // Security: Sanitize path
     const sanitizedPath = sanitizePath(filePath);
     
@@ -445,8 +540,14 @@ ipcMain.handle('write-file', async (event, filePath: string, content: string) =>
       ? sanitizedPath
       : path.join(projectRoot, sanitizedPath);
     
-    // Security: Validate path is within project
-    if (!isPathWithinParent(fullPath, projectRoot)) {
+    log.info(`[IPC][RESOURCE-ACCESS] Resolved full path: ${fullPath}`);
+    
+    // Allow log files to be written outside project directory
+    const isLogFile = fullPath === '/tmp/FlexiTTS.log' || fullPath.startsWith('/tmp/FlexiTTS');
+    
+    // Security: Validate path is within project (skip for log files)
+    if (!isLogFile && !isPathWithinParent(fullPath, projectRoot)) {
+      log.error(`[IPC][RESOURCE-ACCESS] Security: Path outside project: ${fullPath}`);
       throw new Error('Security: File path is outside project directory');
     }
     
@@ -456,43 +557,98 @@ ipcMain.handle('write-file', async (event, filePath: string, content: string) =>
       fs.mkdirSync(dir, { recursive: true });
     }
     
-    fs.writeFileSync(fullPath, content, 'utf-8');
+    // For log files, append instead of overwrite
+    if (isLogFile) {
+      fs.appendFileSync(fullPath, content, 'utf-8');
+      log.info(`[IPC][RESOURCE-ACCESS] Appended to log file`, { path: fullPath });
+    } else {
+      fs.writeFileSync(fullPath, content, 'utf-8');
+      log.info(`[IPC][RESOURCE-ACCESS] Successfully wrote file`, { filePath, resourceType });
+    }
     return true;
   } catch (err: any) {
+    log.error(`[IPC][RESOURCE-ACCESS] Failed to write file: ${err.message}`, { filePath });
     throw new Error(`Failed to write file ${filePath}: ${err.message}`);
   }
 });
 
 ipcMain.handle('read-audio-file', async (event, filePath: string) => {
+  log.info(`[IPC][RESOURCE-ACCESS] read-audio-file requested`, { filePath, resourceType: 'audio', operation: 'read' });
   
   try {
-    // Security: Sanitize and validate path
-    const sanitizedPath = sanitizePath(filePath);
-    const fullPath = path.join(projectRoot, sanitizedPath);
+    let sanitizedPath = sanitizePath(filePath);
+    const configPath = getGlobalConfigPath();
+    let storiesDir: string | undefined;
+
+    if (fs.existsSync(configPath)) {
+      try {
+        const configContent = fs.readFileSync(configPath, 'utf-8');
+        const config = jsyaml.load(configContent) as any;
+        storiesDir = config?.FlexiTTS?.['stories-dir'];
+        if (storiesDir) {
+          storiesDir = expandTilde(storiesDir);
+        }
+      } catch (err) {
+        log.warn(`[IPC][RESOURCE-ACCESS] Failed to load config for audio path resolution: ${err}`);
+      }
+    }
+
+    if (sanitizedPath.startsWith('Story-')) {
+      if (storiesDir) {
+        sanitizedPath = path.join(storiesDir, sanitizedPath);
+      } else {
+        sanitizedPath = path.join(projectRoot, 'Stories', sanitizedPath);
+      }
+    } else if (!path.isAbsolute(sanitizedPath)) {
+      sanitizedPath = path.join(projectRoot, sanitizedPath);
+    }
+
+    const fullPath = path.normalize(sanitizedPath);
+    log.info(`[IPC][RESOURCE-ACCESS] Resolved audio path: ${fullPath}`);
     
-    if (!isPathWithinParent(fullPath, projectRoot)) {
-      throw new Error('Security: Audio file path is outside project directory');
+    if (!isPathWithinParent(fullPath, projectRoot) && (!storiesDir || !isPathWithinParent(fullPath, storiesDir))) {
+      log.error(`[IPC][RESOURCE-ACCESS] Security: Path outside allowed directories: ${fullPath}`);
+      throw new Error('Security: Audio file path is outside allowed directories');
     }
     
     if (!fs.existsSync(fullPath)) {
+      log.error(`[IPC][RESOURCE-ACCESS] Audio file NOT found: ${fullPath}`);
       throw new Error(`Audio file not found: ${filePath}`);
     }
     
     const data = fs.readFileSync(fullPath);
     const base64 = data.toString('base64');
+    log.info(`[IPC][RESOURCE-ACCESS] Successfully read audio file`, { filePath, fullPath, length: data.length });
     return `data:audio/wav;base64,${base64}`;
   } catch (err: any) {
+    log.error(`[IPC][RESOURCE-ACCESS] Failed to read audio file: ${err.message}`, { filePath });
     throw new Error(`Failed to read audio file ${filePath}: ${err.message}`);
   }
 });
 
 // FlexiTTS Global Config Management
-const GLOBAL_CONFIG_FILENAME = 'FlexiTTS.yaml';
+const GLOBAL_CONFIG_FILENAME = 'FlexiTTS.yml'; // Default to .yml (more common), fallback to .yaml
+const GLOBAL_CONFIG_FILENAME_ALT = 'FlexiTTS.yaml';
 
 function getGlobalConfigPath(): string {
   const homeDir = process.env.HOME || process.env.USERPROFILE || '';
   const configDir = process.env.XDG_CONFIG_HOME || path.join(homeDir, '.config');
-  return path.join(configDir, 'FlexiTTS', GLOBAL_CONFIG_FILENAME);
+  const configSubdir = path.join(configDir, 'FlexiTTS');
+  
+  // Try .yml first, then .yaml
+  const ymlPath = path.join(configSubdir, GLOBAL_CONFIG_FILENAME);
+  const yamlPath = path.join(configSubdir, GLOBAL_CONFIG_FILENAME_ALT);
+  
+  if (fs.existsSync(ymlPath)) {
+    log.info(`[getGlobalConfigPath] Found config: ${ymlPath}`);
+    return ymlPath;
+  } else if (fs.existsSync(yamlPath)) {
+    log.info(`[getGlobalConfigPath] Found config: ${yamlPath}`);
+    return yamlPath;
+  } else {
+    log.warn(`[getGlobalConfigPath] Config not found, defaulting to: ${ymlPath}`);
+    return ymlPath;
+  }
 }
 
 function ensureGlobalConfigDir(): string {
@@ -522,25 +678,38 @@ function getStoryDirPrefix(config: any): string {
   return config?.FlexiTTS?.['story-dir-prefix'] || 'Story-';
 }
 
-ipcMain.handle('load-global-config', async () => {
+// Standalone function to load global config (used during app initialization)
+async function loadGlobalConfig(): Promise<any> {
   const configPath = getGlobalConfigPath();
+  log.info(`[loadGlobalConfig] Checking config path: ${configPath}`);
   try {
     if (fs.existsSync(configPath)) {
+      log.info(`[loadGlobalConfig] Config file exists, reading...`);
       const content = fs.readFileSync(configPath, 'utf-8');
-      return jsyaml.load(content);
+      const parsed = jsyaml.load(content);
+      log.info(`[loadGlobalConfig] Successfully loaded config:`, parsed);
+      return parsed;
+    } else {
+      log.warn(`[loadGlobalConfig] Config file NOT found at: ${configPath}`);
     }
   } catch (err) {
-    console.error(`Failed to load global config: ${err}`);
+    log.error(`[loadGlobalConfig] Failed to load: ${err}`);
   }
-  // Return default config if file doesn't exist or is unreadable
+  // Return default config if file doesn't exist
   const homeDir = process.env.HOME || process.env.USERPROFILE || '';
   const dataDir = process.env.XDG_DATA_HOME || path.join(homeDir, '.local', 'share');
-  return {
+  const defaultConfig = {
     FlexiTTS: {
       'stories-dir': path.join(dataDir, 'FlexiTTS', 'stories'),
       'story-dir-prefix': 'Story-'
     }
   };
+  log.warn(`[loadGlobalConfig] Returning default config:`, defaultConfig);
+  return defaultConfig;
+}
+
+ipcMain.handle('load-global-config', async () => {
+  return loadGlobalConfig();
 });
 
 ipcMain.handle('save-global-config', async (event, configData: any) => {
@@ -551,7 +720,7 @@ ipcMain.handle('save-global-config', async (event, configData: any) => {
     fs.writeFileSync(configPath, yamlContent, 'utf-8');
     return true;
   } catch (err) {
-    console.error(`Failed to save global config: ${err}`);
+    log.error(`Failed to save global config: ${err}`);
     return false;
   }
 });
@@ -568,7 +737,7 @@ ipcMain.handle('list-stories', async () => {
         config = jsyaml.load(content);
       }
     } catch (err) {
-      console.error(`Failed to load config for list-stories: ${err}`);
+      log.error(`Failed to load config for list-stories: ${err}`);
     }
     
     const storiesDir = getStoriesDirFromConfig(config);
@@ -593,7 +762,7 @@ ipcMain.handle('list-stories', async () => {
     
     return stories;
   } catch (err) {
-    console.error(`Failed to list stories: ${err}`);
+    log.error(`Failed to list stories: ${err}`);
     return [];
   }
 });
@@ -611,6 +780,7 @@ ipcMain.handle('set-current-story', async (event, storyDirectory: string) => {
 });
 
 ipcMain.handle('get-current-story', async () => {
+  log.info(`[get-current-story] Returning: ${currentStoryDirectory}`);
   return currentStoryDirectory;
 });
 
@@ -618,45 +788,50 @@ ipcMain.handle('get-current-story', async () => {
 // SECURITY: All handlers validate paths to prevent directory traversal
 
 ipcMain.handle('load-story-config', async (event, storyDir: string) => {
+  log.info(`[IPC][RESOURCE-ACCESS] load-story-config requested`);
+  log.info(`  storyDir: ${storyDir}`);
   
   try {
-    // Security: Validate story directory name
     if (!/^[\w-]+$/.test(storyDir)) {
       throw new Error('Invalid story directory name');
     }
+
+    const config = await loadGlobalConfig();
+    const storiesDir = getStoriesDirFromConfig(config);
+    const configPath = path.join(storiesDir, storyDir, 'story-config.yml');
+    log.info(`[IPC][RESOURCE-ACCESS] Resolved config path: ${configPath}`);
     
-    // Build path and validate
-    const configPath = path.join(projectRoot, storyDir, 'story-config.yml');
-    
-    // Make sure config is within project
-    if (!isPathWithinParent(configPath, projectRoot)) {
-      throw new Error('Security: Config path outside project');
+    if (!isPathWithinParent(configPath, storiesDir)) {
+      log.info(`[IPC][RESOURCE-ACCESS] Security: Path outside stories dir: ${configPath}`);
+      throw new Error('Security: Config path outside stories directory');
     }
     
     if (!fs.existsSync(configPath)) {
+      log.info(`[IPC][RESOURCE-ACCESS] Config not found: ${configPath}`);
       throw new Error(`Story config not found: ${storyDir}`);
     }
     
     const content = fs.readFileSync(configPath, 'utf-8');
+    log.info(`[IPC][RESOURCE-ACCESS] Successfully loaded story config`, { storyDir, configPath, storiesDir, contentLength: content.length });
     return jsyaml.load(content);
   } catch (err: any) {
+    log.error(`[IPC][RESOURCE-ACCESS] Failed to load story config: ${storyDir}: ${err.message}`);
     throw new Error(`Failed to load story config from ${storyDir}: ${err.message}`);
   }
 });
 
 ipcMain.handle('list-chapter-files-for-story', async (event, storyDir: string) => {
-  
   try {
-    // Security: Validate story directory name
     if (!/^[\w-]+$/.test(storyDir)) {
       throw new Error('Invalid story directory name');
     }
+
+    const config = await loadGlobalConfig();
+    const storiesDir = getStoriesDirFromConfig(config);
+    const mdDirPath = path.join(storiesDir, storyDir, 'story-chapters');
     
-    const mdDirPath = path.join(projectRoot, storyDir, 'story-chapters');
-    
-    // Validate path is within project
-    if (!isPathWithinParent(mdDirPath, projectRoot)) {
-      throw new Error('Security: Chapter path outside project');
+    if (!isPathWithinParent(mdDirPath, storiesDir)) {
+      throw new Error('Security: Chapter path outside stories directory');
     }
     
     if (fs.existsSync(mdDirPath)) {
@@ -664,16 +839,10 @@ ipcMain.handle('list-chapter-files-for-story', async (event, storyDir: string) =
                .filter(f => f.endsWith('.md') && fs.statSync(path.join(mdDirPath, f)).isFile())
                .map(f => `${storyDir}/story-chapters/${f}`);
     }
-  } catch (err) {
-    console.error(`Failed to read story-chapters directory for ${storyDir}: ${err}`);
-  }
 
-  // Fallback to story-xml
-  const xmlDirPath = path.join(projectRoot, storyDir, 'story-xml');
-  try {
-    // Validate path is within project
-    if (!isPathWithinParent(xmlDirPath, projectRoot)) {
-      throw new Error('Security: XML path outside project');
+    const xmlDirPath = path.join(storiesDir, storyDir, 'story-xml');
+    if (!isPathWithinParent(xmlDirPath, storiesDir)) {
+      throw new Error('Security: XML path outside stories directory');
     }
     
     if (fs.existsSync(xmlDirPath)) {
@@ -682,15 +851,13 @@ ipcMain.handle('list-chapter-files-for-story', async (event, storyDir: string) =
                .map(f => `${storyDir}/story-xml/${f}`);
     }
   } catch (err) {
-    console.error(`Failed to read story-xml directory for ${storyDir}: ${err}`);
+    log.error(`Failed to read story chapter directory for ${storyDir}: ${err}`);
   }
   return [];
 });
 
 ipcMain.handle('check-xml-exists-for-story', async (event, chapterStem: string, storyDir: string) => {
-  
   try {
-    // Security: Validate inputs
     if (!/^[\w-]+$/.test(storyDir)) {
       throw new Error('Invalid story directory name');
     }
@@ -698,17 +865,92 @@ ipcMain.handle('check-xml-exists-for-story', async (event, chapterStem: string, 
     if (!/^[\w-.]+$/.test(chapterStem)) {
       throw new Error('Invalid chapter stem');
     }
+
+    const config = await loadGlobalConfig();
+    const storiesDir = getStoriesDirFromConfig(config);
+    const xmlPath = path.join(storiesDir, storyDir, 'story-xml', `${chapterStem}.xml`);
     
-    const xmlPath = path.join(projectRoot, storyDir, 'story-xml', `${chapterStem}.xml`);
-    
-    // Validate path
-    if (!isPathWithinParent(xmlPath, projectRoot)) {
-      throw new Error('Security: XML path outside project');
+    if (!isPathWithinParent(xmlPath, storiesDir)) {
+      throw new Error('Security: XML path outside stories directory');
     }
     
     return fs.existsSync(xmlPath);
   } catch (err) {
-    console.error(`Failed to check if XML exists for ${storyDir}: ${err}`);
+    log.error(`Failed to check if XML exists for ${storyDir}: ${err}`);
+    return false;
+  }
+});
+
+// Legacy handler for backward compatibility - uses current story context
+ipcMain.handle('check-xml-exists', async (event, chapterStem: string) => {
+  try {
+    const storyDir = currentStoryDirectory;
+    if (!storyDir) {
+      log.error('[check-xml-exists] No current story set');
+      return false;
+    }
+    
+    if (!/[\w-.]+$/.test(chapterStem)) {
+      throw new Error('Invalid chapter stem');
+    }
+
+    const config = await loadGlobalConfig();
+    const storiesDir = getStoriesDirFromConfig(config);
+    const xmlPath = path.join(storiesDir, storyDir, 'story-xml', `${chapterStem}.xml`);
+    
+    if (!isPathWithinParent(xmlPath, storiesDir)) {
+      throw new Error('Security: XML path outside stories directory');
+    }
+    
+    return fs.existsSync(xmlPath);
+  } catch (err) {
+    log.error(`Failed to check if XML exists: ${err}`);
+    return false;
+  }
+});
+
+ipcMain.handle('list-chapter-clips', async (event, chapterName: string) => {
+  try {
+    const storyDir = currentStoryDirectory;
+    if (!storyDir) return [];
+
+    const stem = path.basename(chapterName, path.extname(chapterName));
+    const config = await loadGlobalConfig();
+    const storiesDir = getStoriesDirFromConfig(config);
+    const clipsDir = path.join(storiesDir, storyDir, 'story-audio', 'clips', stem);
+
+    if (!isPathWithinParent(clipsDir, storiesDir)) {
+      throw new Error('Security: Clips path outside stories directory');
+    }
+
+    if (!fs.existsSync(clipsDir)) return [];
+
+    return fs.readdirSync(clipsDir)
+      .filter(f => f.toLowerCase().endsWith('.wav'))
+      .sort((a, b) => a.localeCompare(b));
+  } catch (err) {
+    log.error(`Failed to list chapter clips for ${chapterName}: ${err}`);
+    return [];
+  }
+});
+
+ipcMain.handle('check-chapter-audio', async (event, chapterName: string) => {
+  try {
+    const storyDir = currentStoryDirectory;
+    if (!storyDir) return false;
+
+    const stem = path.basename(chapterName, path.extname(chapterName));
+    const config = await loadGlobalConfig();
+    const storiesDir = getStoriesDirFromConfig(config);
+    const clipsDir = path.join(storiesDir, storyDir, 'story-audio', 'clips', stem);
+
+    if (!isPathWithinParent(clipsDir, storiesDir)) {
+      throw new Error('Security: Clips path outside stories directory');
+    }
+
+    return fs.existsSync(clipsDir) && fs.readdirSync(clipsDir).some(f => f.toLowerCase().endsWith('.wav'));
+  } catch (err) {
+    log.error(`Failed to check chapter audio for ${chapterName}: ${err}`);
     return false;
   }
 });
@@ -746,7 +988,7 @@ ipcMain.handle('play-sound-file', async (event, filePath: string) => {
         args = [fullPath];
       }
       
-      console.log(`Playing audio file: ${cmd} ${args.join(' ')}`);
+      log.info(`Playing audio file: ${cmd} ${args.join(' ')}`);
       
       const playProcess = spawn(cmd, args);
       
@@ -757,13 +999,13 @@ ipcMain.handle('play-sound-file', async (event, filePath: string) => {
       playProcess.on('close', (code, signal) => {
         activeProcesses.delete(procId);
         if (signal === 'SIGTERM' || signal === 'SIGKILL') {
-           console.log(`Audio playback cancelled.`);
+           log.info(`Audio playback cancelled.`);
            reject(new Error(`Playback cancelled`));
            return;
         }
         
         if (code !== 0) {
-          console.warn(`Audio playback process exited with code ${code}`);
+          log.warn(`Audio playback process exited with code ${code}`);
           resolve(void 0); 
         } else {
           resolve(void 0);
@@ -771,11 +1013,34 @@ ipcMain.handle('play-sound-file', async (event, filePath: string) => {
       });
       
       playProcess.on('error', (err) => {
-        console.error(`Failed to play audio: ${err.message}`);
+        log.error(`Failed to play audio: ${err.message}`);
         reject(err);
       });
     } catch (err: any) {
       reject(new Error(`Failed to play sound: ${err.message}`));
     }
   });
+});
+
+// Dialog handlers
+ipcMain.handle('show-error-dialog', async (event, title: string, content: string) => {
+  await dialog.showMessageBox({
+    type: 'error',
+    title: title || 'Error',
+    message: content,
+    buttons: ['OK']
+  });
+});
+
+ipcMain.handle('show-confirm-dialog', async (event, title: string, message: string, detail: string) => {
+  const result = await dialog.showMessageBox({
+    type: 'question',
+    title: title || 'Confirm',
+    message: message,
+    detail: detail,
+    buttons: ['Yes', 'No'],
+    defaultId: 1,
+    cancelId: 1
+  });
+  return result.response === 0; // true if Yes clicked
 });

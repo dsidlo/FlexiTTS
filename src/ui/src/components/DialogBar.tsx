@@ -9,6 +9,7 @@ interface DialogBarProps {
   dialog: DialogElement;
   displayId?: string;
   chapterFileName?: string; // Need this for chapter_xml_to_audio.py
+  storyDirectory?: string; // Story directory for path construction (e.g., 'Story-Entanglement')
   isFilteredOut?: boolean;
   hasAudioClip?: boolean;
   availableCharacters?: string[];
@@ -18,7 +19,7 @@ interface DialogBarProps {
 }
 
 export const DialogBar: React.FC<DialogBarProps> = ({ 
-  dialog, displayId, chapterFileName, isFilteredOut, hasAudioClip, availableCharacters = [],
+  dialog, displayId, chapterFileName, storyDirectory, isFilteredOut, hasAudioClip, availableCharacters = [],
   onSaveRequest, onUpdateDialog, onRefreshClips 
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -250,7 +251,8 @@ export const DialogBar: React.FC<DialogBarProps> = ({
                 const chapNum = chapMatch ? chapMatch[1].padStart(3, '0') : '000';
                 
                 const wavName = `chapter_${chapNum}_${sectionNum}_${dlgseq}_${character}.wav`;
-                const relativePath = `Story-Entanglement/story-audio/clips/${chapterStem}/${wavName}`;
+                const storyDir = storyDirectory || 'Story-Default';
+                const relativePath = `${storyDir}/story-audio/clips/${chapterStem}/${wavName}`;
                 
                 // Read audio file via Electron IPC and play as data URL
                 try {

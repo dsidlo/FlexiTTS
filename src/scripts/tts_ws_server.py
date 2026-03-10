@@ -61,7 +61,7 @@ logger.addHandler(handler)
 logger.setLevel(logging.INFO)
 
 # Debug log file for detailed client/server tracing
-DEBUG_LOG_FILE = Path("/tmp/FlexiTTS_app.log")
+DEBUG_LOG_FILE = Path("/tmp/FlexiTTS.log")
 
 def debug_log(component: str, message: str, data: Optional[Dict] = None, level: str = "INFO"):
     """Log with unique identifier [component] for traceability.
@@ -122,10 +122,13 @@ def log_exception(component: str, context: str, exception: Exception, extra_data
 
 # Default port
 DEFAULT_PORT = 8765
-PID_FILE = Path("/tmp/tts_service.pid")
+PID_FILE = Path("/tmp/FlexiTTS_tts_service.pid")
 
-# GPU log file path
-GPU_LOG_FILE = Path("/tmp/tts_gpu-service.log")
+# GPU log file path (separate from main log)
+GPU_LOG_FILE = Path("/tmp/FlexiTTS_tts-service-gpu.log")
+
+# Story directory - use from environment or config, default to Story-Entanglement
+story_dir = os.environ.get('FLEXITTS_CURRENT_STORY', 'Story-Entanglement')
 
 
 def log_gpu_stats(
@@ -194,21 +197,21 @@ class TTSServer:
         import traceback
 
         # Log start to file to ensure we have output even if process crashes
-        with open("/tmp/tts_warmup.log", "w") as f:
+        with open("/tmp/FlexiTTS.log", "w") as f:
             f.write(f"Warmup thread started at {datetime.now()}\n")
 
         if not TTS_MODELS_AVAILABLE:
             msg = "TTS models not available, skipping warmup"
             logger.warning(msg)
             self._warmup_error = msg
-            with open("/tmp/tts_warmup.log", "a") as f:
+            with open("/tmp/FlexiTTS.log", "a") as f:
                 f.write(f"ERROR: {msg}\n")
             return
 
         if not self._warmup_enabled:
             msg = "Model warmup disabled"
             logger.info(msg)
-            with open("/tmp/tts_warmup.log", "a") as f:
+            with open("/tmp/FlexiTTS.log", "a") as f:
                 f.write(f"{msg}\n")
             return
 
@@ -231,17 +234,17 @@ class TTSServer:
             logger.info("  → Using device: auto (cuda if available)")
             logger.info(f"  → Loading model '{self.default_model}' (this may take 2-3 minutes on first start)...")
 
-            with open("/tmp/tts_warmup.log", "a") as f:
+            with open("/tmp/FlexiTTS.log", "a") as f:
                 f.write(f"Step 1: Creating config\n")
 
             config = ModelConfig(device='auto', voice_cache_size=10)
 
-            with open("/tmp/tts_warmup.log", "a") as f:
+            with open("/tmp/FlexiTTS.log", "a") as f:
                 f.write(f"Step 2: Creating model\n")
 
             model = create_model(self.default_model, config=config, use_cache=False)
 
-            with open("/tmp/tts_warmup.log", "a") as f:
+            with open("/tmp/FlexiTTS.log", "a") as f:
                 f.write(f"Step 3: Caching model\n")
 
             # Use lock to ensure thread-safe cache update
@@ -250,7 +253,7 @@ class TTSServer:
 
             # Step 4: Trigger actual model loading with dummy generation
             # (This now works with the fixed adapter)
-            with open("/tmp/tts_warmup.log", "a") as f:
+            with open("/tmp/FlexiTTS.log", "a") as f:
                 f.write(f"Step 4: Starting dummy TTS generation to load model weights\n")
 
             logger.info("  → Triggering actual model load (dummy TTS generation)...")
@@ -264,7 +267,7 @@ class TTSServer:
                     logger.info(f"    ✓ Temp file created: {tmp_path}")
 
                 logger.info("    → Calling model.generate() with dummy text...")
-                with open("/tmp/tts_warmup.log", "a") as f:
+                with open("/tmp/FlexiTTS.log", "a") as f:
                     f.write(f"Step 4a: About to call model.generate() - this may take 30-120 seconds\n")
 
                 gen_start = time.time()
@@ -281,21 +284,21 @@ class TTSServer:
                 logger.info(f"    ✓ Custom voice generation complete in {gen_elapsed:.1f}s")
                 logger.info(f"    ✓ Generated {len(result.audio_segments)} audio segment(s), duration={result.duration_ms}ms")
 
-                with open("/tmp/tts_warmup.log", "a") as f:
+                with open("/tmp/FlexiTTS.log", "a") as f:
                     f.write(f"Step 4b: Custom voice generation complete in {gen_elapsed:.1f}s\n")
 
                 # Clean up temp file
                 tmp_path.unlink(missing_ok=True)
 
                 # Step 5: Also warm up base model for voice cloning
-                voice_sample_path = Path("Story-Entanglement/refs/Ayana-voice.wav")
+                voice_sample_path = Path(f"{story_dir}/refs/Ayana-voice.wav")
                 if voice_sample_path.exists():
                     logger.info("    → Warming up base model (voice cloning)...")
                     with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp:
                         tmp_path2 = Path(tmp.name)
 
                     try:
-                        with open("/tmp/tts_warmup.log", "a") as f:
+                        with open("/tmp/FlexiTTS.log", "a") as f:
                             f.write(f"Step 5a: About to warm up base model with voice_sample\n")
 
                         gen_start = time.time()
@@ -310,7 +313,7 @@ class TTSServer:
                         gen_elapsed2 = time.time() - gen_start
 
                         logger.info(f"    ✓ Base model generation complete in {gen_elapsed2:.1f}s")
-                        with open("/tmp/tts_warmup.log", "a") as f:
+                        with open("/tmp/FlexiTTS.log", "a") as f:
                             f.write(f"Step 5b: Base model generation complete in {gen_elapsed2:.1f}s\n")
                     finally:
                         tmp_path2.unlink(missing_ok=True)
@@ -319,7 +322,7 @@ class TTSServer:
 
             except Exception as e:
                 logger.warning(f"    ⚠ Dummy generation failed (may be expected): {e}")
-                with open("/tmp/tts_warmup.log", "a") as f:
+                with open("/tmp/FlexiTTS.log", "a") as f:
                     f.write(f"Step 4x: Generation failed: {e}\n")
 
             load_time = (datetime.now() - start_time).total_seconds()
@@ -335,7 +338,7 @@ class TTSServer:
             )
             logger.info(f"[Warmup] 'Ready' alert broadcast scheduled")
 
-            with open("/tmp/tts_warmup.log", "a") as f:
+            with open("/tmp/FlexiTTS.log", "a") as f:
                 f.write(f"SUCCESS: Model loaded in {load_time:.1f}s\n")
 
             # Log GPU stats after model load
@@ -349,7 +352,7 @@ class TTSServer:
             logger.error(error_trace)
             self._warmup_error = f"{e}\n{error_trace}"
             self._model_ready = False
-            with open("/tmp/tts_warmup.log", "a") as f:
+            with open("/tmp/FlexiTTS.log", "a") as f:
                 f.write(f"ERROR:\n{error_msg}\n{error_trace}\n")
 
     def start_warmup(self) -> None:

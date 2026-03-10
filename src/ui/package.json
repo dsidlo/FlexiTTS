@@ -13,11 +13,11 @@
     "test:report": "VITE_REPORT=true vitest run",
     "test:report:legacy": "npm run test:report && node scripts/json-to-html-report.js",
     "test:watch": "vitest",
-    "electron:build": "rm -rf dist-electron && tsc -p tsconfig.electron.json && node -e \"const fs = require('fs'); fs.renameSync('dist-electron/main.js', 'dist-electron/main.cjs'); fs.renameSync('dist-electron/preload.js', 'dist-electron/preload.cjs');\"",
+    "electron:build": "rm -rf dist-electron && tsc -p tsconfig.electron.json && node -e \"const fs = require('fs'); fs.renameSync('dist-electron/electron/main.js', 'dist-electron/electron/main.cjs'); fs.renameSync('dist-electron/electron/preload.js', 'dist-electron/electron/preload.cjs');\"",
     "electron:dev": "npm run electron:build && concurrently \"vite --port 5173 --strictPort\" \"wait-on http://localhost:5173 && electron .\"",
     "start": "npm run electron:dev"
   },
-  "main": "dist-electron/main.cjs",
+  "main": "dist-electron/electron/main.cjs",
   "dependencies": {
     "js-yaml": "^4.1.1",
     "react": "^19.2.0",

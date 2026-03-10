@@ -22,11 +22,17 @@ def indent(elem, level=0):
             elem.tail = i
 
 def resequence_xml(input_path, output_path=None):
+    print(f"[RESOURCE-ACCESS] Reading XML for resequencing", file=sys.stderr)
+    print(f"  input_path: {input_path}", file=sys.stderr)
+    print(f"  resourceType: xml", file=sys.stderr)
+    print(f"  operation: read", file=sys.stderr)
     if not os.path.exists(input_path):
-        print(f"Error: File {input_path} not found.")
+        print(f"[RESOURCE-ACCESS] XML NOT found: {input_path}", file=sys.stderr)
         return
 
     try:
+        print(f"[RESOURCE-ACCESS] Successfully read XML for resequencing", file=sys.stderr)
+        print(f"  input_path: {input_path}", file=sys.stderr)
         # Standard ET parse
         tree = ET.parse(input_path)
         root = tree.getroot()
@@ -47,8 +53,15 @@ def resequence_xml(input_path, output_path=None):
         if output_path is None:
             output_path = input_path
 
+        print(f"[RESOURCE-ACCESS] Writing XML output", file=sys.stderr)
+        print(f"  output_path: {output_path}", file=sys.stderr)
+        print(f"  resourceType: xml", file=sys.stderr)
+        print(f"  operation: write", file=sys.stderr)
+        
         # ET.write
         tree.write(output_path, encoding='utf-8', xml_declaration=False)
+        print(f"[RESOURCE-ACCESS] Successfully wrote XML output", file=sys.stderr)
+        print(f"  output_path: {output_path}", file=sys.stderr)
         print(f"Successfully re-sequenced XML and saved to {output_path}")
 
     except Exception as e:
@@ -61,11 +74,28 @@ def main():
     parser.add_argument("--output", help="Optional output path. If not provided, overwrites the input file.")
     args = parser.parse_args()
 
+    # Determine story directory from XML file path if provided
+    story_config_dir = Path(".")
+    if args.xml_file and ("/" in args.xml_file or os.path.sep in args.xml_file):
+        xml_path_input = Path(args.xml_file)
+        # Navigate up from story-xml/ to find story-config.yml
+        for parent in xml_path_input.parents:
+            potential_config = parent / "story-config.yml"
+            if potential_config.exists():
+                story_config_dir = parent
+                break
+            # Stop at Stories level
+            if parent.name == "Stories" or (len(parent.parts) > 1 and parent.parent.name == "Stories"):
+                break
+    
     # Load config
-    config_file = "story-config.yml"
-    if not os.path.exists(config_file):
-        print(f"Error: {config_file} not found.")
-        sys.exit(1)
+    config_file = story_config_dir / "story-config.yml"
+    if not config_file.exists():
+        # Fallback to current directory
+        config_file = Path("story-config.yml")
+        if not config_file.exists():
+            print(f"Error: story-config.yml not found.")
+            sys.exit(1)
 
     with open(config_file, "r") as f:
         config = yaml.safe_load(f)

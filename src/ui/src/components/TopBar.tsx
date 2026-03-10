@@ -78,8 +78,9 @@ export const TopBar: React.FC<TopBarProps> = ({
       
       // We can use runPythonScript explicitly to process the whole chapter
       if (typeof window !== 'undefined' && window.api && window.api.runPythonScript) {
+         const storyDir = currentStory?.directory_name || 'Story-Default';
          await window.api.runPythonScript('src/scripts/chapter_xml_to_audio.py', [
-            `Story-Entanglement/story-xml/${chapterName}`,
+            `${storyDir}/story-xml/${chapterName}`,
             `--create-missing-clips`
          ]);
          
@@ -108,7 +109,8 @@ export const TopBar: React.FC<TopBarProps> = ({
     try {
       if (typeof window !== 'undefined' && window.api && window.api.playSoundFile) {
          const stem = chapterName.replace('.xml', '');
-         const fullPath = `Story-Entanglement/story-audio/${stem}.wav`;
+         const storyDir = currentStory?.directory_name || 'Story-Default';
+         const fullPath = `${storyDir}/story-audio/${stem}.wav`;
          await window.api.playSoundFile(fullPath);
       }
     } catch (error) {

@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef } from 'react';
 import { PythonBridgeService } from '../services/pythonBridge';
+import { debugLog } from '../utils/debugLogger';
 
 export interface UseAudioReturn {
   // State
@@ -29,7 +30,7 @@ export interface AudioGenerationParams {
  * Hook for managing audio-related operations.
  * Handles audio generation, clip listing, and audio status checking.
  */
-export const useAudio = (): UseAudioReturn => {
+export const useAudio = (storyDirectory?: string): UseAudioReturn => {
   const [availableClips, setAvailableClips] = useState<string[]>([]);
   const [hasChapterAudio, setHasChapterAudio] = useState(false);
   
@@ -93,24 +94,32 @@ export const useAudio = (): UseAudioReturn => {
     onComplete,
     skipPlay = false
   }: AudioGenerationParams) => {
+    const id = 'useAudio:generateAudio';
+    const storyDir = storyDirectory || 'Story-Default';
+    const xmlInputPath = `${storyDir}/story-xml/${chapterName}`;
+    debugLog.info(id, '[RESOURCE-ACCESS] Starting audio generation', { chapterName, sectionNum, dlgseqNum, xmlInputPath, resourceType: 'xml', operation: 'read' });
+    
     isCancelledRef.current = false;
     
     try {
       // Start TTS WebSocket service (--tts-service enables fast GPU-accelerated rendering)
       // Required for audio generation - returns ws://localhost:8765 for remote TTS mode
       const ttsServiceUrl = await PythonBridgeService.ensureTtsService();
+      debugLog.info(id, '[RESOURCE-ACCESS] TTS service ready', { ttsServiceUrl });
       
       if (isCancelledRef.current) return;
       
       if (typeof window !== 'undefined' && window.api && window.api.runPythonScript) {
+        debugLog.info(id, '[RESOURCE-ACCESS] Running chapter_xml_to_audio.py', { xmlInputPath });
         const out = await window.api.runPythonScript('src/scripts/chapter_xml_to_audio.py', [
-          `Story-Entanglement/story-xml/${chapterName}`,
+          `${storyDir}/story-xml/${chapterName}`,
           `--section`, sectionNum,
           `--dlgseq`, dlgseqNum,
           `--tts-service`, ttsServiceUrl
         ]);
         
         if (isCancelledRef.current) return;
+        debugLog.info(id, '[RESOURCE-ACCESS] Python script completed', { outputLength: out?.length });
         
         // Parse output to find generated WAV file
         let wavName = '';
@@ -137,37 +146,42 @@ export const useAudio = (): UseAudioReturn => {
         }
 
         if (wavName) {
+          debugLog.info(id, '[RESOURCE-ACCESS] Audio clip generated', { wavName });
           if (onComplete && !isCancelledRef.current) {
             onComplete();
           }
           
           if (!skipPlay && !isCancelledRef.current) {
             const chapterStem = chapterName.replace('.xml', '');
-            const relativePath = `Story-Entanglement/story-audio/clips/${chapterStem}/${wavName}`;
+            const audioOutputPath = `${storyDir}/story-audio/clips/${chapterStem}/${wavName}`;
+            debugLog.info(id, '[RESOURCE-ACCESS] Reading audio file for playback', { audioOutputPath, resourceType: 'audio', operation: 'read' });
             
             // Read audio file via Electron IPC and play as data URL (client-side)
             if (window.api?.readAudioFile) {
-              const dataUrl = await window.api.readAudioFile(relativePath);
+              const dataUrl = await window.api.readAudioFile(audioOutputPath);
+              debugLog.info(id, '[RESOURCE-ACCESS] Audio file loaded', { audioOutputPath, length: dataUrl?.length });
               // Create temporary audio element for playback
               const audio = new Audio(dataUrl);
               await audio.play();
+              debugLog.info(id, '[RESOURCE-ACCESS] Audio playback completed', { audioOutputPath });
             }
           }
         } else {
-          console.error("Could not parse output filename from Python stdout", out);
+          debugLog.error(id, '[RESOURCE-ACCESS] Could not parse output filename', { output: out });
           throw new Error("Could not parse output filename");
         }
       } else {
         // Mock fallback
-        console.log(`Mock: Generating audio for ${chapterName} s:${sectionNum} d:${dlgseqNum}...`);
+        debugLog.warn(id, '[RESOURCE-ACCESS] Mock audio generation', { chapterName, sectionNum, dlgseqNum });
         await new Promise(resolve => setTimeout(resolve, 2000));
         if (onComplete && !isCancelledRef.current) {
           onComplete();
         }
       }
+      debugLog.info(id, '[RESOURCE-ACCESS] Audio generation completed successfully', { chapterName });
     } catch (err: unknown) {
       if (!isCancelledRef.current) {
-        console.error("Failed to generate audio:", err);
+        debugLog.exception(id, '[RESOURCE-ACCESS] Failed to generate audio', err as Error, { chapterName });
         // Show user-friendly error
         const errorMessage = err instanceof Error 
           ? err.message 

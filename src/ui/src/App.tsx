@@ -10,6 +10,9 @@ import { alertService, alerts } from './services/alertService';
 import { generateXMLFromChapter } from './services/chapterService';
 
 function App() {
+  // Story management state - MUST be declared before hooks that use it
+  const [currentStory, setCurrentStory] = useState<StoryInfo | null>(null);
+
   // Chapter state from hook
   const {
     config, setConfig, chapter, chapterList, setChapterList,
@@ -19,10 +22,7 @@ function App() {
     xmlContentRef, hasUnsavedChangesRef,
     setLastSavedXmlValue, setHasUnsavedChangesValue,
     loadChapter, handleUpdateDialog,
-  } = useChapter();
-
-  // Story management state
-  const [currentStory, setCurrentStory] = useState<StoryInfo | null>(null);
+  } = useChapter(currentStory?.directory_name);
 
   // Markdown state from hook
   const {
@@ -30,7 +30,7 @@ function App() {
     lastSavedMarkdownRef, hasUnsavedMarkdownChangesRef,
     setLastSavedMarkdownValue, setHasUnsavedMarkdownChangesValue,
     windowWidth, setWindowWidth, formatMarkdown, loadMarkdown, resetMarkdown,
-  } = useMarkdown();
+  } = useMarkdown(currentStory?.directory_name);
 
   // Local UI state
   const [loading, setLoading] = useState(true);
@@ -124,7 +124,7 @@ function App() {
         await PythonBridgeService.validateConfig();
         
         // Load available stories and set current story
-        let stories = [];
+        let stories: { name: string; path: string; directory_name: string }[] = [];
         try {
           stories = await PythonBridgeService.listStories();
         } catch (storyErr) {
@@ -135,18 +135,43 @@ function App() {
         let current = '';
         try {
           current = await PythonBridgeService.getCurrentStory();
+          console.log('[App.tsx] getCurrentStory returned:', current);
         } catch (err) {
           console.warn('Failed to get current story:', err);
         }
+        
+        console.log('[App.tsx] Available stories:', stories);
+        console.log('[App.tsx] Current story from state:', current);
         
         // Default to first story or use Story-Default for backward compatibility
         let selectedStory = stories[0] || null;
         if (current) {
           const found = stories.find(s => s.directory_name === current);
+          console.log('[App.tsx] Found story match:', found);
           if (found) selectedStory = found;
+        } else if (!current && stories.length > 0) {
+          // Fallback: try to get current-story from global config
+          try {
+            const globalConfig = await PythonBridgeService.loadGlobalConfig();
+            const configCurrentStory = globalConfig?.FlexiTTS?.['current-story'];
+            const storyPrefix = globalConfig?.FlexiTTS?.['story-dir-prefix'] || 'Story-';
+            console.log('[App.tsx] Global config current-story:', configCurrentStory);
+            if (configCurrentStory) {
+              const fullDirName = `${storyPrefix}${configCurrentStory}`;
+              const found = stories.find(s => s.directory_name === fullDirName);
+              console.log('[App.tsx] Found story from global config:', found);
+              if (found) {
+                selectedStory = found;
+                current = fullDirName;
+              }
+            }
+          } catch (err) {
+            console.warn('[App.tsx] Failed to load global config for fallback:', err);
+          }
         }
         
         setCurrentStory(selectedStory);
+        console.log('[App.tsx] Selected story:', selectedStory);
         
         // Set current story in main process
         if (selectedStory) {
@@ -160,17 +185,25 @@ function App() {
         // Load story config for selected story
         let cfg;
         try {
+          const storyDir = selectedStory?.directory_name;
+          console.log(`[App.tsx] Loading story config for: ${storyDir || 'NULL (legacy fallback)'}`);
+          console.log(`[App.tsx] Selected story object:`, selectedStory);
           cfg = selectedStory 
             ? await PythonBridgeService.loadStoryConfigForStory(selectedStory.directory_name)
             : await PythonBridgeService.loadStoryConfig();
+          console.log(`[App.tsx] Successfully loaded config for: ${storyDir || 'legacy'}`);
         } catch (err) {
-          console.error('Failed to load story config:', err);
+          console.error('[App.tsx] Failed to load story config:', err);
+          console.error('[App.tsx] Error details:', {
+            selectedStory: selectedStory?.directory_name,
+            error: err instanceof Error ? err.message : String(err)
+          });
           throw err;
         }
         setConfig(cfg);
         
         // Load chapter files for selected story
-        let list = [];
+        let list: string[] = [];
         try {
           list = selectedStory
             ? await PythonBridgeService.listChapterFilesForStory(selectedStory.directory_name)
@@ -181,7 +214,7 @@ function App() {
         }
         setChapterList(list);
         
-        if (list.length > 0) await handleChapterSelect(list[0], cfg);
+        if (list.length > 0) await handleChapterSelect(list[0], cfg, selectedStory?.directory_name);
         
         // Start TTS service - service will broadcast warmup alerts via WebSocket
         alerts.info('Starting TTS Service...', 5000);
@@ -223,7 +256,7 @@ function App() {
   };
 
   // Chapter selection handler
-  const handleChapterSelect = useCallback(async (filePath: string, loadedConfig?: StoryConfig) => {
+  const handleChapterSelect = useCallback(async (filePath: string, loadedConfig?: StoryConfig, forcedStoryDir?: string) => {
     // Check for unsaved changes
     if ((hasUnsavedChangesRef.current || hasUnsavedMarkdownChangesRef.current) && currentChapterFile) {
       const res = await PythonBridgeService.showConfirmDialog(
@@ -235,7 +268,7 @@ function App() {
       if (res === 0) {
         try {
           const stem = currentChapterFile.split('/').pop()?.replace('.md', '') || 'unknown';
-          const storyDir = currentStory?.directory_name || 'Story-Default';
+          const storyDir = forcedStoryDir || currentStory?.directory_name || 'Story-Default';
           if (hasUnsavedChangesRef.current) {
             await PythonBridgeService.writeChapterFile(
               `${storyDir}/story-xml/${stem}.xml`, 
@@ -244,7 +277,7 @@ function App() {
             setLastSavedXmlValue(xmlContentRef.current);
           }
           if (hasUnsavedMarkdownChangesRef.current) {
-            const storyDir = currentStory?.directory_name || 'Story-Default';
+            const storyDir = forcedStoryDir || currentStory?.directory_name || 'Story-Default';
             await PythonBridgeService.writeChapterFile(
               `${storyDir}/story-chapters/${stem}.md`, 
               markdownContent
@@ -264,17 +297,17 @@ function App() {
     setCurrentChapterFile(filePath);
     const stem = filePath.split('/').pop()?.replace('.md', '')?.replace('.xml', '') || 'unknown';
     
-    await loadMarkdown(stem);
+    const storyDir = forcedStoryDir || currentStory?.directory_name || 'Story-Default';
+    await loadMarkdown(stem, storyDir);
     
-    const storyDir = currentStory?.directory_name || 'Story-Default';
     const xmlPath = `${storyDir}/story-xml/${stem}.xml`;
-    if (await PythonBridgeService.checkXmlExists(stem)) {
-      await loadChapter(xmlPath, loadedConfig);
+    if (await PythonBridgeService.checkXmlExistsForStory(stem, storyDir)) {
+      await loadChapter(xmlPath, loadedConfig, storyDir);
     } else {
       setIsGeneratingStructure(true);
       try {
         await runXmlGenerationPipeline(stem, 1);
-        await loadChapter(xmlPath, loadedConfig);
+        await loadChapter(xmlPath, loadedConfig, storyDir);
       } catch (err) {
         await PythonBridgeService.showErrorDialog('Generation Failed', `Failed to generate XML for ${stem}`);
         resetMarkdown();
@@ -284,7 +317,7 @@ function App() {
       }
     }
     setLoading(false);
-  }, [currentChapterFile, currentStory, hasUnsavedChangesRef, hasUnsavedMarkdownChangesRef, xmlContentRef, 
+  }, [currentChapterFile, currentStory, currentStory?.directory_name, hasUnsavedChangesRef, hasUnsavedMarkdownChangesRef, xmlContentRef, 
       markdownContent, setLastSavedXmlValue, setLastSavedMarkdownValue, setHasUnsavedMarkdownChangesValue,
       setCurrentChapterFile, loadMarkdown, loadChapter, setIsGeneratingStructure, setGenerateAttempt,
       setLoading, resetMarkdown]);
@@ -321,7 +354,7 @@ function App() {
     
     // Select first chapter of new story
     if (files.length > 0) {
-      await handleChapterSelect(files[0], cfg);
+      await handleChapterSelect(files[0], cfg, story.directory_name);
     }
     
     setLoading(false);
@@ -464,6 +497,7 @@ function App() {
                   dialog={dialog}
                   displayId={displayId}
                   chapterFileName={chapter.fileName.split('/').pop()}
+                  storyDirectory={currentStory?.directory_name}
                   isFilteredOut={isFiltered}
                   hasAudioClip={hasClip}
                   onSaveRequest={handleSave}

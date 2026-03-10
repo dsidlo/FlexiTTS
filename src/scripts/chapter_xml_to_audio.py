@@ -3,6 +3,7 @@
 import argparse
 import os
 import re
+import sys
 import yaml
 import numpy as np
 import soundfile as sf
@@ -86,6 +87,15 @@ def apply_sox_effects(input_path: Path, effects_list: List[str], dry_run: bool =
 
 
 def parse_xml(xml_path: Path) -> List[Utterance]:
+    print(f"[RESOURCE-ACCESS] Reading XML input", file=sys.stderr)
+    print(f"  xml_path: {xml_path}", file=sys.stderr)
+    print(f"  resourceType: xml", file=sys.stderr)
+    print(f"  operation: read", file=sys.stderr)
+    if not xml_path.exists():
+        print(f"[RESOURCE-ACCESS] XML NOT found: {xml_path}", file=sys.stderr)
+        raise FileNotFoundError(f"XML file not found: {xml_path}")
+    print(f"[RESOURCE-ACCESS] Successfully read XML input", file=sys.stderr)
+    print(f"  xml_path: {xml_path}", file=sys.stderr)
     tree = ET.parse(xml_path)
     root = tree.getroot()
     match = re.search(r"(\d+)", xml_path.name)
@@ -119,9 +129,37 @@ def generate_silence(duration: float, sr: int = 24000) -> np.ndarray:
     return np.zeros(int(sr * duration))
 
 
+def find_config_file(xml_path: Optional[Path] = None) -> Optional[Path]:
+    """Find story-config.yml based on XML file location or CWD."""
+    # If XML path is provided, look in the story directory
+    if xml_path:
+        # XML is typically in Stories/{Story-Name}/story-xml/
+        # Config should be in Stories/{Story-Name}/story-config.yml
+        potential_config = xml_path.parent.parent / "story-config.yml"
+        if potential_config.exists():
+            return potential_config
+    
+    # Check Stories directories from project root
+    stories_dir = Path("Stories")
+    if stories_dir.exists():
+        for story_dir in stories_dir.iterdir():
+            if story_dir.is_dir() and story_dir.name.startswith("Story-"):
+                config_file = story_dir / "story-config.yml"
+                if config_file.exists():
+                    return config_file
+    
+    # Fall back to CWD
+    config_in_cwd = Path("story-config.yml")
+    if config_in_cwd.exists():
+        return config_in_cwd
+    
+    return None
+
+
 def main():
     parser = argparse.ArgumentParser(description="Convert XML chapters to audio using TTS")
     parser.add_argument("xml_file", nargs="?", help="Path to chapter XML")
+    parser.add_argument("--config", type=str, help="Path to story-config.yml (auto-detected if not provided)")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--section", type=str)
     parser.add_argument("--dlgseq", type=str)
@@ -130,21 +168,79 @@ def main():
     parser.add_argument("--tts-service", type=str, default=None, help="WebSocket TTS service URL")
     args = parser.parse_args()
 
-    with open("story-config.yml", "r") as f:
-        config = yaml.safe_load(f)
+    # Determine XML path first (needed for auto-detect)
+    xml_path = Path(args.xml_file) if args.xml_file else None
+    
+    # Load config from explicit path, auto-detect, or fall back to CWD
+    config_path = Path(args.config) if args.config else find_config_file(xml_path)
+    
+    if not config_path:
+        print("Error: Could not find story-config.yml")
+        print("Please provide --config path or run from a story directory")
+        sys.exit(1)
+    
+    print(f"[RESOURCE-ACCESS] Loading story config", file=sys.stderr)
+    print(f"  config_path: {config_path}", file=sys.stderr)
+    print(f"  resourceType: yaml", file=sys.stderr)
+    print(f"  operation: read", file=sys.stderr)
+    try:
+        if not config_path.exists():
+            print(f"[RESOURCE-ACCESS] Config NOT found: {config_path}", file=sys.stderr)
+            print(f"Error: Config file not found: {config_path}")
+            sys.exit(1)
+        with open(config_path, "r") as f:
+            config = yaml.safe_load(f)
+        print(f"[RESOURCE-ACCESS] Successfully loaded story config", file=sys.stderr)
+        print(f"  config_path: {config_path}", file=sys.stderr)
+        print(f"  has_characters: {'characters' in config}", file=sys.stderr)
+        print(f"  has_global: {'global' in config}", file=sys.stderr)
+    except FileNotFoundError:
+        print(f"[RESOURCE-ACCESS] Config NOT found: {config_path}", file=sys.stderr)
+        print(f"Error: Config file not found: {config_path}")
+        sys.exit(1)
+    except yaml.YAMLError as e:
+        print(f"[RESOURCE-ACCESS] YAML parse error: {e}", file=sys.stderr)
+        print(f"Error: Invalid YAML in config file: {e}")
+        sys.exit(1)
 
     global_cfg = config.get("global", {})
-    story_dir = Path(global_cfg.get("story-dir", "."))
+    config_base_dir = config_path.parent.resolve()
+
+    configured_story_dir = Path(global_cfg.get("story-dir", "."))
+    story_dir = configured_story_dir if configured_story_dir.is_absolute() else (config_base_dir / configured_story_dir).resolve()
+    if not story_dir.exists():
+        story_dir = config_base_dir
+
     story_name = story_dir.name.replace("-", " ").title() if story_dir.name != "." else "Story"
-    story_xml_dir = story_dir / global_cfg.get("story-xml", "story-xml")
-    story_audio_dir = story_dir / global_cfg.get("story-audio", "story-audio")
-    clips_dir = story_dir / global_cfg.get("clips", "clips")
-    voices_dir = story_dir / global_cfg.get("voices", "refs")
+
+    story_xml_cfg = Path(global_cfg.get("story-xml", "story-xml"))
+    story_audio_cfg = Path(global_cfg.get("story-audio", "story-audio"))
+    clips_cfg = Path(global_cfg.get("clips", "clips"))
+    voices_cfg = Path(global_cfg.get("voices", "refs"))
+
+    story_xml_dir = story_xml_cfg if story_xml_cfg.is_absolute() else (story_dir / story_xml_cfg).resolve()
+    story_audio_dir = story_audio_cfg if story_audio_cfg.is_absolute() else (story_dir / story_audio_cfg).resolve()
+    clips_dir = clips_cfg if clips_cfg.is_absolute() else (story_dir / clips_cfg).resolve()
+    voices_dir = voices_cfg if voices_cfg.is_absolute() else (story_dir / voices_cfg).resolve()
     clip_separation = float(global_cfg.get("clip-separation", 0))
 
     story_audio_dir.mkdir(parents=True, exist_ok=True)
 
-    xml_path = Path(args.xml_file) if args.xml_file else next(story_xml_dir.glob("*.xml"), None)
+    # xml_path was determined earlier for auto-detect, but finalize it here
+    if xml_path and not xml_path.is_absolute():
+        candidate_paths = [
+            (Path.cwd() / xml_path).resolve(),
+            (config_base_dir / xml_path).resolve(),
+            (story_dir / xml_path).resolve(),
+            (story_xml_dir / xml_path.name).resolve(),
+        ]
+        for candidate in candidate_paths:
+            if candidate.exists():
+                xml_path = candidate
+                break
+
+    if not xml_path:
+        xml_path = next(story_xml_dir.glob("*.xml"), None)
     if not xml_path or not xml_path.exists():
         print(f"XML file not found: {xml_path}")
         return
@@ -266,27 +362,34 @@ def main():
                     lang = "English"
                     instruct = f"Speak in a {utt.emotion} tone."
 
+                print(f"[RESOURCE-ACCESS] Generating audio clip", file=sys.stderr)
+                print(f"  output_path: {out_path}", file=sys.stderr)
+                print(f"  resourceType: audio", file=sys.stderr)
+                print(f"  operation: write", file=sys.stderr)
+                print(f"  speaker: {utt.speaker}", file=sys.stderr)
+                print(f"  emotion: {utt.emotion}", file=sys.stderr)
+                print(f"  textLength: {len(utt.text)}", file=sys.stderr)
                 print(f"  Generating {base}...")
                 import time
                 gen_start = time.time()
 
                 # Validate text length limit (2K character max)
                 if len(utt.text) > 2000:
-                    print(f"    ERROR: Text too long: {len(utt.text)} chars (max 2000)")
-                    print(f"    Truncating...")
+                    print(f"    ERROR: Text too long: {len(utt.text)} chars (max 2000)", file=sys.stderr)
+                    print(f"    Truncating...", file=sys.stderr)
                     utt.text = utt.text[:2000]
 
                 # Check if provider supports this character configuration
                 if not args.dry_run and provider:
                     try:
                         if char_cfg and not provider.supports_character(char_cfg):
-                            print(f"    WARNING: Provider does not fully support character config for {character}")
-                            print(f"    Attempting generation anyway...")
+                            print(f"    WARNING: Provider does not fully support character config for {character}", file=sys.stderr)
+                            print(f"    Attempting generation anyway...", file=sys.stderr)
                     except Exception as e:
-                        print(f"    WARNING: Could not verify character support: {e}")
+                        print(f"    WARNING: Could not verify character support: {e}", file=sys.stderr)
 
                     try:
-                        print(f"    [{time.strftime('%H:%M:%S')}] Starting generation...")
+                        print(f"    [{time.strftime('%H:%M:%S')}] Starting generation...", file=sys.stderr)
                         wavs, sr = provider.generate(
                             text=utt.text,
                             speaker=utt.speaker,
@@ -301,10 +404,18 @@ def main():
                             dialog=utt.dlgseq
                         )
                         gen_elapsed = time.time() - gen_start
-                        print(f"    [{time.strftime('%H:%M:%S')}] Generation complete in {gen_elapsed:.1f}s")
+                        print(f"    [{time.strftime('%H:%M:%S')}] Generation complete in {gen_elapsed:.1f}s", file=sys.stderr)
+                        print(f"[RESOURCE-ACCESS] Audio clip generated", file=sys.stderr)
+                        print(f"  output_path: {out_path}", file=sys.stderr)
+                        print(f"  wavCount: {len(wavs)}", file=sys.stderr)
+                        print(f"  sampleRate: {sr}", file=sys.stderr)
                         for i, wav in enumerate(wavs):
                             suffix = f"_s{str(i+1).zfill(3)}" if len(wavs) > 1 else ""
-                            sf.write(str(chapter_clip_dir / f"{base}{suffix}.wav"), wav, sr)
+                            clip_path = chapter_clip_dir / f"{base}{suffix}.wav"
+                            sf.write(str(clip_path), wav, sr)
+                            print(f"[RESOURCE-ACCESS] Audio clip written", file=sys.stderr)
+                            print(f"  clip_path: {clip_path}", file=sys.stderr)
+                            print(f"  resourceType: audio", file=sys.stderr)
                     except CharacterNotSupportedError as e:
                         print(f"    ERROR: Character not supported by TTS provider: {e}")
                         continue
@@ -381,12 +492,23 @@ def main():
 
                 if combined:
                     final_path = story_audio_dir / (xml_path.stem + ".wav")
+                    print(f"[RESOURCE-ACCESS] Writing final audio", file=sys.stderr)
+                    print(f"  final_path: {final_path}", file=sys.stderr)
+                    print(f"  resourceType: audio", file=sys.stderr)
+                    print(f"  operation: write", file=sys.stderr)
+                    print(f"  audioLength: {len(combined)} clips", file=sys.stderr)
                     sf.write(str(final_path), np.concatenate(combined), final_sr)
+                    print(f"[RESOURCE-ACCESS] Successfully wrote final audio", file=sys.stderr)
+                    print(f"  final_path: {final_path}", file=sys.stderr)
                     print(f"Final audio: {final_path}")
 
                     post_effects = config.get("story-audio-post-process", {}).get("sox-effects", [])
                     if post_effects:
+                        print(f"[RESOURCE-ACCESS] Applying post-effects", file=sys.stderr)
+                        print(f"  audio_path: {final_path}", file=sys.stderr)
                         apply_sox_effects(final_path, post_effects if isinstance(post_effects, list) else [post_effects])
+                        print(f"[RESOURCE-ACCESS] Post-effects applied", file=sys.stderr)
+                        print(f"  audio_path: {final_path}", file=sys.stderr)
 
     finally:
         # Guaranteed cleanup: Close TTS provider to free resources

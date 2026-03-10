@@ -48,7 +48,16 @@ XSD_SCHEMA = """<?xml version="1.0" encoding="UTF-8"?>
 """
 
 def update_xsd(xml_path, script_path):
+    print(f"[RESOURCE-ACCESS] Reading XML for XSD update", file=sys.stderr)
+    print(f"  xml_path: {xml_path}", file=sys.stderr)
+    print(f"  resourceType: xml", file=sys.stderr)
+    print(f"  operation: read", file=sys.stderr)
     try:
+        if not os.path.exists(xml_path):
+            print(f"[RESOURCE-ACCESS] XML NOT found: {xml_path}", file=sys.stderr)
+            return False
+        print(f"[RESOURCE-ACCESS] Successfully read XML for XSD update", file=sys.stderr)
+        print(f"  xml_path: {xml_path}", file=sys.stderr)
         parser = etree.XMLParser(remove_blank_text=True)
         xml_doc = etree.parse(xml_path, parser)
         root = xml_doc.getroot()
@@ -136,7 +145,16 @@ def loose_review_xml(xml_path):
     3. Checks that tags are known ('story', 'section', 'narration', 'dialog').
     4. Checks for common attributes and provides hints.
     """
+    print(f"[RESOURCE-ACCESS] Validating XML", file=sys.stderr)
+    print(f"  xml_path: {xml_path}", file=sys.stderr)
+    print(f"  resourceType: xml", file=sys.stderr)
+    print(f"  operation: validate", file=sys.stderr)
     try:
+        if not os.path.exists(xml_path):
+            print(f"[RESOURCE-ACCESS] XML NOT found: {xml_path}", file=sys.stderr)
+            return False
+        print(f"[RESOURCE-ACCESS] Successfully read XML for validation", file=sys.stderr)
+        print(f"  xml_path: {xml_path}", file=sys.stderr)
         parser = etree.XMLParser(remove_blank_text=True)
         xml_doc = etree.parse(xml_path, parser)
         root = xml_doc.getroot()
@@ -245,7 +263,16 @@ def validate_and_fix_xml(xml_path):
     return True
 
 def validate_xml(xml_path):
+    print(f"[RESOURCE-ACCESS] Validating XML against XSD schema", file=sys.stderr)
+    print(f"  xml_path: {xml_path}", file=sys.stderr)
+    print(f"  resourceType: xml", file=sys.stderr)
+    print(f"  operation: validate", file=sys.stderr)
     try:
+        if not os.path.exists(xml_path):
+            print(f"[RESOURCE-ACCESS] XML NOT found: {xml_path}", file=sys.stderr)
+            return False
+        print(f"[RESOURCE-ACCESS] Successfully read XML for XSD validation", file=sys.stderr)
+        print(f"  xml_path: {xml_path}", file=sys.stderr)
         # Load XSD
         schema_root = etree.XML(XSD_SCHEMA.encode('utf-8'))
         schema = etree.XMLSchema(schema_root)
@@ -256,18 +283,26 @@ def validate_xml(xml_path):
         
         # Validate
         if schema.validate(xml_doc):
+            print(f"[RESOURCE-ACCESS] XML validation successful", file=sys.stderr)
+            print(f"  xml_path: {xml_path}", file=sys.stderr)
             print(f"Success: {xml_path} is valid against the schema.")
             return True
         else:
+            print(f"[RESOURCE-ACCESS] XML validation failed", file=sys.stderr)
+            print(f"  xml_path: {xml_path}", file=sys.stderr)
             print(f"Validation failed for {xml_path}:")
             for error in schema.error_log:
                 print(f"  Line {error.line}: {error.message}")
             return False
 
     except etree.XMLSyntaxError as e:
+        print(f"[RESOURCE-ACCESS] XML syntax error", file=sys.stderr)
+        print(f"  xml_path: {xml_path}", file=sys.stderr)
         print(f"XML Syntax Error in {xml_path}: {e}")
         return False
     except Exception as e:
+        print(f"[RESOURCE-ACCESS] XML validation error", file=sys.stderr)
+        print(f"  xml_path: {xml_path}", file=sys.stderr)
         print(f"An unexpected error occurred: {e}")
         return False
 
@@ -323,11 +358,32 @@ def main():
         else:
             sys.exit(1)
 
+    # Determine story directory from XML file path if provided
+    story_config_dir = Path(".")
+    if args.xml_file and ("/" in args.xml_file or os.path.sep in args.xml_file):
+        xml_path_input = Path(args.xml_file)
+        # Navigate up from story-xml/ to find story-config.yml
+        # path like: Stories/Story-Name/story-xml/file.xml
+        # story-config.yml should be at: Stories/Story-Name/story-config.yml
+        if xml_path_input.parts[0] == "Stories" or "story-xml" in xml_path_input.parts:
+            # Find the story root (parent of story-xml or similar)
+            for parent in xml_path_input.parents:
+                potential_config = parent / "story-config.yml"
+                if potential_config.exists():
+                    story_config_dir = parent
+                    break
+                # Stop at Stories level
+                if parent.name == "Stories" or parent.parent.name == "Stories":
+                    break
+    
     # Load config (logic from chapter_seq_xml.py)
-    config_file = "story-config.yml"
-    if not os.path.exists(config_file):
-        print(f"Error: {config_file} not found.")
-        sys.exit(1)
+    config_file = story_config_dir / "story-config.yml"
+    if not config_file.exists():
+        # Fallback to current directory
+        config_file = Path("story-config.yml")
+        if not config_file.exists():
+            print(f"Error: story-config.yml not found.")
+            sys.exit(1)
 
     with open(config_file, "r") as f:
         config = yaml.safe_load(f)

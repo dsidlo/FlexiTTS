@@ -27,7 +27,7 @@ def start_tts_service(wait_ready: bool = True, timeout: int = 180) -> int:
         return 1
     
     # Check if already running
-    pid_file = Path("/tmp/tts_service.pid")
+    pid_file = Path("/tmp/FlexiTTS_tts_service.pid")
     if pid_file.exists():
         try:
             pid = int(pid_file.read_text().strip())
@@ -44,7 +44,7 @@ def start_tts_service(wait_ready: bool = True, timeout: int = 180) -> int:
     try:
         # Start service with nohup so it continues running
         # Redirect output to log file
-        log_file = Path("/tmp/tts_service.log")
+        log_file = Path("/tmp/FlexiTTS.log")
         log_file.unlink(missing_ok=True)  # Clear old log
         
         print(f"🚀 Starting TTS service (timeout: {timeout}s)...")

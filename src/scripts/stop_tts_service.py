@@ -5,7 +5,7 @@ import sys
 import signal
 from pathlib import Path
 
-PID_FILE = Path("/tmp/tts_service.pid")
+PID_FILE = Path("/tmp/FlexiTTS_tts_service.pid")
 
 
 def stop_tts_service(force: bool = False) -> bool:

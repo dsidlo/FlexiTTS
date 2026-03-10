@@ -1,5 +1,4 @@
 import type { StoryConfig } from '../models/types';
-import jsyaml from 'js-yaml';
 import { debugLog } from '../utils/debugLogger';
 
 const LOG_ID = '[pythonBridge]';
@@ -46,10 +45,12 @@ export const PythonBridgeService = {
     return result ? 0 : 2; // 0=Save, 2=Cancel (no easy way to mock 3-way in browser)
   },
 
-  validateConfig: async (): Promise<void> => {
+  validateConfig: async (storyDir?: string): Promise<void> => {
     try {
       if (typeof window !== 'undefined' && window.api && window.api.runPythonScript) {
-        await window.api.runPythonScript('src/scripts/validate_config.py', []);
+        // If story directory is provided, validate that story's config
+        const args = storyDir ? [`Stories/${storyDir}/story-config.yml`] : [];
+        await window.api.runPythonScript('src/scripts/validate_config.py', args);
       } else {
         console.log('Mock: Config validated');
       }
@@ -77,47 +78,53 @@ export const PythonBridgeService = {
   },
 
   loadStoryConfig: async (): Promise<StoryConfig> => {
-    // Legacy method - fetches current story config. New code should use loadStoryConfigForStory
-    if (typeof window !== 'undefined' && window.api) {
-      const yamlContent = await window.api.readFile('story-config.yml');
-      return jsyaml.load(yamlContent) as StoryConfig;
+    // Legacy method - fetches current story config. 
+    // First gets current story from global config, then loads that story's config
+    const id = `${LOG_ID}:loadStoryConfig`;
+    debugLog.info(id, 'ENTER legacy loadStoryConfig - delegating to loadStoryConfigForStory');
+    
+    try {
+      // Get current story from global config
+      const globalConfig = await PythonBridgeService.loadGlobalConfig();
+      const currentStory = globalConfig.FlexiTTS?.['current-story'];
+      const storiesDir = globalConfig.FlexiTTS?.['stories-dir']?.split('/').pop() || 'Stories';
+      const storyPrefix = globalConfig.FlexiTTS?.['story-dir-prefix'] || 'Story-';
+      
+      if (!currentStory) {
+        debugLog.error(id, 'No current-story in global config');
+        throw new Error('No current story selected in global config');
+      }
+      
+      // Build story directory name: prefix + story name
+      const storyDir = `${storyPrefix}${currentStory}`;
+      debugLog.info(id, 'Resolved story directory', { currentStory, storyDir, storiesDir });
+      
+      // Delegate to loadStoryConfigForStory
+      return await PythonBridgeService.loadStoryConfigForStory(storyDir);
+    } catch (e) {
+      debugLog.exception(id, 'loadStoryConfig failed', e);
+      throw e;
     }
-    // Mock Config for browser viewing - uses generic placeholder
-    return {
-      global: {
-        'story-dir': 'Story-Default/',
-        voices: '',
-        chapters: '',
-        'story-xml': '',
-        logs: '',
-        'story-audio': '',
-        clips: '',
-        'clip-separation': 0
-      },
-      'llm-xml-generator': [],
-      'dialog-effects': [],
-      'story-audio-post-process': {},
-      characters: []
-    } as StoryConfig;
   },
 
   loadStoryConfigForStory: async (storyDir: string): Promise<StoryConfig> => {
     const id = `${LOG_ID}:loadStoryConfigForStory`;
-    debugLog.info(id, 'ENTER loadStoryConfigForStory', { storyDir });
+    const configPath = `Stories/${storyDir}/story-config.yml`;
+    debugLog.info(id, '[RESOURCE-ACCESS] Loading story config', { storyDir, configPath, resourceType: 'yaml' });
     
     if (typeof window !== 'undefined' && window.api && window.api.loadStoryConfig) {
       try {
         const config = await window.api.loadStoryConfig(storyDir);
-        debugLog.info(id, 'Successfully loaded story config', { storyDir });
+        debugLog.info(id, '[RESOURCE-ACCESS] Successfully loaded story config', { storyDir, configPath, resourceType: 'yaml', hasCharacters: !!config?.characters, hasGlobal: !!config?.global });
         return config as StoryConfig;
       } catch (e) {
-        debugLog.exception(id, 'loadStoryConfig IPC call', e, { storyDir });
+        debugLog.exception(id, '[RESOURCE-ACCESS] loadStoryConfig IPC call failed', e, { storyDir, configPath, resourceType: 'yaml' });
         throw e;
       }
     }
     
     // Fallback to mock config
-    debugLog.warn(id, 'window.api.loadStoryConfig not available, returning mock config');
+    debugLog.warn(id, '[RESOURCE-ACCESS] window.api.loadStoryConfig not available, returning mock config', { storyDir });
     return {
       global: {
         'story-dir': `${storyDir}/`,
@@ -277,28 +284,28 @@ export const PythonBridgeService = {
 
   readChapterFile: async (filePath: string): Promise<string> => {
     const id = `${LOG_ID}:readChapterFile`;
-    debugLog.info(id, 'ENTER readChapterFile', { filePath });
+    debugLog.info(id, '[RESOURCE-ACCESS] Reading markdown file', { filePath, resourceType: 'markdown' });
     
     // If the python bridge exists (i.e. running inside electron), use it
     if (typeof window !== 'undefined' && window.api && window.api.readFile) {
       try {
         const fileContent = await window.api.readFile(filePath);
         if (fileContent) {
-          debugLog.info(id, 'Successfully read file via Electron IPC', { filePath, length: fileContent.length });
+          debugLog.info(id, '[RESOURCE-ACCESS] Successfully read markdown', { filePath, resourceType: 'markdown', length: fileContent.length });
           return fileContent;
         }
       } catch (e) {
-        debugLog.exception(id, 'Electron IPC readFile', e, { filePath });
+        debugLog.exception(id, '[RESOURCE-ACCESS] Electron IPC readFile failed', e, { filePath, resourceType: 'markdown' });
         // Don't fall through - in production, we need the real file
         throw new Error(`Failed to read file ${filePath}: ${e}`);
       }
     }
     
     // Fallback for browser/dev mode - try Vite import.meta.glob
-    debugLog.warn(id, 'Electron IPC not available, falling back to Vite glob', { filePath });
+    debugLog.warn(id, '[RESOURCE-ACCESS] Electron IPC not available, falling back to Vite glob', { filePath, resourceType: 'markdown' });
     
     try {
-      const xmlFiles = import.meta.glob('/../../Story-Entanglement/story-xml/*.xml', { query: '?raw', import: 'default' });
+      const xmlFiles = import.meta.glob('/../../**/story-xml/*.xml', { query: '?raw', import: 'default' });
       for (const path in xmlFiles) {
         if (path.includes(filePath.split('/').pop() || '')) {
           const content = await xmlFiles[path]();
@@ -354,34 +361,35 @@ export const PythonBridgeService = {
 
   readFile: async (filePath: string): Promise<string> => {
     const id = `${LOG_ID}:readFile`;
-    debugLog.info(id, 'ENTER readFile', { filePath });
+    const resourceType = filePath.endsWith('.md') ? 'markdown' : filePath.endsWith('.xml') ? 'xml' : filePath.endsWith('.wav') ? 'audio' : 'unknown';
+    debugLog.info(id, '[RESOURCE-ACCESS] Reading file', { filePath, resourceType });
     
     if (typeof window !== 'undefined' && window.api && window.api.readFile) {
       try {
         const content = await window.api.readFile(filePath);
-        debugLog.info(id, 'Successfully read file', { filePath, length: content?.length });
+        debugLog.info(id, '[RESOURCE-ACCESS] Successfully read file', { filePath, resourceType, length: content?.length });
         return content;
       } catch (e) {
-        debugLog.exception(id, 'readFile IPC call', e, { filePath });
+        debugLog.exception(id, '[RESOURCE-ACCESS] readFile IPC call failed', e, { filePath, resourceType });
         throw e;
       }
     }
     
-    debugLog.error(id, 'window.api.readFile not available', { filePath });
+    debugLog.error(id, '[RESOURCE-ACCESS] window.api.readFile not available', { filePath, resourceType });
     throw new Error('readFile requires Electron IPC');
   },
 
   writeChapterFile: async (filePath: string, xmlContent: string): Promise<boolean> => {
     const id = `${LOG_ID}:writeChapterFile`;
-    debugLog.info(id, 'ENTER writeChapterFile', { filePath, contentLength: xmlContent?.length });
+    debugLog.info(id, '[RESOURCE-ACCESS] Writing XML file', { filePath, resourceType: 'xml', contentLength: xmlContent?.length });
     
     if (typeof window !== 'undefined' && window.api && window.api.writeFile) {
       try {
         await window.api.writeFile(filePath, xmlContent);
-        debugLog.info(id, 'Successfully wrote file', { filePath });
+        debugLog.info(id, '[RESOURCE-ACCESS] Successfully wrote XML file', { filePath, resourceType: 'xml' });
         return true;
       } catch (err: unknown) {
-        debugLog.exception(id, 'writeFile IPC call', err, { filePath });
+        debugLog.exception(id, '[RESOURCE-ACCESS] writeFile IPC call failed', err, { filePath, resourceType: 'xml' });
         if (window.api.showErrorDialog) {
            await window.api.showErrorDialog('Save Error', (err as Error).message || 'Failed to write chapter file.');
         }
@@ -389,13 +397,15 @@ export const PythonBridgeService = {
       }
     }
     
-    debugLog.error(id, 'window.api.writeFile not available', { filePath });
+    debugLog.error(id, '[RESOURCE-ACCESS] window.api.writeFile not available', { filePath, resourceType: 'xml' });
     throw new Error('writeChapterFile requires Electron IPC');
   },
 
   playAudio: async (chapterName: string, sectionNum: string, dlgseqNum: string, onGenerationComplete?: () => void, skipPlay: boolean = false, onPlay?: (dataUrl: string) => void): Promise<string | void> => {
     const id = `${LOG_ID}:playAudio`;
-    debugLog.info(id, 'ENTER playAudio', { chapterName, sectionNum, dlgseqNum, skipPlay, hasOnPlay: !!onPlay });
+    const storyDir = await PythonBridgeService.getCurrentStory();
+    const xmlPath = `${storyDir || 'Story-Default'}/story-xml/${chapterName}`;
+    debugLog.info(id, '[RESOURCE-ACCESS] Starting audio generation', { chapterName, sectionNum, dlgseqNum, xmlPath, resourceType: 'xml', operation: 'read' });
     
     if (typeof window !== 'undefined' && window.api && window.api.runPythonScript) {
       try {
@@ -404,21 +414,36 @@ export const PythonBridgeService = {
         const ttsServiceUrl = await PythonBridgeService.ensureTtsService();
         debugLog.info(id, 'ensureTtsService completed', { ttsServiceUrl });
         
-        debugLog.info(id, 'Calling chapter_xml_to_audio.py', { 
+        // Get current story from main process
+        let storyDir = 'Story-Default';
+        try {
+          const currentStoryDir = await window.api.getCurrentStory();
+          if (currentStoryDir) {
+            storyDir = currentStoryDir;
+          }
+        } catch (err) {
+          debugLog.warn(id, 'Failed to get current story, using default', err);
+        }
+        
+        const xmlInputPath = `${storyDir}/story-xml/${chapterName}`;
+        debugLog.info(id, '[RESOURCE-ACCESS] Running chapter_xml_to_audio.py', { 
           script: 'src/scripts/chapter_xml_to_audio.py',
+          xmlInputPath,
+          resourceType: 'xml',
           chapter: chapterName,
           section: sectionNum,
           dlgseq: dlgseqNum,
-          ttsService: ttsServiceUrl
+          ttsService: ttsServiceUrl,
+          storyDir
         });
         
         const out = await window.api.runPythonScript('src/scripts/chapter_xml_to_audio.py', [
-            `Story-Entanglement/story-xml/${chapterName}`,
+            xmlInputPath,
             `--section`, sectionNum,
             `--dlgseq`, dlgseqNum,
             `--tts-service`, ttsServiceUrl
         ]);
-        debugLog.info(id, 'Audio generation completed', { outputLength: out?.length });
+        debugLog.info(id, '[RESOURCE-ACCESS] Audio generation completed', { outputLength: out?.length, xmlInputPath });
 
         // Parse stdout to find the generated WAV file path
         let wavName = '';
@@ -467,15 +492,17 @@ export const PythonBridgeService = {
             
             // Reconstruct the full path
             const chapterStem = chapterName.replace('.xml', '');
-            const relativePath = `Story-Entanglement/story-audio/clips/${chapterStem}/${wavName}`;
-            debugLog.info(id, 'Reconstructed audio path', { relativePath });
+            // Get current story directory (already loaded above)
+            const audioPath = `${storyDir}/story-audio/clips/${chapterStem}/${wavName}`;
+            debugLog.info(id, '[RESOURCE-ACCESS] Reading audio file for playback', { audioPath, resourceType: 'audio', wavName, chapterStem });
             
             // Client-side playback via data URL with onPlay callback
             if (!skipPlay) {
                 debugLog.info(id, 'Starting audio playback', { skipPlay, hasOnPlay: !!onPlay });
                 if (window.api && window.api.readAudioFile) {
                     try {
-                        const dataUrl = await window.api.readAudioFile(relativePath);
+                        const dataUrl = await window.api.readAudioFile(audioPath);
+                        debugLog.info(id, '[RESOURCE-ACCESS] Audio file loaded successfully', { audioPath, resourceType: 'audio', dataUrlLength: dataUrl?.length });
                         if (onPlay) {
                             // Use caller's play function (e.g., useAudioPlayer)
                             debugLog.info(id, 'Using onPlay callback for audio playback');
@@ -488,10 +515,10 @@ export const PythonBridgeService = {
                         }
                         debugLog.info(id, 'Audio playback completed successfully');
                     } catch (playErr) {
-                        debugLog.exception(id, 'readAudioFile/playback', playErr, { relativePath });
+                        debugLog.exception(id, 'readAudioFile/playback', playErr, { audioPath });
                     }
                 } else if (window.api) {
-                    debugLog.warn(id, 'readAudioFile not available', { relativePath });
+                    debugLog.warn(id, 'readAudioFile not available', { audioPath });
                 }
             } else {
                 debugLog.info(id, 'SkipPlay flag true, skipping playback');
