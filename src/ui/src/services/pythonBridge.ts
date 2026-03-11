@@ -379,17 +379,18 @@ export const PythonBridgeService = {
     throw new Error('readFile requires Electron IPC');
   },
 
-  writeChapterFile: async (filePath: string, xmlContent: string): Promise<boolean> => {
+  writeChapterFile: async (filePath: string, content: string): Promise<boolean> => {
     const id = `${LOG_ID}:writeChapterFile`;
-    debugLog.info(id, '[RESOURCE-ACCESS] Writing XML file', { filePath, resourceType: 'xml', contentLength: xmlContent?.length });
+    const resourceType = filePath.endsWith('.md') ? 'markdown' : filePath.endsWith('.xml') ? 'xml' : 'unknown';
+    debugLog.info(id, '[RESOURCE-ACCESS] Writing file', { filePath, resourceType, contentLength: content?.length });
     
     if (typeof window !== 'undefined' && window.api && window.api.writeFile) {
       try {
-        await window.api.writeFile(filePath, xmlContent);
-        debugLog.info(id, '[RESOURCE-ACCESS] Successfully wrote XML file', { filePath, resourceType: 'xml' });
+        await window.api.writeFile(filePath, content);
+        debugLog.info(id, '[RESOURCE-ACCESS] Successfully wrote file', { filePath, resourceType, contentLength: content?.length });
         return true;
       } catch (err: unknown) {
-        debugLog.exception(id, '[RESOURCE-ACCESS] writeFile IPC call failed', err, { filePath, resourceType: 'xml' });
+        debugLog.exception(id, '[RESOURCE-ACCESS] writeFile IPC call failed', err, { filePath, resourceType });
         if (window.api.showErrorDialog) {
            await window.api.showErrorDialog('Save Error', (err as Error).message || 'Failed to write chapter file.');
         }
@@ -397,7 +398,7 @@ export const PythonBridgeService = {
       }
     }
     
-    debugLog.error(id, '[RESOURCE-ACCESS] window.api.writeFile not available', { filePath, resourceType: 'xml' });
+    debugLog.error(id, '[RESOURCE-ACCESS] window.api.writeFile not available', { filePath, resourceType });
     throw new Error('writeChapterFile requires Electron IPC');
   },
 

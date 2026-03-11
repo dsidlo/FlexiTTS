@@ -64,12 +64,11 @@ export const getNodeName = (character: string, isStoryFormat: boolean): string =
 };
 
 /**
- * Gets the ID attribute key based on format.
- * @param isStoryFormat - Whether this is a story format
- * @returns 'dlgseq' for story format, 'id' for chapter format
+ * Gets the dialog sequence attribute key.
+ * @returns Always 'dlgseq' because chapter and story formats now share dlgseq/sectionId semantics.
  */
-export const getIdKey = (isStoryFormat: boolean): string => {
-  return isStoryFormat ? 'dlgseq' : 'id';
+export const getIdKey = (): string => {
+  return 'dlgseq';
 };
 
 /**
@@ -98,10 +97,10 @@ export const generateXMLFromChapter = (updatedChapter: Chapter): string => {
       attrString = ` character="${dialog.character}"` + attrString;
     }
     
-    // Add ID attribute
-    const idKey = getIdKey(isStoryFormat);
-    const idStr = dialog.id.replace('dialog-', '');
-    attrString = ` ${idKey}="${idStr}"` + attrString;
+    // Add dialog sequence attribute
+    const idKey = getIdKey();
+    const dlgseq = dialog.dlgseq || dialog.attributes.dlgseq || `${index + 1}`;
+    attrString = ` ${idKey}="${dlgseq}"` + attrString;
     
     if (isStoryFormat) {
       // Group by section if applicable

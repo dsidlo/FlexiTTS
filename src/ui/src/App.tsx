@@ -1,7 +1,7 @@
 import { useEffect, useCallback, useState, useRef } from 'react';
 import './App.css';
 import { PythonBridgeService } from './services/pythonBridge';
-import type { StoryConfig, StoryInfo } from './models/types';
+import type { AlertHistoryItem, StoryConfig, StoryInfo } from './models/types';
 import { TopBar } from './components/TopBar';
 import { DialogBar } from './components/DialogBar';
 import { AlertContainer } from './components/AlertContainer';
@@ -41,7 +41,8 @@ function App() {
   const [menuPos, setMenuPos] = useState({ x: 0, y: 0 });
 
   // Alert system state
-  const { alerts: alertList, addAlert, removeAlert } = useAlerts();
+  const { alerts: alertList, addAlert, removeAlert, clearAlerts } = useAlerts();
+  const [alertHistory, setAlertHistory] = useState<AlertHistoryItem[]>([]);
   const [, setTtsServiceReady] = useState(false);  // State tracked but value unused (WebSocket always enabled)
   
   // Ref to prevent double initialization in React StrictMode
@@ -49,9 +50,34 @@ function App() {
   
   // Ref to track if we've already shown TTS ready alert
   const ttsReadyShownRef = useRef(false);
+  const latestTtsAlertRef = useRef<Record<string, string> | null>(null);
+  const latestTtsAlertTypeRef = useRef<AlertType | null>(null);
+
+  const pushAlertHistory = useCallback((message: string, type: AlertType, source: 'internal' | 'tts-service') => {
+    debugLog.info(`${logId}:alerts`, 'pushAlertHistory called', { message, type, source });
+    setAlertHistory((prev) => ([
+      ...prev,
+      {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+        message,
+        type,
+        source,
+        timestamp: new Date(),
+      }
+    ]));
+  }, []);
+
+  const removeAlertHistoryItem = useCallback((id: string) => {
+    setAlertHistory((prev) => prev.filter((item) => item.id !== id));
+  }, []);
+
+  const clearAlertHistory = useCallback(() => {
+    setAlertHistory([]);
+  }, []);
 
   // TTS alert handlers (defined before useEffects)
   const handleTtsAlert = useCallback((alert: { alertType: AlertType; message: string; metadata?: Record<string, string> }) => {
+    debugLog.info(`${logId}:tts-alert`, 'handleTtsAlert received alert', { alert });
     // Build rich context message from metadata
     const parts: string[] = [];
     if (alert.metadata) {
@@ -68,8 +94,17 @@ function App() {
     if (parts.length > 0) {
       fullMsg = `${alert.message} – ${parts.join(", ")}`;
     }
+    debugLog.info(`${logId}:tts-alert`, 'handleTtsAlert normalized alert', {
+      fullMsg,
+      alertType: alert.alertType,
+      metadata: alert.metadata,
+      parts,
+    });
+    latestTtsAlertRef.current = alert.metadata || null;
+    latestTtsAlertTypeRef.current = alert.alertType;
     addAlert(fullMsg, alert.alertType, 'tts-service');
-  }, [addAlert]);
+    pushAlertHistory(fullMsg, alert.alertType, 'tts-service');
+  }, [addAlert, pushAlertHistory]);
 
   const handleTtsStatus = useCallback((status: { status: string; ready: boolean }) => {
     // Only update internal state, don't show alerts for status messages
@@ -95,9 +130,10 @@ function App() {
   useEffect(() => {
     const unsubscribe = alertService.subscribe((message, type, duration) => {
       addAlert(message, type, 'internal', duration);
+      pushAlertHistory(message, type, 'internal');
     });
     return unsubscribe;
-  }, [addAlert]);
+  }, [addAlert, pushAlertHistory]);
   
   useTtsAlerts({
     enabled: true,  // Always enabled to receive startup alerts via WebSocket
@@ -247,29 +283,29 @@ function App() {
   }, []);
 
   // XML generation pipeline
-  const runXmlGenerationPipeline = async (stem: string, attempt: number): Promise<void> => {
+  const runXmlGenerationPipeline = async (stem: string, attempt: number, storyDirOverride?: string): Promise<void> => {
     if (attempt > 3) throw new Error('Exceeded max retries');
     setGenerateAttempt(attempt);
     try {
       if (window.api?.runPythonScript) {
-        const storyDir = currentStory?.directory_name || 'Story-Default';
+        const storyDir = storyDirOverride || currentStory?.directory_name || 'Story-Default';
         const mdPath = `${storyDir}/story-chapters/${stem}.md`;
         const xmlPath = `${storyDir}/story-xml/${stem}.xml`;
-        debugLog.info(`${logId}:runXmlGenerationPipeline`, 'Starting XML generation pipeline', { storyDir, stem, attempt, mdPath, xmlPath });
+        debugLog.info(`${logId}:runXmlGenerationPipeline`, 'Starting XML generation pipeline', { storyDir, stem, attempt, mdPath, xmlPath, currentStory: currentStory?.directory_name, storyDirOverride });
         await window.api.runPythonScript('src/scripts/chapter_to_xml.py', [mdPath]);
-        debugLog.info(`${logId}:runXmlGenerationPipeline`, 'chapter_to_xml.py completed', { mdPath, xmlPath });
+        debugLog.info(`${logId}:runXmlGenerationPipeline`, 'chapter_to_xml.py completed', { mdPath, xmlPath, storyDir });
         await window.api.runPythonScript('src/scripts/chapter_seq_xml.py', [xmlPath]);
-        debugLog.info(`${logId}:runXmlGenerationPipeline`, 'chapter_seq_xml.py completed', { xmlPath });
+        debugLog.info(`${logId}:runXmlGenerationPipeline`, 'chapter_seq_xml.py completed', { xmlPath, storyDir });
         await window.api.runPythonScript('src/scripts/chapter_validate_xml.py', [xmlPath]);
-        debugLog.info(`${logId}:runXmlGenerationPipeline`, 'chapter_validate_xml.py completed', { xmlPath });
+        debugLog.info(`${logId}:runXmlGenerationPipeline`, 'chapter_validate_xml.py completed', { xmlPath, storyDir });
       } else {
-        debugLog.warn(`${logId}:runXmlGenerationPipeline`, 'Mock pipeline execution', { stem, attempt });
+        debugLog.warn(`${logId}:runXmlGenerationPipeline`, 'Mock pipeline execution', { stem, attempt, storyDirOverride });
         await new Promise(r => setTimeout(r, 2000));
       }
     } catch (err) {
-      debugLog.exception(`${logId}:runXmlGenerationPipeline`, 'XML generation pipeline', err, { stem, attempt });
+      debugLog.exception(`${logId}:runXmlGenerationPipeline`, 'XML generation pipeline', err, { stem, attempt, storyDirOverride, currentStory: currentStory?.directory_name });
       if (attempt >= 3) throw err;
-      await runXmlGenerationPipeline(stem, attempt + 1);
+      await runXmlGenerationPipeline(stem, attempt + 1, storyDirOverride);
     }
   };
 
@@ -327,7 +363,7 @@ function App() {
     } else {
       setIsGeneratingStructure(true);
       try {
-        await runXmlGenerationPipeline(stem, 1);
+        await runXmlGenerationPipeline(stem, 1, storyDir);
         await loadChapter(xmlPath, loadedConfig, storyDir);
       } catch (err) {
         await PythonBridgeService.showErrorDialog('Generation Failed', `Failed to generate XML for ${stem}`);
@@ -394,28 +430,63 @@ function App() {
   // Save handler
   const handleSave = useCallback(async () => {
     try {
-      const stem = currentChapterFile.split('/').pop()?.replace('.md', '') || 'unknown';
+      const stem = currentChapterFile.split('/').pop()?.replace('.md', '')?.replace('.xml', '') || 'unknown';
       const storyDir = currentStory?.directory_name || 'Story-Default';
+      const xmlPath = `${storyDir}/story-xml/${stem}.xml`;
+      const mdPath = `${storyDir}/story-chapters/${stem}.md`;
+      const hadMarkdownChanges = hasUnsavedMarkdownChangesRef.current;
+      const hadXmlChanges = hasUnsavedChangesRef.current;
+
+      debugLog.info(`${logId}:handleSave`, 'Starting save', { stem, storyDir, mdPath, xmlPath, hadMarkdownChanges, hadXmlChanges });
       
-      if (hasUnsavedChangesRef.current && chapter) {
+      if (hadXmlChanges && chapter) {
         const xml = generateXMLFromChapter(chapter);
-        await PythonBridgeService.writeChapterFile(`${storyDir}/story-xml/${stem}.xml`, xml);
-        await PythonBridgeService.validateChapterXML(`${storyDir}/story-xml/${stem}.xml`);
+        debugLog.info(`${logId}:handleSave`, 'Saving edited chapter XML from dialog UI', { xmlPath, stem, storyDir, dialogCount: chapter.dialogs.length });
+        await PythonBridgeService.writeChapterFile(xmlPath, xml);
+
+        try {
+          await PythonBridgeService.validateChapterXML(xmlPath);
+        } catch (validationError) {
+          alerts.error(`XML validation failed for ${stem}. Reloading chapter from disk to discard invalid dialog edits.`, 7000);
+          debugLog.exception(`${logId}:handleSave`, 'Dialog XML validation failed after save', validationError, { xmlPath, stem, storyDir });
+          await loadChapter(xmlPath, config || undefined, storyDir);
+          setHasUnsavedChangesValue(false);
+          return;
+        }
+
         setLastSavedXmlValue(xml);
         setHasUnsavedChangesValue(false);
+        alerts.success(`Saved chapter XML to ${xmlPath}`, 5000);
+        debugLog.info(`${logId}:handleSave`, 'Saved edited chapter XML', { xmlPath, stem, storyDir });
       }
-      if (hasUnsavedMarkdownChangesRef.current) {
-        const mdPath = `${storyDir}/story-chapters/${stem}.md`;
+      if (hadMarkdownChanges) {
         await PythonBridgeService.writeChapterFile(mdPath, markdownContent);
         setLastSavedMarkdownValue(markdownContent);
         setHasUnsavedMarkdownChangesValue(false);
+        alerts.success(`Saved chapter markdown to ${mdPath}`, 5000);
+        alerts.info(`Regenerating XML for ${stem}...`, 5000);
+        debugLog.info(`${logId}:handleSave`, 'Saved markdown, regenerating XML from chapter editor content', { mdPath, xmlPath, stem, storyDir });
+
+        setIsGeneratingStructure(true);
+        try {
+          await runXmlGenerationPipeline(stem, 1, storyDir);
+          alerts.info(`Refreshing Chapter Dialog UI from regenerated XML for ${stem}...`, 4000);
+          await loadChapter(xmlPath, config || undefined, storyDir);
+          alerts.success(`Chapter Dialog refreshed from regenerated XML for ${stem}`, 4000);
+          debugLog.info(`${logId}:handleSave`, 'Reloaded chapter after XML regeneration', { xmlPath, stem, storyDir });
+        } finally {
+          setIsGeneratingStructure(false);
+          setGenerateAttempt(0);
+        }
       }
     } catch (e) {
+      debugLog.exception(`${logId}:handleSave`, 'Save failed', e, { currentChapterFile, currentStory: currentStory?.directory_name });
       console.error('Save failed:', e);
     }
   }, [currentChapterFile, currentStory, chapter, hasUnsavedChangesRef, hasUnsavedMarkdownChangesRef, 
       markdownContent, setLastSavedXmlValue, setHasUnsavedChangesValue,
-      setLastSavedMarkdownValue, setHasUnsavedMarkdownChangesValue]);
+      setLastSavedMarkdownValue, setHasUnsavedMarkdownChangesValue, runXmlGenerationPipeline,
+      loadChapter, config, setIsGeneratingStructure, setGenerateAttempt]);
 
   // Toggle editor handler
   const handleToggleEditor = useCallback(async () => {
@@ -443,6 +514,29 @@ function App() {
     setAvailableClips(await PythonBridgeService.listChapterClips(name));
     setHasChapterAudio(await PythonBridgeService.checkChapterAudio(name));
   }, [currentChapterFile, setAvailableClips, setHasChapterAudio]);
+
+  useEffect(() => {
+    const metadata = latestTtsAlertRef.current;
+    if (!metadata || !chapter) return;
+
+    const currentChapterName = chapter.fileName?.split('/').pop()?.replace('.md', '.xml') || '';
+    const alertChapterNum = metadata.chapter;
+    const currentChapterNum = chapter.fileName?.match(/(\d+)/)?.[1]?.padStart(3, '0') || '';
+    const isDialogRenderAlert = metadata.kind === 'dialog' && !!metadata.dialog;
+    const isCurrentChapterAlert = !!currentChapterName && !!alertChapterNum && currentChapterNum === alertChapterNum;
+
+    if (isDialogRenderAlert && isCurrentChapterAlert && (latestTtsAlertTypeRef.current === 'success' || latestTtsAlertTypeRef.current === 'info')) {
+      debugLog.info(`${logId}:tts-alert`, 'Refreshing clips after dialog render alert for current chapter', {
+        currentChapterName,
+        currentChapterNum,
+        alertChapterNum,
+        dialog: metadata.dialog,
+        section: metadata.section,
+        alertType: latestTtsAlertTypeRef.current,
+      });
+      void refreshClips();
+    }
+  }, [chapter, refreshClips, alertHistory.length]);
 
   // Context menu handlers
   const handleContextMenu = (e: React.MouseEvent) => {
@@ -482,6 +576,12 @@ function App() {
           hasUnsavedChanges={hasAnyUnsaved}
           editorMode={editorMode}
           onToggleEditor={handleToggleEditor}
+          alertHistory={alertHistory}
+          onRemoveAlertHistoryItem={removeAlertHistoryItem}
+          onClearAlertHistory={() => {
+            clearAlertHistory();
+            clearAlerts();
+          }}
           currentStory={currentStory}
           onStorySelect={handleStorySelect}
         />
@@ -515,15 +615,17 @@ function App() {
             <h2 style={{ marginTop: 0 }}>Dialogs</h2>
             {chapter?.dialogs.map(dialog => {
               const isFiltered = !!selectedCharacterFilter && dialog.character !== selectedCharacterFilter;
-              const displayId = dialog.sectionId ? `${dialog.sectionId}.${dialog.id}` : dialog.id;
+              const displayId = dialog.sectionId ? `${dialog.sectionId}.${dialog.dlgseq}` : dialog.dlgseq;
               const chapNum = chapter.fileName.match(/(\d+)/)?.[1]?.padStart(3, '0') || '000';
-              const secStr = (dialog.sectionId || '1').padStart(3, '0');
-              const dlgStr = dialog.id.replace('dialog-', '').padStart(3, '0');
-              const hasClip = availableClips.some(c => c.includes(`chapter_${chapNum}_${secStr}_${dlgStr}`));
+              const secStr = (dialog.sectionId || '0').padStart(3, '0');
+              const dlgStr = dialog.dlgseq.padStart(3, '0');
+              const speakerFileName = dialog.character;
+              const clipPrefix = `chapter_${chapNum}_${secStr}_${dlgStr}_${speakerFileName}`;
+              const hasClip = availableClips.some(c => c === `${clipPrefix}.wav` || c.startsWith(`${clipPrefix}_s`));
 
               return (
                 <DialogBar 
-                  key={`${dialog.sectionId || '1'}-${dialog.id}-${dialog._index}`}
+                  key={`${dialog.sectionId || '1'}-${dialog.dlgseq}-${dialog._index}`}
                   dialog={dialog}
                   displayId={displayId}
                   chapterFileName={chapter.fileName.split('/').pop()}

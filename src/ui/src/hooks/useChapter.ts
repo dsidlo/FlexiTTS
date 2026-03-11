@@ -30,7 +30,7 @@ export interface UseChapterReturn {
   // Actions
   loadChapter: (filePath: string, loadedConfig?: StoryConfig, forceStoryDir?: string) => Promise<void>;
   handleChapterSelect: (filePath: string, loadedConfig?: StoryConfig) => Promise<void>;
-  handleUpdateDialog: (id: string, sectionId: string, updatedDialog: DialogElement) => void;
+  handleUpdateDialog: (dlgseq: string, sectionId: string, updatedDialog: DialogElement) => void;
   setCurrentChapterFile: React.Dispatch<React.SetStateAction<string>>;
   runXmlGenerationPipeline: (stem: string, attempt: number) => Promise<void>;
   setIsGeneratingStructure: React.Dispatch<React.SetStateAction<boolean>>;
@@ -120,11 +120,15 @@ export const useChapter = (storyDirectory?: string): UseChapterReturn => {
       
       return {
         _index: index,
-        id: attributes.id || attributes.dlgseq || `dialog-${index}`,
-        sectionId: attributes.section_seq || '1',
+        dlgseq: attributes.dlgseq || attributes.id || `${index + 1}`,
+        sectionId: attributes.section_seq || '0',
         character: attributes.character || (node.tagName.toLowerCase() === 'narration' ? 'Narrator' : 'Unknown'),
         text: text,
-        attributes: attributes
+        attributes: {
+          ...attributes,
+          dlgseq: attributes.dlgseq || attributes.id || `${index + 1}`,
+          section_seq: attributes.section_seq || '0'
+        }
       };
     });
     
@@ -284,13 +288,13 @@ export const useChapter = (storyDirectory?: string): UseChapterReturn => {
   /**
    * Update a dialog element within the chapter
    */
-  const handleUpdateDialog = useCallback((id: string, sectionId: string, updatedDialog: DialogElement) => {
+  const handleUpdateDialog = useCallback((dlgseq: string, sectionId: string, updatedDialog: DialogElement) => {
     if (!chapter) return;
     
     const updatedDialogs = chapter.dialogs.map(d => {
       const isMatch = updatedDialog._index !== undefined && d._index !== undefined 
         ? d._index === updatedDialog._index 
-        : d.id === id && (d.sectionId || '1') === sectionId;
+        : d.dlgseq === dlgseq && (d.sectionId || '1') === sectionId;
       
       return isMatch ? updatedDialog : d;
     });

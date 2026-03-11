@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 from log_utils import setup_script_logging
 
 logger = setup_script_logging('chapter_to_xml')
+logger.info('module import complete')
 
 def load_config(config_path="story-config.yml", input_path=None):
     resolved_config = Path(config_path)
@@ -83,6 +84,7 @@ def create_parser():
 
 
 def main():
+    logger.info('main start')
     # Load environment variables from ~/.env
     env_path = Path.home() / ".env"
     load_dotenv(dotenv_path=env_path)

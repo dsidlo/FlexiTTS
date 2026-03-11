@@ -433,6 +433,15 @@ class TTSServer:
         current_thread = threading.current_thread().name
         
         logger.debug(f"[AlertBroadcast] broadcast_alert_sync called from thread '{current_thread}': {message}")
+        debug_log("AlertBroadcast", "broadcast_alert_sync invoked", {
+            "thread": current_thread,
+            "message": message,
+            "alert_type": alert_type,
+            "metadata": metadata,
+            "queued_before": len(self._alert_queue),
+            "connected_clients": len(self._connected_clients),
+            "main_loop_running": bool(self._main_loop and self._main_loop.is_running()),
+        })
         
         # 1. Always queue the alert so clients connecting later will see it
         self._queue_alert(message, alert_type, metadata)
@@ -481,6 +490,12 @@ class TTSServer:
         }
         
         message_json = json.dumps(alert_data)
+        debug_log("AlertBroadcast", "broadcast_alert prepared payload", {
+            "message": message,
+            "alert_type": alert_type,
+            "metadata": metadata,
+            "payload": alert_data,
+        })
         
         # Use a snapshot of clients to avoid concurrent modification
         with self._clients_lock:
@@ -488,6 +503,12 @@ class TTSServer:
         
         client_count = len(clients)
         logger.debug(f"[AlertBroadcast] Broadcasting to {client_count} clients: {message}")
+        debug_log("AlertBroadcast", "broadcast_alert sending", {
+            "client_count": client_count,
+            "message": message,
+            "alert_type": alert_type,
+            "metadata": metadata,
+        })
         
         disconnected = []
         sent_count = 0
@@ -501,8 +522,24 @@ class TTSServer:
         
         if sent_count > 0:
             logger.info(f"[AlertBroadcast] Sent '{message}' to {sent_count}/{client_count} clients")
+            debug_log("AlertBroadcast", "broadcast_alert sent", {
+                "message": message,
+                "sent_count": sent_count,
+                "client_count": client_count,
+            })
         elif client_count > 0:
             logger.warning(f"[AlertBroadcast] Failed to send to any of {client_count} clients")
+            debug_log("AlertBroadcast", "broadcast_alert send_failed", {
+                "message": message,
+                "client_count": client_count,
+                "disconnected_count": len(disconnected),
+            }, level="WARN")
+        else:
+            debug_log("AlertBroadcast", "broadcast_alert no_clients", {
+                "message": message,
+                "alert_type": alert_type,
+                "metadata": metadata,
+            }, level="WARN")
         
         # Clean up disconnected clients
         if disconnected:
@@ -515,6 +552,12 @@ class TTSServer:
         client_addr = websocket.remote_address if hasattr(websocket, 'remote_address') else 'unknown'
         logger.info(f"[WebSocket] Client connected: {client_addr}")
         logger.debug(f"[WebSocket] Server state: ready={self.is_ready}, queue_size={len(self._alert_queue)}, clients={len(self._connected_clients)}")
+        debug_log("WebSocket", "client_connected", {
+            "client_addr": str(client_addr),
+            "ready": self.is_ready,
+            "queue_size": len(self._alert_queue),
+            "clients": len(self._connected_clients),
+        })
 
         await self._add_client(websocket)
 
@@ -561,6 +604,45 @@ class TTSServer:
                             'message': 'Model loading in progress...' if not self.is_ready else 'Ready'
                         }))
                         return  # Close connection after health check
+
+                    # Handle external alert event forwarding
+                    if data.get('action') == 'alert':
+                        message = str(data.get('message', '')).strip()
+                        alert_type = str(data.get('alertType', 'info') or 'info')
+                        metadata = data.get('metadata') if isinstance(data.get('metadata'), dict) else {}
+                        debug_log("ExternalAlert", "received external alert request", {
+                            "client_addr": str(client_addr),
+                            "message": message,
+                            "alert_type": alert_type,
+                            "metadata": metadata,
+                            "raw": data,
+                        })
+
+                        if not message:
+                            debug_log("ExternalAlert", "rejecting external alert request", {
+                                "reason": "message_required",
+                                "client_addr": str(client_addr),
+                                "raw": data,
+                            }, level="WARN")
+                            await websocket.send(json.dumps({
+                                'error': 'Alert message required'
+                            }))
+                            continue
+
+                        logger.info(f"[ExternalAlert] Forwarding alert: {message}")
+                        await self.broadcast_alert(message, alert_type, metadata)
+                        ack_payload = {
+                            'status': 'ok',
+                            'forwarded': True,
+                            'type': 'alert-ack',
+                            'message': message
+                        }
+                        debug_log("ExternalAlert", "sending alert ack", {
+                            "client_addr": str(client_addr),
+                            "ack_payload": ack_payload,
+                        })
+                        await websocket.send(json.dumps(ack_payload))
+                        continue
 
                     # Handle generation request
                     logger.info(f"Request: speaker={data.get('speaker')}, "
@@ -666,15 +748,12 @@ class TTSServer:
                                 custom_voice_config=custom_voice_config
                             )
 
-                            # Get generated audio
+                            # Get generated audio metadata
                             sr = result.sample_rate
                             wavs = result.audio_segments
+                            generated_file_size = tmp_path.stat().st_size if tmp_path.exists() else 0
 
-                            # Save audio
-                            with open(tmp_path, 'rb') as f:
-                                audio_data = f.read()
-
-                            # Send metadata
+                            # Send metadata with generated file path only
                             await websocket.send(json.dumps({
                                 "status": "success",
                                 "model": model_name,
@@ -682,14 +761,24 @@ class TTSServer:
                                 "format": "wav",
                                 "segments": len(wavs),
                                 "text_length": len(text),
-                                "duration_ms": result.duration_ms
+                                "duration_ms": result.duration_ms,
+                                "file_path": str(tmp_path),
+                                "file_size_bytes": generated_file_size,
                             }))
 
                             gen_elapsed = time.time() - gen_start
                             logger.info(f"Generation complete in {gen_elapsed:.1f}s")
-
-                            # Send binary audio data
-                            await websocket.send(audio_data)
+                            debug_log("Generation", "server_tmp_wav_ready", {
+                                "client_addr": str(client_addr),
+                                "speaker": speaker,
+                                "chapter": data.get("chapter"),
+                                "section": data.get("section"),
+                                "dialog": data.get("dialog"),
+                                "tmp_path": str(tmp_path),
+                                "file_size_bytes": generated_file_size,
+                                "sample_rate": sr,
+                                "segments": len(wavs),
+                            })
 
                             # Send done signal
                             await websocket.send(json.dumps({"done": True, "generation_time": gen_elapsed}))
@@ -705,7 +794,9 @@ class TTSServer:
                             log_gpu_stats(model_name, len(self._model_cache))
 
                         finally:
-                            tmp_path.unlink(missing_ok=True)
+                            # Remote clients now receive file_path metadata and are responsible
+                            # for moving/cleaning the generated wav after consuming it.
+                            pass
 
                     except MemoryError as e:
                         logger.error(f"GPU OOM: {e}")

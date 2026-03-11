@@ -529,7 +529,7 @@ describe('App', () => {
         .mockResolvedValueOnce(mockChaptersForAdventure);
       vi.mocked(PythonBridgeService.checkXmlExistsForStory).mockResolvedValue(true);
       
-      const { rerender } = render(<App />);
+      render(<App />);
       
       await waitFor(() => {
         expect(screen.getByTestId('topbar')).toBeInTheDocument();

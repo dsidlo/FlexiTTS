@@ -553,28 +553,58 @@ ipcMain.handle('write-file', async (event, filePath: string, content: string) =>
   
   try {
     // Security: Sanitize path
-    const sanitizedPath = sanitizePath(filePath);
+    let sanitizedPath = sanitizePath(filePath);
+    log.info(`[IPC][RESOURCE-ACCESS] Sanitized write path: ${sanitizedPath}`);
+
+    // Load global config to get stories-dir for story-relative writes
+    const configPath = getGlobalConfigPath();
+    let storiesDir: string | undefined;
+
+    if (fs.existsSync(configPath)) {
+      try {
+        const configContent = fs.readFileSync(configPath, 'utf-8');
+        const config = jsyaml.load(configContent) as any;
+        storiesDir = config?.FlexiTTS?.['stories-dir'];
+        if (storiesDir) {
+          storiesDir = expandTilde(storiesDir);
+          log.info(`[IPC][RESOURCE-ACCESS] Using stories-dir from config for write: ${storiesDir}`);
+        }
+      } catch (err) {
+        log.warn(`[IPC][RESOURCE-ACCESS] Failed to load config for write path resolution: ${err}`);
+      }
+    }
     
-    // Determine absolute path
-    const fullPath = path.isAbsolute(sanitizedPath)
-      ? sanitizedPath
-      : path.join(projectRoot, sanitizedPath);
+    // Determine absolute path using same story-aware resolution as read-file
+    if (sanitizedPath.startsWith('Story-')) {
+      if (storiesDir) {
+        sanitizedPath = path.join(storiesDir, sanitizedPath);
+        log.info(`[IPC][RESOURCE-ACCESS] Resolved story write path using config stories-dir: ${sanitizedPath}`);
+      } else {
+        sanitizedPath = path.join(projectRoot, 'Stories', sanitizedPath);
+        log.info(`[IPC][RESOURCE-ACCESS] Resolved story write path using fallback: ${sanitizedPath}`);
+      }
+    } else if (!path.isAbsolute(sanitizedPath)) {
+      sanitizedPath = path.join(projectRoot, sanitizedPath);
+      log.info(`[IPC][RESOURCE-ACCESS] Resolved non-story write path relative to project root: ${sanitizedPath}`);
+    }
+
+    const fullPath = path.normalize(sanitizedPath);
+    log.info(`[IPC][RESOURCE-ACCESS] Final resolved write path: ${fullPath}`);
     
-    log.info(`[IPC][RESOURCE-ACCESS] Resolved full path: ${fullPath}`);
-    
-    // Allow log files to be written outside project directory
+    // Allow log files to be written outside project/stories directories
     const isLogFile = fullPath === '/tmp/FlexiTTS.log' || fullPath.startsWith('/tmp/FlexiTTS');
     
-    // Security: Validate path is within project (skip for log files)
-    if (!isLogFile && !isPathWithinParent(fullPath, projectRoot)) {
-      log.error(`[IPC][RESOURCE-ACCESS] Security: Path outside project: ${fullPath}`);
-      throw new Error('Security: File path is outside project directory');
+    // Security: Validate path is within project or configured stories directory (skip for log files)
+    if (!isLogFile && !isPathWithinParent(fullPath, projectRoot) && (!storiesDir || !isPathWithinParent(fullPath, storiesDir))) {
+      log.error(`[IPC][RESOURCE-ACCESS] Security: Path outside allowed directories for write: ${fullPath}`);
+      throw new Error('Security: File path is outside allowed directories');
     }
     
     // Ensure directory exists
     const dir = path.dirname(fullPath);
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
+      log.info(`[IPC][RESOURCE-ACCESS] Created parent directory for write`, { dir, filePath, fullPath });
     }
     
     // For log files, append instead of overwrite
@@ -583,7 +613,7 @@ ipcMain.handle('write-file', async (event, filePath: string, content: string) =>
       log.info(`[IPC][RESOURCE-ACCESS] Appended to log file`, { path: fullPath });
     } else {
       fs.writeFileSync(fullPath, content, 'utf-8');
-      log.info(`[IPC][RESOURCE-ACCESS] Successfully wrote file`, { filePath, resourceType });
+      log.info(`[IPC][RESOURCE-ACCESS] Successfully wrote file`, { filePath, fullPath, resourceType, contentLength: content.length });
     }
     return true;
   } catch (err: any) {
@@ -881,20 +911,26 @@ ipcMain.handle('check-xml-exists-for-story', async (event, chapterStem: string, 
     if (!/^[\w-]+$/.test(storyDir)) {
       throw new Error('Invalid story directory name');
     }
-    
-    if (!/^[\w-.]+$/.test(chapterStem)) {
+
+    if (typeof chapterStem !== 'string' || !chapterStem.trim()) {
       throw new Error('Invalid chapter stem');
+    }
+    if (chapterStem.includes('/') || chapterStem.includes('\\') || chapterStem.includes('..')) {
+      throw new Error('Security: Invalid chapter stem path content');
     }
 
     const config = await loadGlobalConfig();
     const storiesDir = getStoriesDirFromConfig(config);
     const xmlPath = path.join(storiesDir, storyDir, 'story-xml', `${chapterStem}.xml`);
+    log.info(`[check-xml-exists-for-story] Checking XML path`, { storyDir, chapterStem, xmlPath });
     
     if (!isPathWithinParent(xmlPath, storiesDir)) {
       throw new Error('Security: XML path outside stories directory');
     }
     
-    return fs.existsSync(xmlPath);
+    const exists = fs.existsSync(xmlPath);
+    log.info(`[check-xml-exists-for-story] XML exists check complete`, { storyDir, chapterStem, xmlPath, exists });
+    return exists;
   } catch (err) {
     log.error(`Failed to check if XML exists for ${storyDir}: ${err}`);
     return false;
@@ -909,20 +945,26 @@ ipcMain.handle('check-xml-exists', async (event, chapterStem: string) => {
       log.error('[check-xml-exists] No current story set');
       return false;
     }
-    
-    if (!/[\w-.]+$/.test(chapterStem)) {
+
+    if (typeof chapterStem !== 'string' || !chapterStem.trim()) {
       throw new Error('Invalid chapter stem');
+    }
+    if (chapterStem.includes('/') || chapterStem.includes('\\') || chapterStem.includes('..')) {
+      throw new Error('Security: Invalid chapter stem path content');
     }
 
     const config = await loadGlobalConfig();
     const storiesDir = getStoriesDirFromConfig(config);
     const xmlPath = path.join(storiesDir, storyDir, 'story-xml', `${chapterStem}.xml`);
+    log.info(`[check-xml-exists] Checking XML path`, { storyDir, chapterStem, xmlPath });
     
     if (!isPathWithinParent(xmlPath, storiesDir)) {
       throw new Error('Security: XML path outside stories directory');
     }
     
-    return fs.existsSync(xmlPath);
+    const exists = fs.existsSync(xmlPath);
+    log.info(`[check-xml-exists] XML exists check complete`, { storyDir, chapterStem, xmlPath, exists });
+    return exists;
   } catch (err) {
     log.error(`Failed to check if XML exists: ${err}`);
     return false;

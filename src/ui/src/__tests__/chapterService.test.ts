@@ -7,22 +7,23 @@ import {
   getNodeName,
   getIdKey
 } from '../services/chapterService';
-import type { Chapter } from '../models/types';
+import type { Chapter, DialogElement } from '../models/types';
 
 // Sample chapter data for testing
+const createDialog = (overrides?: Partial<DialogElement>): DialogElement => ({
+  _index: 0,
+  dlgseq: '1',
+  sectionId: '1',
+  character: 'Test Character',
+  text: 'Hello world!',
+  attributes: { dlgseq: '1', character: 'Test Character', emotion: 'happy' },
+  ...overrides,
+});
+
 const createMockChapter = (overrides?: Partial<Chapter>): Chapter => ({
   fileName: 'test-chapter.xml',
   name: 'Test Chapter',
-  dialogs: [
-    {
-      _index: 0,
-      id: 'dialog-1',
-      sectionId: '1',
-      character: 'Test Character',
-      text: 'Hello world!',
-      attributes: { id: '1', character: 'Test Character', emotion: 'happy' }
-    }
-  ],
+  dialogs: [createDialog()],
   ...overrides
 });
 
@@ -104,12 +105,8 @@ describe('chapterService', () => {
   });
 
   describe('getIdKey', () => {
-    it('should return "dlgseq" for story format', () => {
-      expect(getIdKey(true)).toBe('dlgseq');
-    });
-
-    it('should return "id" for chapter format', () => {
-      expect(getIdKey(false)).toBe('id');
+    it('should always return "dlgseq"', () => {
+      expect(getIdKey()).toBe('dlgseq');
     });
   });
 
@@ -137,14 +134,7 @@ describe('chapterService', () => {
     it('should include character attribute for non-narrator dialogs', () => {
       const chapter = createMockChapter({
         fileName: 'test.xml',
-        dialogs: [{
-          _index: 0,
-          id: 'dialog-1',
-          sectionId: '1',
-          character: 'Test Character',
-          text: 'Hello',
-          attributes: { id: '1', character: 'Test Character' }
-        }]
+        dialogs: [createDialog({ text: 'Hello', attributes: { dlgseq: '1', character: 'Test Character' } })]
       });
       const xml = generateXMLFromChapter(chapter);
       expect(xml).toContain('character="Test Character"');
@@ -154,22 +144,8 @@ describe('chapterService', () => {
       const chapter = createMockChapter({
         fileName: 'Story-Entanglement/story-xml/test.xml',
         dialogs: [
-          {
-            _index: 0,
-            id: '1',
-            sectionId: '1',
-            character: 'Character1',
-            text: 'Line 1',
-            attributes: { dlgseq: '1', character: 'Character1' }
-          },
-          {
-            _index: 1,
-            id: '2',
-            sectionId: '2',
-            character: 'Character2',
-            text: 'Line 2',
-            attributes: { dlgseq: '2', character: 'Character2' }
-          }
+          createDialog({ _index: 0, dlgseq: '1', sectionId: '1', character: 'Character1', text: 'Line 1', attributes: { dlgseq: '1', character: 'Character1' } }),
+          createDialog({ _index: 1, dlgseq: '2', sectionId: '2', character: 'Character2', text: 'Line 2', attributes: { dlgseq: '2', character: 'Character2' } })
         ]
       });
       const xml = generateXMLFromChapter(chapter);
@@ -182,14 +158,7 @@ describe('chapterService', () => {
     it('should use narration node for Narrator in story format', () => {
       const chapter = createMockChapter({
         fileName: 'Story-Entanglement/story-xml/test.xml',
-        dialogs: [{
-          _index: 0,
-          id: '1',
-          sectionId: '1',
-          character: 'Narrator',
-          text: 'Some narration text',
-          attributes: { dlgseq: '1', character: 'Narrator' }
-        }]
+        dialogs: [createDialog({ _index: 0, dlgseq: '1', sectionId: '1', character: 'Narrator', text: 'Some narration text', attributes: { dlgseq: '1', character: 'Narrator' } })]
       });
       const xml = generateXMLFromChapter(chapter);
       expect(xml).toContain('<narration');
@@ -199,19 +168,7 @@ describe('chapterService', () => {
 
     it('should preserve custom attributes', () => {
       const chapter = createMockChapter({
-        dialogs: [{
-          _index: 0,
-          id: '1',
-          sectionId: '1',
-          character: 'Test',
-          text: 'Hello',
-          attributes: { 
-            id: '1', 
-            character: 'Test',
-            emotion: 'happy',
-            volume: 'loud' 
-          }
-        }]
+        dialogs: [createDialog({ _index: 0, dlgseq: '1', sectionId: '1', character: 'Test', text: 'Hello', attributes: { dlgseq: '1', character: 'Test', emotion: 'happy', volume: 'loud' } })]
       });
       const xml = generateXMLFromChapter(chapter);
       expect(xml).toContain('emotion="happy"');
@@ -222,14 +179,7 @@ describe('chapterService', () => {
       const longText = 'This is a very long text that needs wrapping because it exceeds the word limit';
       const chapter = createMockChapter({
         fileName: 'Story-Entanglement/story-xml/test.xml',
-        dialogs: [{
-          _index: 0,
-          id: '1',
-          sectionId: '1',
-          character: 'Test',
-          text: longText,
-          attributes: { dlgseq: '1', character: 'Test' }
-        }]
+        dialogs: [createDialog({ _index: 0, dlgseq: '1', sectionId: '1', character: 'Test', text: longText, attributes: { dlgseq: '1', character: 'Test' } })]
       });
       const xml = generateXMLFromChapter(chapter);
       // In story format, long text should be wrapped
@@ -246,9 +196,9 @@ describe('chapterService', () => {
       const chapter = createMockChapter({
         fileName: 'Story-Entanglement/story-xml/test.xml',
         dialogs: [
-          { _index: 0, id: '1', sectionId: '1', character: 'Narrator', text: 'Opening narration', attributes: { dlgseq: '1', character: 'Narrator' }},
-          { _index: 1, id: '2', sectionId: '1', character: 'Alice', text: 'Hello Bob', attributes: { dlgseq: '2', character: 'Alice' }},
-          { _index: 2, id: '3', sectionId: '2', character: 'Bob', text: 'Hi Alice', attributes: { dlgseq: '3', character: 'Bob' }}
+          createDialog({ _index: 0, dlgseq: '1', sectionId: '1', character: 'Narrator', text: 'Opening narration', attributes: { dlgseq: '1', character: 'Narrator' }}),
+          createDialog({ _index: 1, dlgseq: '2', sectionId: '1', character: 'Alice', text: 'Hello Bob', attributes: { dlgseq: '2', character: 'Alice' }}),
+          createDialog({ _index: 2, dlgseq: '3', sectionId: '2', character: 'Bob', text: 'Hi Alice', attributes: { dlgseq: '3', character: 'Bob' }})
         ]
       });
       const xml = generateXMLFromChapter(chapter);

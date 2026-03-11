@@ -4,7 +4,7 @@ import sys
 import os
 import yaml
 from pathlib import Path
-from xml.etree import ElementTree as ET
+from lxml import etree
 from log_utils import setup_script_logging
 
 logger = setup_script_logging('chapter_seq_xml')
@@ -37,23 +37,37 @@ def resequence_xml(input_path, output_path=None):
     try:
         print(f"[RESOURCE-ACCESS] Successfully read XML for resequencing", file=sys.stderr)
         print(f"  input_path: {input_path}", file=sys.stderr)
-        # Standard ET parse
-        tree = ET.parse(input_path)
+        parser = etree.XMLParser(remove_blank_text=True)
+        tree = etree.parse(str(input_path), parser)
         root = tree.getroot()
 
-        section_count = 1
-        for section in root.findall('.//section'):
-            section.set('seq', str(section_count))
+        root_tag = root.tag
+        if root_tag not in ('story', 'chapter'):
+            raise ValueError(f"Unsupported XML root '{root_tag}'. Expected 'story' or 'chapter'.")
 
+        logger.info(f"resequence root_tag={root_tag}")
+        print(f"[RESOURCE-ACCESS] Inspecting XML structure for XSD-conformant resequencing", file=sys.stderr)
+        print(f"  input_path: {input_path}", file=sys.stderr)
+        print(f"  root: {root_tag}", file=sys.stderr)
+
+        def normalize_content_sequence(parent):
             dlgseq_count = 1
-            # We want to iterate over all children of section in order
-            for child in section:
+            for child in parent:
                 if child.tag in ('narration', 'dialog'):
+                    child.attrib.pop('id', None)
                     child.set('dlgseq', str(dlgseq_count))
                     dlgseq_count += 1
-            
-            section_count += 1
-        
+
+        sections = root.findall('./section')
+        if sections:
+            section_count = 1
+            for section in sections:
+                section.set('seq', str(section_count))
+                normalize_content_sequence(section)
+                section_count += 1
+        else:
+            normalize_content_sequence(root)
+
         if output_path is None:
             output_path = input_path
 
@@ -61,14 +75,14 @@ def resequence_xml(input_path, output_path=None):
         print(f"  output_path: {output_path}", file=sys.stderr)
         print(f"  resourceType: xml", file=sys.stderr)
         print(f"  operation: write", file=sys.stderr)
-        
-        # ET.write
-        tree.write(output_path, encoding='utf-8', xml_declaration=False)
+
+        tree.write(str(output_path), encoding='utf-8', pretty_print=True, xml_declaration=False)
         print(f"[RESOURCE-ACCESS] Successfully wrote XML output", file=sys.stderr)
         print(f"  output_path: {output_path}", file=sys.stderr)
         print(f"Successfully re-sequenced XML and saved to {output_path}")
 
     except Exception as e:
+        logger.exception(f"resequence_xml failed input_path={input_path} output_path={output_path} error={e}")
         print(f"An error occurred: {e}")
 
 def main():

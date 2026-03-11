@@ -1,0 +1,177 @@
+#!/usr/bin/env python3
+"""
+FlexiTTS Configuration Manager
+
+Handles loading and management of FlexiTTS configuration from:
+- ~/.config/FlexiTTS/FlexiTTS.yaml (main config)
+- Story-specific story-config.yml files (in each Story-* directory)
+"""
+
+import os
+import yaml
+import json
+from pathlib import Path
+from typing import Dict, List, Any, Optional
+
+
+class ConfigManager:
+    """Manages FlexiTTS configuration hierarchy"""
+    
+    def __init__(self):
+        self.main_config: Optional[Dict[str, Any]] = None
+        self._main_config_path = Path.home() / ".config" / "FlexiTTS" / "FlexiTTS.yaml"
+        
+    def load_main_config(self) -> Dict[str, Any]:
+        """Load main FlexiTTS configuration from ~/.config/FlexiTTS/FlexiTTS.yaml"""
+        try:
+            if self._main_config_path.exists():
+                with open(self._main_config_path, 'r') as f:
+                    self.main_config = yaml.safe_load(f)
+            else:
+                # Create default config if it doesn't exist
+                self.main_config = self._create_default_config()
+                self.save_main_config()
+            
+            return self.main_config
+            
+        except yaml.YAMLError as e:
+            raise ValueError(f"Error parsing FlexiTTS.yaml: {e}")
+        except Exception as e:
+            raise ValueError(f"Error loading FlexiTTS configuration: {e}")
+    
+    def save_main_config(self) -> None:
+        """Save main FlexiTTS configuration to ~/.config/FlexiTTS/FlexiTTS.yaml"""
+        if self.main_config is None:
+            raise ValueError("No configuration to save")
+        
+        # Ensure config directory exists
+        self._main_config_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        try:
+            with open(self._main_config_path, 'w') as f:
+                yaml.dump(self.main_config, f, default_flow_style=False, indent=2)
+        except Exception as e:
+            raise ValueError(f"Error saving FlexiTTS configuration: {e}")
+    
+    def _create_default_config(self) -> Dict[str, Any]:
+        """Create default FlexiTTS configuration"""
+        return {
+            'FlexiTTS': {
+                'stories-dir': str(Path.cwd() / "Stories"),
+                'story-prefix': 'Story-'
+            }
+        }
+    
+    def get_stories_directory(self) -> Path:
+        """Get the stories directory path from configuration"""
+        if self.main_config is None:
+            self.load_main_config()
+        
+        stories_dir = self.main_config['FlexiTTS']['stories-dir']
+        # Expand ~ in path if present
+        return Path(stories_dir).expanduser()
+    
+    def get_story_prefix(self) -> str:
+        """Get the story directory prefix from configuration"""
+        if self.main_config is None:
+            self.load_main_config()
+        
+        return self.main_config['FlexiTTS']['story-prefix']
+    
+    def discover_stories(self) -> List[Dict[str, str]]:
+        """Discover all Story-* directories in the stories directory"""
+        stories_dir = self.get_stories_directory()
+        prefix = self.get_story_prefix()
+        stories = []
+        
+        if not stories_dir.exists():
+            return stories
+        
+        try:
+            for item in stories_dir.iterdir():
+                if item.is_dir() and item.name.startswith(prefix):
+                    # Remove prefix for display name
+                    display_name = item.name[len(prefix):]
+                    stories.append({
+                        'name': display_name,
+                        'path': str(item),
+                        'directory_name': item.name
+                    })
+        except Exception as e:
+            print(f"Warning: Error discovering stories: {e}")
+        
+        return sorted(stories, key=lambda x: x['name'])
+    
+    def load_story_config(self, story_path: str) -> Dict[str, Any]:
+        """Load story-specific configuration from story-config.yml"""
+        config_path = Path(story_path) / "story-config.yml"
+        
+        if not config_path.exists():
+            raise ValueError(f"Story configuration not found: {config_path}")
+        
+        try:
+            with open(config_path, 'r') as f:
+                return yaml.safe_load(f)
+        except yaml.YAMLError as e:
+            raise ValueError(f"Error parsing story-config.yml: {e}")
+        except Exception as e:
+            raise ValueError(f"Error loading story configuration: {e}")
+    
+    def validate_story_config(self, story_path: str) -> bool:
+        """Validate story configuration using existing validation logic"""
+        config_path = Path(story_path) / "story-config.yml"
+        
+        if not config_path.exists():
+            return False
+        
+        # Use existing validation script
+        import subprocess
+        import sys
+        
+        try:
+            result = subprocess.run([
+                sys.executable, 
+                'src/scripts/validate_config.py', 
+                str(config_path)
+            ], capture_output=True, text=True, cwd=Path.cwd())
+            
+            return result.returncode == 0
+        except Exception as e:
+            print(f"Warning: Error validating story config: {e}")
+            return False
+
+
+# Singleton instance for application use
+config_manager = ConfigManager()
+
+
+if __name__ == "__main__":
+    # Test the configuration manager
+    import sys
+    
+    try:
+        # Load main config
+        main_config = config_manager.load_main_config()
+        print("Main FlexiTTS Configuration:")
+        print(yaml.dump(main_config, default_flow_style=False, indent=2))
+        
+        # Discover stories
+        stories = config_manager.discover_stories()
+        print(f"\nFound {len(stories)} stories:")
+        for story in stories:
+            print(f"  - {story['name']} ({story['path']})")
+            
+            # Try to load story config
+            try:
+                story_config = config_manager.load_story_config(story['path'])
+                is_valid = config_manager.validate_story_config(story['path'])
+                print(f"    Config valid: {is_valid}")
+                if 'characters' in story_config:
+                    char_count = len(story_config['characters'])
+                    print(f"    Characters: {char_count}")
+            except Exception as e:
+                print(f"    Error loading story config: {e}")
+                
+    except Exception as e:
+        print(f"Error: {e}")
+        sys.exit(1)

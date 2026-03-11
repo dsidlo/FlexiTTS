@@ -29,8 +29,8 @@ export interface CharacterConfig {
 
 export interface DialogElement {
   _index?: number;
-  id: string; // Internal id for React mapping
-  sectionId?: string; // Optional section sequence 
+  dlgseq: string;
+  sectionId?: string; // Optional section sequence
   character: string;
   text: string;
   // Other XML attributes (e.g. emotion, tone, pace)
@@ -55,4 +55,12 @@ export interface FlexiTTSConfig {
     'stories-dir': string;
     'story-dir-prefix': string;
   };
+}
+
+export interface AlertHistoryItem {
+  id: string;
+  message: string;
+  type: 'info' | 'success' | 'warning' | 'error';
+  source: 'internal' | 'tts-service';
+  timestamp: Date;
 }

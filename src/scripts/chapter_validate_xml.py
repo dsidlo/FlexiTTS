@@ -10,43 +10,87 @@ from log_utils import setup_script_logging
 
 logger = setup_script_logging('chapter_validate_xml')
 
-# Internal XSD Schema based on 01-Hendrix.xml
+# Unified XSD schema for both supported XML root formats.
+# The story schema conceptually contains the chapter schema shape by reusing
+# the same dialog/narration content model, while additionally allowing sections.
 XSD_SCHEMA = """<?xml version="1.0" encoding="UTF-8"?>
 <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
-  <xs:element name="story">
-    <xs:complexType>
-      <xs:sequence>
-        <xs:element name="section" maxOccurs="unbounded">
-          <xs:complexType>
-            <xs:choice maxOccurs="unbounded">
-              <xs:element name="dialog">
-                <xs:complexType>
-                  <xs:simpleContent>
-                    <xs:extension base="xs:string">
-                      <xs:attribute name="character" type="xs:string" use="required"/>
-                      <xs:attribute name="dlgseq" type="xs:integer" use="required"/>
-                      <xs:attribute name="emotion" type="xs:string" use="required"/>
-                    </xs:extension>
-                  </xs:simpleContent>
-                </xs:complexType>
-              </xs:element>
-              <xs:element name="narration">
-                <xs:complexType>
-                  <xs:simpleContent>
-                    <xs:extension base="xs:string">
-                      <xs:attribute name="dlgseq" type="xs:integer" use="required"/>
-                      <xs:attribute name="emotion" type="xs:string" use="required"/>
-                    </xs:extension>
-                  </xs:simpleContent>
-                </xs:complexType>
-              </xs:element>
-            </xs:choice>
-            <xs:attribute name="seq" type="xs:integer" use="required"/>
-          </xs:complexType>
-        </xs:element>
-      </xs:sequence>
-    </xs:complexType>
-  </xs:element>
+  <xs:complexType name="FlatDialogType">
+    <xs:simpleContent>
+      <xs:extension base="xs:string">
+        <xs:attribute name="dlgseq" type="xs:integer" use="required"/>
+        <xs:attribute name="character" type="xs:string" use="required"/>
+        <xs:attribute name="emotion" type="xs:string" use="required"/>
+      </xs:extension>
+    </xs:simpleContent>
+  </xs:complexType>
+
+  <xs:complexType name="FlatNarrationType">
+    <xs:simpleContent>
+      <xs:extension base="xs:string">
+        <xs:attribute name="dlgseq" type="xs:integer" use="required"/>
+        <xs:attribute name="emotion" type="xs:string" use="required"/>
+      </xs:extension>
+    </xs:simpleContent>
+  </xs:complexType>
+
+  <xs:complexType name="SectionDialogType">
+    <xs:simpleContent>
+      <xs:extension base="xs:string">
+        <xs:attribute name="dlgseq" type="xs:integer" use="required"/>
+        <xs:attribute name="character" type="xs:string" use="required"/>
+        <xs:attribute name="emotion" type="xs:string" use="required"/>
+      </xs:extension>
+    </xs:simpleContent>
+  </xs:complexType>
+
+  <xs:complexType name="SectionNarrationType">
+    <xs:simpleContent>
+      <xs:extension base="xs:string">
+        <xs:attribute name="dlgseq" type="xs:integer" use="required"/>
+        <xs:attribute name="emotion" type="xs:string" use="required"/>
+      </xs:extension>
+    </xs:simpleContent>
+  </xs:complexType>
+
+  <xs:group name="FlatContentGroup">
+    <xs:choice>
+      <xs:element name="dialog" type="FlatDialogType"/>
+      <xs:element name="narration" type="FlatNarrationType"/>
+    </xs:choice>
+  </xs:group>
+
+  <xs:group name="SectionContentGroup">
+    <xs:choice>
+      <xs:element name="dialog" type="SectionDialogType"/>
+      <xs:element name="narration" type="SectionNarrationType"/>
+    </xs:choice>
+  </xs:group>
+
+  <xs:complexType name="SectionType">
+    <xs:sequence>
+      <xs:group ref="SectionContentGroup" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attribute name="seq" type="xs:integer" use="optional"/>
+  </xs:complexType>
+
+  <xs:complexType name="ChapterType">
+    <xs:choice minOccurs="0" maxOccurs="unbounded">
+      <xs:group ref="FlatContentGroup"/>
+      <xs:element name="section" type="SectionType"/>
+    </xs:choice>
+    <xs:attribute name="name" type="xs:string" use="optional"/>
+  </xs:complexType>
+
+  <xs:complexType name="StoryType">
+    <xs:choice minOccurs="0" maxOccurs="unbounded">
+      <xs:group ref="FlatContentGroup"/>
+      <xs:element name="section" type="SectionType"/>
+    </xs:choice>
+  </xs:complexType>
+
+  <xs:element name="chapter" type="ChapterType"/>
+  <xs:element name="story" type="StoryType"/>
 </xs:schema>
 """
 
@@ -204,31 +248,42 @@ def loose_review_xml(xml_path):
 def validate_sequence(xml_path):
     """
     Validates that the seq attribute in section tags and the dlgseq attribute
-    in narrator and dialog tags are sequenced properly (starting from 1 and incrementing).
+    in narration and dialog tags are sequenced properly (starting from 1 and incrementing).
+    Supports both flat chapter/story roots and section-based content.
     """
     try:
         parser = etree.XMLParser(remove_blank_text=True)
         xml_doc = etree.parse(xml_path, parser)
         root = xml_doc.getroot()
-        
-        expected_section_seq = 1
-        for section in root.findall("section"):
-            actual_section_seq = int(section.attrib.get("seq", 0))
-            if actual_section_seq != expected_section_seq:
-                print(f"Sequence Error: <section> at line {section.sourceline} has seq='{actual_section_seq}', expected '{expected_section_seq}'.")
-                return False
-            
+
+        def validate_content_sequence(parent):
             expected_dlgseq = 1
-            for child in section:
+            for child in parent:
                 if child.tag in ('narration', 'dialog'):
-                    actual_dlgseq = int(child.attrib.get("dlgseq", 0))
+                    actual_dlgseq = int(child.attrib.get('dlgseq', 0))
                     if actual_dlgseq != expected_dlgseq:
                         print(f"Sequence Error: <{child.tag}> at line {child.sourceline} has dlgseq='{actual_dlgseq}', expected '{expected_dlgseq}'.")
                         return False
                     expected_dlgseq += 1
-            
-            expected_section_seq += 1
-            
+            return True
+
+        sections = root.findall('./section')
+        if sections:
+            expected_section_seq = 1
+            for section in sections:
+                actual_section_seq = int(section.attrib.get('seq', 0))
+                if actual_section_seq != expected_section_seq:
+                    print(f"Sequence Error: <section> at line {section.sourceline} has seq='{actual_section_seq}', expected '{expected_section_seq}'.")
+                    return False
+
+                if not validate_content_sequence(section):
+                    return False
+
+                expected_section_seq += 1
+        else:
+            if not validate_content_sequence(root):
+                return False
+
         return True
 
     except Exception as e:
@@ -277,23 +332,39 @@ def validate_xml(xml_path):
             return False
         print(f"[RESOURCE-ACCESS] Successfully read XML for XSD validation", file=sys.stderr)
         print(f"  xml_path: {xml_path}", file=sys.stderr)
-        # Load XSD
+
+        # Parse XML first so we can choose the proper schema for the root format
+        parser = etree.XMLParser(remove_blank_text=True)
+        xml_doc = etree.parse(xml_path, parser)
+        root = xml_doc.getroot()
+        root_tag = root.tag
+
+        if root_tag not in ('story', 'chapter'):
+            print(f"[RESOURCE-ACCESS] XML validation failed", file=sys.stderr)
+            print(f"  xml_path: {xml_path}", file=sys.stderr)
+            print(f"Validation failed for {xml_path}:")
+            print(f"  Unknown root element '{root_tag}'. Expected 'story' or 'chapter'.")
+            return False
+
+        schema_name = 'unified'
+        print(f"[RESOURCE-ACCESS] Using XML schema", file=sys.stderr)
+        print(f"  xml_path: {xml_path}", file=sys.stderr)
+        print(f"  schema: {schema_name}", file=sys.stderr)
+        print(f"  root: {root_tag}", file=sys.stderr)
+
         schema_root = etree.XML(XSD_SCHEMA.encode('utf-8'))
         schema = etree.XMLSchema(schema_root)
         
-        # Parse XML
-        parser = etree.XMLParser(remove_blank_text=True)
-        xml_doc = etree.parse(xml_path, parser)
-        
-        # Validate
         if schema.validate(xml_doc):
             print(f"[RESOURCE-ACCESS] XML validation successful", file=sys.stderr)
             print(f"  xml_path: {xml_path}", file=sys.stderr)
-            print(f"Success: {xml_path} is valid against the schema.")
+            print(f"  schema: {schema_name}", file=sys.stderr)
+            print(f"Success: {xml_path} is valid against the {schema_name} schema.")
             return True
         else:
             print(f"[RESOURCE-ACCESS] XML validation failed", file=sys.stderr)
             print(f"  xml_path: {xml_path}", file=sys.stderr)
+            print(f"  schema: {schema_name}", file=sys.stderr)
             print(f"Validation failed for {xml_path}:")
             for error in schema.error_log:
                 print(f"  Line {error.line}: {error.message}")

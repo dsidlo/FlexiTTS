@@ -1,0 +1,10 @@
+<story>
+  <section seq="1">
+	<narration emotion="neutral" dlgseq="1">
+	  This is chapter 1 of the default story.
+	</narration>
+	<narration emotion="neutral" dlgseq="2">
+	  Write your new story to this file.
+	</narration>
+  </section>
+</story>

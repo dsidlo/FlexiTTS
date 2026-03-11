@@ -14,7 +14,7 @@ interface DialogBarProps {
   hasAudioClip?: boolean;
   availableCharacters?: string[];
   onSaveRequest?: () => Promise<void>;
-  onUpdateDialog: (id: string, sectionId: string, updatedDialog: DialogElement) => void;
+  onUpdateDialog: (dlgseq: string, sectionId: string, updatedDialog: DialogElement) => void;
   onRefreshClips?: () => void;
 }
 
@@ -33,7 +33,7 @@ export const DialogBar: React.FC<DialogBarProps> = ({
   // Client-side audio player hook
   const { isPlaying: isPlayingAudio, play: playAudio, stop: stopAudio } = useAudioPlayer();
 
-  const bgColor = getColorForCharacter(dialog.character, parseInt(dialog.id) || 0);
+  const bgColor = getColorForCharacter(dialog.character, parseInt(dialog.dlgseq) || 0);
 
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -46,14 +46,22 @@ export const DialogBar: React.FC<DialogBarProps> = ({
   };
 
   const handleCharacterChange = (newCharacter: string) => {
-    onUpdateDialog(dialog.id, dialog.sectionId || '1', { ...dialog, character: newCharacter });
+    onUpdateDialog(dialog.dlgseq, dialog.sectionId || '0', {
+      ...dialog,
+      character: newCharacter,
+      attributes: { ...dialog.attributes, character: newCharacter, dlgseq: dialog.dlgseq, section_seq: dialog.sectionId || '0' }
+    });
     setIsEditingCharacter(false);
   };
 
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     // Stop propagation so it doesn't trigger the expand/collapse from a parent
     e.stopPropagation();
-    onUpdateDialog(dialog.id, dialog.sectionId || '1', { ...dialog, text: e.target.value });
+    onUpdateDialog(dialog.dlgseq, dialog.sectionId || '0', {
+      ...dialog,
+      text: e.target.value,
+      attributes: { ...dialog.attributes, dlgseq: dialog.dlgseq, section_seq: dialog.sectionId || '0' }
+    });
   };
 
   const handleAttrClick = (key: string, value: string) => {
@@ -63,9 +71,9 @@ export const DialogBar: React.FC<DialogBarProps> = ({
 
   const handleAttrSave = () => {
     if (editingAttr) {
-      onUpdateDialog(dialog.id, dialog.sectionId || '1', {
+      onUpdateDialog(dialog.dlgseq, dialog.sectionId || '0', {
         ...dialog,
-        attributes: { ...dialog.attributes, [editingAttr]: attrEditValue }
+        attributes: { ...dialog.attributes, [editingAttr]: attrEditValue, dlgseq: dialog.dlgseq, section_seq: dialog.sectionId || '0' }
       });
       setEditingAttr(null);
     }
@@ -122,7 +130,7 @@ export const DialogBar: React.FC<DialogBarProps> = ({
           alignItems: 'center'
         }}
       >
-        <span style={{ marginRight: '8px', opacity: 0.6 }}>#{displayId || dialog.id}</span>
+        <span style={{ marginRight: '8px', opacity: 0.6 }}>#{displayId || dialog.dlgseq}</span>
         ... {dialog.character} ...
       </div>
     );
@@ -160,7 +168,7 @@ export const DialogBar: React.FC<DialogBarProps> = ({
         onContextMenu={handleContextMenu}
       >
         <div className="dialog-character" style={{ display: 'flex', alignItems: 'center' }}>
-          <span style={{ marginRight: '10px', opacity: 0.8, fontSize: '0.9em' }}>#{displayId || dialog.id}</span>
+          <span style={{ marginRight: '10px', opacity: 0.8, fontSize: '0.9em' }}>#{displayId || dialog.dlgseq}</span>
           
           {/* Record / Generate Button */}
           <button 
@@ -179,8 +187,8 @@ export const DialogBar: React.FC<DialogBarProps> = ({
                   await onSaveRequest();
               }
               
-              const sectionNum = dialog.sectionId || '1';
-              const dlgseq = dialog.id.replace('dialog-', '');
+              const sectionNum = dialog.sectionId || '0';
+              const dlgseq = dialog.dlgseq;
               
               setIsGeneratingAudio(true);
               try {
@@ -243,9 +251,9 @@ export const DialogBar: React.FC<DialogBarProps> = ({
                 
                 // Construct the file path
                 const chapterName = chapterFileName?.replace('.md', '.xml') || 'Unknown.xml';
-                const sectionNum = (dialog.sectionId || '1').padStart(3, '0');
-                const dlgseq = dialog.id.replace('dialog-', '').padStart(3, '0');
-                const character = dialog.character === 'Narrator' ? 'narrator' : dialog.character;
+                const sectionNum = (dialog.sectionId || '0').padStart(3, '0');
+                const dlgseq = dialog.dlgseq.padStart(3, '0');
+                const character = dialog.character;
                 const chapterStem = chapterName.replace('.xml', '');
                 const chapMatch = chapterName.match(/(\d+)/);
                 const chapNum = chapMatch ? chapMatch[1].padStart(3, '0') : '000';
@@ -433,9 +441,9 @@ export const DialogBar: React.FC<DialogBarProps> = ({
             onClick={() => {
               const newAttr = prompt("New attribute name:");
               if (newAttr && !dialog.attributes[newAttr]) {
-                onUpdateDialog(dialog.id, dialog.sectionId || '1', {
+                onUpdateDialog(dialog.dlgseq, dialog.sectionId || '0', {
                   ...dialog,
-                  attributes: { ...dialog.attributes, [newAttr]: '' }
+                  attributes: { ...dialog.attributes, [newAttr]: '', dlgseq: dialog.dlgseq, section_seq: dialog.sectionId || '0' }
                 });
               }
               closeContextMenu();

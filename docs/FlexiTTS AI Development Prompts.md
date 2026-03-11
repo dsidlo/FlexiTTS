@@ -28,3 +28,8 @@
 - "story-dir:" removed './' in front of the path, leaving only the directory name of the story directory.
 - "voice-sample:" removed the path the file voice reference audio file. The path should be derived using the "voices:" directory property.
 Given these changes, update App UI code and python scripts to reflect the config file changes.
+
+Need better error handling for missing reference voice.
+Incorrect speaker for custom voice.
+Perform checks before voice generation.
+When rendering chapter, voice dialoge alerts should be generated as they are passed to tts-service for rendering.

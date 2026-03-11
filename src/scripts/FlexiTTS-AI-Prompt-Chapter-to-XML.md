@@ -231,3 +231,7 @@ The game was far from over, and the stakes had never been higher. But for now, f
   </section>
 </story>
 ```
+## Additional tags in markdown
+
+You may see additional tag in the markdown document such as...
+- <character: {character-name}>: This tag means that the following text is dialog for the given {character-name}

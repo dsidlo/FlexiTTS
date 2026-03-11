@@ -45,9 +45,9 @@ Object.defineProperty(window, 'api', {
   writable: true,
 });
 
-const createMockChapterXML = (name: string, dialogs: { id: string; character: string; text: string }[]) => {
+const createMockChapterXML = (name: string, dialogs: { dlgseq: string; character: string; text: string }[]) => {
   const dialogNodes = dialogs.map(d => 
-    `  <dialog id="${d.id}" character="${d.character}">${d.text}</dialog>\n`
+    `  <dialog dlgseq="${d.dlgseq}" character="${d.character}">${d.text}</dialog>\n`
   ).join('');
   return `<?xml version="1.0" encoding="UTF-8"?>
 <chapter name="${name}">
@@ -60,8 +60,8 @@ describe('useChapter', () => {
     vi.mocked(PythonBridgeService.validateChapterXML).mockResolvedValue(undefined);
     vi.mocked(PythonBridgeService.readChapterFile).mockResolvedValue(
       createMockChapterXML('Test Chapter', [
-        { id: '1', character: 'Alice', text: 'Hello' },
-        { id: '2', character: 'Bob', text: 'World' }
+        { dlgseq: '1', character: 'Alice', text: 'Hello' },
+        { dlgseq: '2', character: 'Bob', text: 'World' }
       ])
     );
     vi.mocked(PythonBridgeService.listChapterClips).mockResolvedValue([]);
@@ -220,11 +220,11 @@ describe('useChapter', () => {
 
       const updatedDialog = {
         _index: 0,
-        id: '1',
+        dlgseq: '1',
         sectionId: '1',
         character: 'Alice',
         text: 'Updated text',
-        attributes: { id: '1', character: 'Alice' }
+        attributes: { dlgseq: '1', character: 'Alice' }
       };
 
       act(() => {
@@ -244,7 +244,7 @@ describe('useChapter', () => {
 
       const updatedDialog = {
         _index: 1,
-        id: '99',
+        dlgseq: '99',
         sectionId: '99',
         character: 'Updated',
         text: 'By index',
@@ -288,11 +288,11 @@ describe('useChapter', () => {
       act(() => {
         result.current.handleUpdateDialog('1', '1', {
           _index: 0,
-          id: '1',
+          dlgseq: '1',
           sectionId: '1',
           character: 'Alice',
           text: 'Changed',
-          attributes: { id: '1', character: 'Alice' }
+          attributes: { dlgseq: '1', character: 'Alice' }
         });
       });
 
@@ -329,7 +329,7 @@ describe('useChapter', () => {
       
       const testDialog = {
         _index: 0,
-        id: '1',
+        dlgseq: '1',
         sectionId: '1',
         character: 'Test',
         text: 'Test',

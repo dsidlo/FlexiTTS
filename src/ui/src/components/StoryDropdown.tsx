@@ -23,26 +23,11 @@ export const StoryDropdown: React.FC<StoryDropdownProps> = ({
     try {
       setLoading(true);
       setError(null);
-      
-      // Use PythonBridgeService to get available stories via IPC
-      if (window.api?.listStories) {
-        try {
-          const storiesData = await PythonBridgeService.listStories();
-          setStories(storiesData || []);
-        } catch (e) {
-          console.error('Error calling listStories:', e);
-          setStories([]);
-        }
-      } else {
-        // Mock data for development
-        const mockStories: StoryInfo[] = [
-          { name: 'Entanglement', path: '/home/user/Stories/Story-Entanglement', directory_name: 'Story-Entanglement' },
-          { name: 'Adventure', path: '/home/user/Stories/Story-Adventure', directory_name: 'Story-Adventure' }
-        ];
-        setStories(mockStories);
-      }
+      const storiesData = await PythonBridgeService.listStories();
+      setStories(storiesData || []);
     } catch (err) {
       console.error('Error loading stories:', err);
+      setStories([]);
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
       setLoading(false);
