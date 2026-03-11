@@ -3,6 +3,7 @@ import type { Chapter, StoryConfig, DialogElement } from '../models/types';
 import { PythonBridgeService } from '../services/pythonBridge';
 import { generateXMLFromChapter } from '../services/chapterService';
 import { debugLog } from '../utils/debugLogger';
+import { validateChapterDialogs, getDialogValidationKey } from '../utils/dialogValidation';
 
 export interface UseChapterReturn {
   // State
@@ -30,7 +31,7 @@ export interface UseChapterReturn {
   // Actions
   loadChapter: (filePath: string, loadedConfig?: StoryConfig, forceStoryDir?: string) => Promise<void>;
   handleChapterSelect: (filePath: string, loadedConfig?: StoryConfig) => Promise<void>;
-  handleUpdateDialog: (dlgseq: string, sectionId: string, updatedDialog: DialogElement) => void;
+  handleUpdateDialog: (dlgseq: string, sectionId: string, updatedDialog: DialogElement) => Promise<void>;
   setCurrentChapterFile: React.Dispatch<React.SetStateAction<string>>;
   runXmlGenerationPipeline: (stem: string, attempt: number) => Promise<void>;
   setIsGeneratingStructure: React.Dispatch<React.SetStateAction<boolean>>;
@@ -161,7 +162,12 @@ export const useChapter = (storyDirectory?: string): UseChapterReturn => {
       debugLog.info(id, '[RESOURCE-ACCESS] Successfully read chapter XML', { filePath, length: loadedXml?.length });
       
       const parsedChapter = parseChapterXML(loadedXml, filePath);
-      debugLog.info(id, '[RESOURCE-ACCESS] Parsed chapter', { chapter: parsedChapter.name, dialogs: parsedChapter.dialogs.length });
+      const validationMap = await validateChapterDialogs(parsedChapter.dialogs, _loadedConfig || config, storyDir);
+      parsedChapter.dialogs = parsedChapter.dialogs.map((dialog) => ({
+        ...dialog,
+        validationIssues: validationMap[getDialogValidationKey(dialog)] || [],
+      }));
+      debugLog.info(id, '[RESOURCE-ACCESS] Parsed chapter', { chapter: parsedChapter.name, dialogs: parsedChapter.dialogs.length, validationIssueCount: Object.keys(validationMap).length });
       
       setChapter(parsedChapter);
       setSelectedCharacterFilter('');
@@ -288,25 +294,55 @@ export const useChapter = (storyDirectory?: string): UseChapterReturn => {
   /**
    * Update a dialog element within the chapter
    */
-  const handleUpdateDialog = useCallback((dlgseq: string, sectionId: string, updatedDialog: DialogElement) => {
+  const handleUpdateDialog = useCallback(async (dlgseq: string, sectionId: string, updatedDialog: DialogElement) => {
     if (!chapter) return;
+
+    const effectiveStoryDir = storyDirectory || 'Story-Default';
     
     const updatedDialogs = chapter.dialogs.map(d => {
       const isMatch = updatedDialog._index !== undefined && d._index !== undefined 
         ? d._index === updatedDialog._index 
         : d.dlgseq === dlgseq && (d.sectionId || '1') === sectionId;
       
-      return isMatch ? updatedDialog : d;
+      return isMatch
+        ? {
+            ...updatedDialog,
+            attributes: {
+              ...updatedDialog.attributes,
+              character: updatedDialog.character,
+              dlgseq: updatedDialog.dlgseq,
+              section_seq: updatedDialog.sectionId || '0',
+            },
+          }
+        : d;
     });
     
-    const updatedChapter = { ...chapter, dialogs: updatedDialogs };
-    setChapter(updatedChapter);
-    
-    const newXml = generateXMLFromChapter(updatedChapter);
-    setXmlContent(newXml);
-    const hasChanges = newXml !== lastSavedXmlRef.current;
-    setHasUnsavedChanges(hasChanges);
-  }, [chapter, lastSavedXml]);
+    const draftChapter = { ...chapter, dialogs: updatedDialogs };
+
+    try {
+      const validationMap = await validateChapterDialogs(updatedDialogs, config, effectiveStoryDir);
+      const validatedDialogs = draftChapter.dialogs.map((dialog) => ({
+        ...dialog,
+        validationIssues: validationMap[getDialogValidationKey(dialog)] || [],
+      }));
+  
+      const updatedChapter = { ...chapter, dialogs: validatedDialogs };
+      setChapter(updatedChapter);
+      
+      const newXml = generateXMLFromChapter(updatedChapter);
+      setXmlContent(newXml);
+      const hasChanges = newXml !== lastSavedXmlRef.current;
+      setHasUnsavedChanges(hasChanges);
+    } catch (error) {
+      debugLog.exception('useChapter:handleUpdateDialog', 'validateChapterDialogs failed', error, {
+        dlgseq,
+        sectionId,
+        character: updatedDialog.character,
+        storyDirectory: effectiveStoryDir,
+      });
+      // Keep optimistic state (empty issues) to avoid UI freeze, but rethrow for upstream handling if needed
+    }
+  }, [chapter, config, storyDirectory]);
 
   /**
    * Set lastSavedXml ref value directly

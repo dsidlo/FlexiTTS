@@ -211,6 +211,69 @@ def find_config_file(xml_path: Optional[Path] = None) -> Optional[Path]:
     return None
 
 
+QWEN3_DOC_SUPPORTED_SPEAKERS = {
+    "vivian",
+    "serena",
+    "uncle_fu",
+    "dylan",
+    "eric",
+    "ryan",
+    "aiden",
+    "ono_anna",
+    "sohee",
+}
+
+
+def validate_character_voice_setup(config: Dict[str, Any], utterances: List[Utterance], voices_dir: Path) -> List[str]:
+    """Validate character/voice configuration before generation starts.
+
+    Checks local config/file prerequisites plus docs-based Qwen3 speaker validity:
+    - each referenced speaker exists in story-config.yml
+    - each voice-sample exists on disk
+    - each custom-voice has a non-empty speaker
+    - each custom-voice speaker matches the documented Qwen3 CustomVoice speaker set
+    """
+    errors: List[str] = []
+    char_configs = {str(c.get("name", "")).strip().lower(): c for c in config.get("characters", []) if c.get("name")}
+    seen_speakers = sorted({utt.speaker.strip().lower() for utt in utterances if utt.speaker and utt.kind == "dialog"})
+
+    for speaker_key in seen_speakers:
+        char_cfg = char_configs.get(speaker_key)
+        if not char_cfg:
+            errors.append(f"Character '{speaker_key}' is referenced in XML but missing from story-config.yml")
+            continue
+
+        custom_voice = char_cfg.get("custom-voice")
+        voice_sample = char_cfg.get("voice-sample")
+
+        if custom_voice:
+            custom_speaker = str(custom_voice.get("speaker", "")).strip()
+            if not custom_speaker:
+                errors.append(f"Character '{speaker_key}' custom-voice speaker is missing")
+                continue
+            if custom_speaker.lower() not in QWEN3_DOC_SUPPORTED_SPEAKERS:
+                allowed = ", ".join(sorted(QWEN3_DOC_SUPPORTED_SPEAKERS))
+                errors.append(
+                    f"Character '{speaker_key}' custom-voice speaker '{custom_speaker}' is not in documented Qwen3-TTS speakers: {allowed}"
+                )
+            continue
+
+        if voice_sample:
+            sample_text = str(voice_sample).strip()
+            if not sample_text:
+                errors.append(f"Character '{speaker_key}' voice-sample is empty")
+                continue
+            sample_path = Path(sample_text)
+            resolved_sample = sample_path if sample_path.is_absolute() else (voices_dir / sample_path).resolve()
+            if not resolved_sample.exists():
+                errors.append(f"Character '{speaker_key}' voice-sample not found: {resolved_sample}")
+            continue
+
+        errors.append(f"Character '{speaker_key}' has neither voice-sample nor custom-voice configured")
+
+    return errors
+
+
 def emit_render_alert(provider, message: str, alert_type: str = "info", metadata: Optional[Dict[str, Any]] = None) -> bool:
     """Best-effort alert forwarding for chapter render progress."""
     log_debug(
@@ -432,6 +495,30 @@ def main():
     print(f"Processing {xml_path}...")
     utterances = parse_xml(xml_path)
     log_debug("main:utterances_parsed", count=len(utterances), xml_path=str(xml_path))
+
+    if args.dry_run:
+        print("Dry-run summary: sections and utterances detected")
+        sections_summary = {}
+        for utt in utterances:
+            sections_summary.setdefault(utt.section_num, []).append(utt)
+        if not sections_summary:
+            print("  No sections or utterances found.")
+        for section in sorted(sections_summary.keys()):
+            print(f"Section {section} ({len(sections_summary[section])} utterance(s)):")
+            for utt in sections_summary[section]:
+                preview = (utt.text[:57] + '...') if len(utt.text) > 60 else utt.text
+                print(f"  [{utt.kind}] dlgseq={utt.dlgseq} speaker={utt.speaker} emotion={utt.emotion} :: {preview}")
+
+    preflight_errors = validate_character_voice_setup(config, utterances, voices_dir)
+    if preflight_errors:
+        log_debug("main:preflight_validation_failed", error_count=len(preflight_errors), errors=preflight_errors)
+        print("Preflight validation failed:")
+        for error in preflight_errors:
+            print(f"- {error}")
+        if args.dry_run:
+            print("Continuing dry-run despite preflight issues.")
+        else:
+            return
 
     if args.section:
         before_count = len(utterances)

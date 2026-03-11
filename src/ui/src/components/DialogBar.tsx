@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import type { DialogElement } from '../models/types';
+import React, { useEffect, useState } from 'react';
+import type { DialogElement, DialogValidationIssue } from '../models/types';
 import { getColorForCharacter } from '../utils/colors';
 import { useAudioPlayer } from '../hooks/useAudioPlayer';
 
@@ -14,14 +14,17 @@ interface DialogBarProps {
   hasAudioClip?: boolean;
   availableCharacters?: string[];
   onSaveRequest?: () => Promise<void>;
-  onUpdateDialog: (dlgseq: string, sectionId: string, updatedDialog: DialogElement) => void;
+  onUpdateDialog: (dlgseq: string, sectionId: string, updatedDialog: DialogElement) => Promise<void>;
   onRefreshClips?: () => void;
 }
 
-export const DialogBar: React.FC<DialogBarProps> = ({ 
+export const DialogBar: React.FC<DialogBarProps> = ({
   dialog, displayId, chapterFileName, storyDirectory, isFilteredOut, hasAudioClip, availableCharacters = [],
-  onSaveRequest, onUpdateDialog, onRefreshClips 
+  onSaveRequest, onUpdateDialog, onRefreshClips
 }) => {
+  const validationIssues = dialog.validationIssues || [];
+  const hasValidationIssues = validationIssues.length > 0;
+  const [showValidationDialog, setShowValidationDialog] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [showContextMenu, setShowContextMenu] = useState(false);
   const [contextMenuPos, setContextMenuPos] = useState({ x: 0, y: 0 });
@@ -29,7 +32,7 @@ export const DialogBar: React.FC<DialogBarProps> = ({
   const [attrEditValue, setAttrEditValue] = useState<string>('');
   const [isGeneratingAudio, setIsGeneratingAudio] = useState(false);
   const [isEditingCharacter, setIsEditingCharacter] = useState(false);
-  
+
   // Client-side audio player hook
   const { isPlaying: isPlayingAudio, play: playAudio, stop: stopAudio } = useAudioPlayer();
 
@@ -45,8 +48,33 @@ export const DialogBar: React.FC<DialogBarProps> = ({
     setShowContextMenu(false);
   };
 
-  const handleCharacterChange = (newCharacter: string) => {
-    onUpdateDialog(dialog.dlgseq, dialog.sectionId || '0', {
+  const openValidationDialog = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setShowValidationDialog(true);
+  };
+
+  const closeValidationDialog = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setShowValidationDialog(false);
+  };
+
+  const getValidationTitle = (issue: DialogValidationIssue) => {
+    switch (issue.code) {
+      case 'missing-character':
+        return 'Character Missing';
+      case 'invalid-custom-voice':
+        return 'Custom Voice Invalid';
+      case 'invalid-voice-sample':
+        return 'Voice Sample Invalid';
+      case 'invalid-dialog-effects':
+        return 'Dialog Effects Invalid';
+      default:
+        return 'Validation Issue';
+    }
+  };
+
+  const handleCharacterChange = async (newCharacter: string) => {
+    await onUpdateDialog(dialog.dlgseq, dialog.sectionId || '0', {
       ...dialog,
       character: newCharacter,
       attributes: { ...dialog.attributes, character: newCharacter, dlgseq: dialog.dlgseq, section_seq: dialog.sectionId || '0' }
@@ -54,10 +82,10 @@ export const DialogBar: React.FC<DialogBarProps> = ({
     setIsEditingCharacter(false);
   };
 
-  const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+  const handleTextChange = async (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     // Stop propagation so it doesn't trigger the expand/collapse from a parent
     e.stopPropagation();
-    onUpdateDialog(dialog.dlgseq, dialog.sectionId || '0', {
+    await onUpdateDialog(dialog.dlgseq, dialog.sectionId || '0', {
       ...dialog,
       text: e.target.value,
       attributes: { ...dialog.attributes, dlgseq: dialog.dlgseq, section_seq: dialog.sectionId || '0' }
@@ -69,9 +97,9 @@ export const DialogBar: React.FC<DialogBarProps> = ({
     setAttrEditValue(value);
   };
 
-  const handleAttrSave = () => {
+  const handleAttrSave = async () => {
     if (editingAttr) {
-      onUpdateDialog(dialog.dlgseq, dialog.sectionId || '0', {
+      await onUpdateDialog(dialog.dlgseq, dialog.sectionId || '0', {
         ...dialog,
         attributes: { ...dialog.attributes, [editingAttr]: attrEditValue, dlgseq: dialog.dlgseq, section_seq: dialog.sectionId || '0' }
       });
@@ -82,23 +110,23 @@ export const DialogBar: React.FC<DialogBarProps> = ({
   const renderAttributes = () => {
     return Object.entries(dialog.attributes).map(([key, value]) => {
       // Don't show base attributes as badges
-      if (key === 'character' || key === 'id' || key === 'dlgseq' || key === 'section_seq') return null; 
-      
+      if (key === 'character' || key === 'id' || key === 'dlgseq' || key === 'section_seq') return null;
+
       return (
         <span key={key} className="attribute-badge" style={{ marginRight: '8px', fontSize: '0.8em', backgroundColor: 'rgba(0,0,0,0.1)', padding: '2px 6px', borderRadius: '4px' }}>
           <strong>{key}:</strong>{' '}
           {editingAttr === key ? (
-            <input 
+            <input
               autoFocus
-              type="text" 
-              value={attrEditValue} 
+              type="text"
+              value={attrEditValue}
               onChange={(e) => setAttrEditValue(e.target.value)}
               onBlur={handleAttrSave}
               onKeyDown={(e) => e.key === 'Enter' && handleAttrSave()}
-              style={{ 
-                width: '100px', 
-                color: '#fff', 
-                backgroundColor: 'rgba(0,0,0,0.5)', 
+              style={{
+                width: '100px',
+                color: '#fff',
+                backgroundColor: 'rgba(0,0,0,0.5)',
                 border: '1px solid #fff',
                 borderRadius: '3px',
                 padding: '2px 4px'
@@ -117,12 +145,12 @@ export const DialogBar: React.FC<DialogBarProps> = ({
 
   if (isFilteredOut) {
     return (
-      <div 
-        style={{ 
-          marginBottom: '5px', 
-          padding: '4px 10px', 
-          fontSize: '0.8em', 
-          color: '#888', 
+      <div
+        style={{
+          marginBottom: '5px',
+          padding: '4px 10px',
+          fontSize: '0.8em',
+          color: '#888',
           backgroundColor: 'rgba(0,0,0,0.03)',
           borderRadius: '4px',
           fontStyle: 'italic',
@@ -137,17 +165,17 @@ export const DialogBar: React.FC<DialogBarProps> = ({
   }
 
   return (
-    <div 
-      className="dialog-bar-container" 
-      style={{ 
-        marginBottom: '10px', 
+    <div
+      className="dialog-bar-container"
+      style={{
+        marginBottom: '10px',
         position: 'relative',
         maxWidth: '800px', // Restrict the maximum width of the dialogs to prevent them from stretching too wide
         margin: '0 auto 10px auto' // Center them if the container is wider than 800px
       }}
       onMouseLeave={closeContextMenu}
     >
-      <div 
+      <div
         className="dialog-bar-header"
         style={{
           backgroundColor: bgColor,
@@ -169,13 +197,39 @@ export const DialogBar: React.FC<DialogBarProps> = ({
       >
         <div className="dialog-character" style={{ display: 'flex', alignItems: 'center' }}>
           <span style={{ marginRight: '10px', opacity: 0.8, fontSize: '0.9em' }}>#{displayId || dialog.dlgseq}</span>
-          
+          {hasValidationIssues && (
+            <button
+              onClick={openValidationDialog}
+              onMouseEnter={() => setShowValidationDialog(true)}
+              aria-label={`Validation issues for ${dialog.character}`}
+              title={validationIssues.map((issue) => issue.message).join('\n')}
+              style={{
+                marginRight: '8px',
+                background: '#d32f2f',
+                color: '#fff',
+                border: '1px solid rgba(255,255,255,0.4)',
+                borderRadius: '50%',
+                width: '20px',
+                height: '20px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontWeight: 700,
+                cursor: 'pointer',
+                padding: 0,
+                lineHeight: 1,
+              }}
+            >
+              !
+            </button>
+          )}
+
           {/* Record / Generate Button */}
-          <button 
-            onClick={async (e) => { 
-              e.stopPropagation(); 
+          <button
+            onClick={async (e) => {
+              e.stopPropagation();
               const chapterName = chapterFileName?.replace('.md', '.xml') || 'Unknown.xml';
-              
+
               if (isGeneratingAudio) {
                   // Attempt to cancel
                   await PythonBridgeService.cancelAudio(chapterName);
@@ -186,27 +240,27 @@ export const DialogBar: React.FC<DialogBarProps> = ({
               if (onSaveRequest) {
                   await onSaveRequest();
               }
-              
+
               const sectionNum = dialog.sectionId || '0';
               const dlgseq = dialog.dlgseq;
-              
+
               setIsGeneratingAudio(true);
               try {
                   // Pass playAudio as the onPlay callback to use useAudioPlayer state management
-                  await PythonBridgeService.playAudio(chapterName, sectionNum, dlgseq, undefined, false, playAudio); 
+                  await PythonBridgeService.playAudio(chapterName, sectionNum, dlgseq, undefined, false, playAudio);
                   if (onRefreshClips) onRefreshClips();
               } finally {
                   setIsGeneratingAudio(false);
               }
             }}
-            style={{ 
-              background: hasAudioClip ? '#4CAF50' : '#888', 
-              border: '2px solid rgba(255,255,255,0.2)', 
+            style={{
+              background: hasAudioClip ? '#4CAF50' : '#888',
+              border: '2px solid rgba(255,255,255,0.2)',
               borderRadius: '50%',
               width: '24px',
               height: '24px',
-              color: '#fff', 
-              cursor: 'pointer', 
+              color: '#fff',
+              cursor: 'pointer',
               marginRight: '8px',
               padding: '0',
               display: 'flex',
@@ -218,7 +272,7 @@ export const DialogBar: React.FC<DialogBarProps> = ({
             title={isGeneratingAudio ? "Stop Generating Audio..." : (hasAudioClip ? "Re-render Audio" : "Render Audio")}
           >
             {isGeneratingAudio ? (
-              <span className="spinner-icon" style={{ 
+              <span className="spinner-icon" style={{
                 display: 'inline-block',
                 width: '0.8em',
                 height: '0.8em',
@@ -240,15 +294,15 @@ export const DialogBar: React.FC<DialogBarProps> = ({
 
           {/* Play Button */}
           {hasAudioClip && (
-            <button 
-              onClick={async (e) => { 
-                e.stopPropagation(); 
-                
+            <button
+              onClick={async (e) => {
+                e.stopPropagation();
+
                 if (isPlayingAudio) {
                     stopAudio();
                     return;
                 }
-                
+
                 // Construct the file path
                 const chapterName = chapterFileName?.replace('.md', '.xml') || 'Unknown.xml';
                 const sectionNum = (dialog.sectionId || '0').padStart(3, '0');
@@ -257,11 +311,11 @@ export const DialogBar: React.FC<DialogBarProps> = ({
                 const chapterStem = chapterName.replace('.xml', '');
                 const chapMatch = chapterName.match(/(\d+)/);
                 const chapNum = chapMatch ? chapMatch[1].padStart(3, '0') : '000';
-                
+
                 const wavName = `chapter_${chapNum}_${sectionNum}_${dlgseq}_${character}.wav`;
                 const storyDir = storyDirectory || 'Story-Default';
                 const relativePath = `${storyDir}/story-audio/clips/${chapterStem}/${wavName}`;
-                
+
                 // Read audio file via Electron IPC and play as data URL
                 try {
                   const dataUrl = await window.api?.readAudioFile?.(relativePath);
@@ -274,11 +328,11 @@ export const DialogBar: React.FC<DialogBarProps> = ({
                   console.error('Failed to play audio:', err);
                 }
               }}
-              style={{ 
-                background: 'transparent', 
-                border: 'none', 
-                color: '#fff', 
-                cursor: 'pointer', 
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: '#fff',
+                cursor: 'pointer',
                 marginRight: '8px',
                 padding: '0',
                 display: 'flex',
@@ -304,7 +358,7 @@ export const DialogBar: React.FC<DialogBarProps> = ({
               to { transform: rotate(360deg); }
             }
           `}</style>
-          
+
           {isEditingCharacter ? (
             <select
               value={dialog.character}
@@ -335,7 +389,7 @@ export const DialogBar: React.FC<DialogBarProps> = ({
               )}
             </select>
           ) : (
-            <span 
+            <span
               onClick={(e) => {
                 e.stopPropagation();
                 if (availableCharacters.length > 0) {
@@ -370,9 +424,9 @@ export const DialogBar: React.FC<DialogBarProps> = ({
           {renderAttributes()}
         </div>
       </div>
-      
+
       {isExpanded && (
-        <div 
+        <div
           className="dialog-bar-content"
           style={{
             border: `2px solid ${bgColor}`,
@@ -388,16 +442,16 @@ export const DialogBar: React.FC<DialogBarProps> = ({
             value={dialog.text || ''}
             onChange={handleTextChange}
             onClick={(e) => e.stopPropagation()}
-            style={{ 
-              width: '100%', 
-              minHeight: '80px', 
-              boxSizing: 'border-box', 
-              padding: '12px', 
-              color: '#000000', 
+            style={{
+              width: '100%',
+              minHeight: '80px',
+              boxSizing: 'border-box',
+              padding: '12px',
+              color: '#000000',
               backgroundColor: '#ffffff',
               border: '1px solid #ccc',
               borderRadius: '4px',
-              fontSize: '16px', 
+              fontSize: '16px',
               fontFamily: 'inherit',
               lineHeight: '1.5'
             }}
@@ -405,8 +459,44 @@ export const DialogBar: React.FC<DialogBarProps> = ({
         </div>
       )}
 
+      {showValidationDialog && hasValidationIssues && (
+        <div
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            position: 'absolute',
+            top: '42px',
+            left: '12px',
+            zIndex: 1100,
+            background: '#fff5f5',
+            color: '#222',
+            border: '1px solid #d32f2f',
+            borderRadius: '8px',
+            padding: '10px 12px',
+            minWidth: '280px',
+            boxShadow: '0 4px 14px rgba(0,0,0,0.25)',
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <strong style={{ color: '#b71c1c' }}>Validation Issues</strong>
+            <button
+              onClick={closeValidationDialog}
+              style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#b71c1c', fontWeight: 700 }}
+            >
+              ×
+            </button>
+          </div>
+          <ul style={{ margin: 0, paddingLeft: '18px' }}>
+            {validationIssues.map((issue, index) => (
+              <li key={`${issue.code}-${index}`} style={{ marginBottom: '6px' }}>
+                <strong>{getValidationTitle(issue)}:</strong> {issue.message}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {showContextMenu && (
-        <div 
+        <div
           className="context-menu"
           style={{
             position: 'fixed',
@@ -422,8 +512,8 @@ export const DialogBar: React.FC<DialogBarProps> = ({
         >
           <div style={{ padding: '5px 10px', fontWeight: 'bold', borderBottom: '1px solid #eee', color: '#333' }}>Edit Attributes</div>
           {Object.keys(dialog.attributes).map(key => (
-            <div 
-              key={key} 
+            <div
+              key={key}
               style={{ padding: '5px 15px', cursor: 'pointer', color: '#333' }}
               onClick={() => {
                 handleAttrClick(key, dialog.attributes[key]);
@@ -436,7 +526,7 @@ export const DialogBar: React.FC<DialogBarProps> = ({
             </div>
           ))}
           {/* Allow adding new attributes */}
-          <div 
+          <div
             style={{ padding: '5px 15px', cursor: 'pointer', fontStyle: 'italic', borderTop: '1px solid #eee', color: '#666' }}
             onClick={() => {
               const newAttr = prompt("New attribute name:");

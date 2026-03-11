@@ -11,6 +11,12 @@ from unittest.mock import Mock, MagicMock
 import numpy as np
 import pytest
 
+# Optional: integrate pergamon summary plugin
+try:
+    from pergamon.pytest_plugin import PytestSummaryPlugin
+except ImportError:  # pragma: no cover - only triggers when plugin missing
+    PytestSummaryPlugin = None
+
 # Add src/scripts to path for importing GenerateResult
 sys.path.insert(0, str(Path(__file__).parent))
 
@@ -215,6 +221,14 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
 def pytest_sessionfinish(session, exitstatus):
     """Run post-test processing after pytest finishes."""
     import atexit
+
+    if PytestSummaryPlugin:
+        plugin = PytestSummaryPlugin(
+            output_dir="src/scripts/test-results",
+            report_name="pergamon-summary.html",
+            theme="dark",
+        )
+        session.config.pluginmanager.register(plugin, name="pergamon-summary")
     
     # Register atexit handlers to run AFTER pytest-html finishes writing
     atexit.register(_run_post_test_processing)

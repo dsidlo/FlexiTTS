@@ -21,6 +21,7 @@ vi.mock('../services/pythonBridge', () => ({
     readFile: vi.fn(),
     playSoundFile: vi.fn(),
     killProcess: vi.fn(),
+    checkStoryFileExists: vi.fn(),
   },
 }));
 
@@ -42,6 +43,7 @@ Object.defineProperty(window, 'api', {
     listChapterFiles: vi.fn(),
     playSoundFile: vi.fn(),
     killProcess: vi.fn(),
+    checkStoryFileExists: vi.fn(),
   },
   writable: true,
 });
@@ -67,6 +69,7 @@ describe('useChapter', () => {
     );
     vi.mocked(PythonBridgeService.listChapterClips).mockResolvedValue([]);
     vi.mocked(PythonBridgeService.checkChapterAudio).mockResolvedValue(false);
+    vi.mocked(PythonBridgeService.checkStoryFileExists).mockResolvedValue(true);
   });
 
   describe('initial state', () => {
@@ -228,8 +231,8 @@ describe('useChapter', () => {
         attributes: { dlgseq: '1', character: 'Alice' }
       };
 
-      act(() => {
-        result.current.handleUpdateDialog('1', '1', updatedDialog as DialogElement);
+      await act(async () => {
+        await result.current.handleUpdateDialog('1', '1', updatedDialog as DialogElement);
       });
 
       expect(result.current.chapter?.dialogs[0].text).toBe('Updated text');
@@ -252,11 +255,58 @@ describe('useChapter', () => {
         attributes: {}
       };
 
-      act(() => {
-        result.current.handleUpdateDialog('1', '1', updatedDialog as DialogElement);
+      await act(async () => {
+        await result.current.handleUpdateDialog('1', '1', updatedDialog as DialogElement);
       });
 
       expect(result.current.chapter?.dialogs[1].text).toBe('By index');
+    });
+
+    it('should immediately revalidate after changing a dialog character', async () => {
+      const { result } = renderHook(() => useChapter('Story-Fractured_Assistance'));
+      const mockConfig = {
+        global: {
+          'story-dir': '',
+          voices: 'story-voice-refs/',
+          chapters: '',
+          'story-xml': '',
+          logs: '',
+          'story-audio': '',
+          clips: '',
+          'clip-separation': 0,
+        },
+        'llm-xml-generator': [],
+        'dialog-effects': [{ name: 'cave' }],
+        'story-audio-post-process': {},
+        characters: [
+          { name: 'Alice', 'voice-sample': 'alice.wav' },
+          { name: 'Hendrixx-echo', 'voice-sample': 'missing.wav', 'dialog-effects': ['bad-1', 'bad-2'] },
+        ],
+      } as StoryConfig;
+
+      act(() => {
+        result.current.setConfig(mockConfig);
+      });
+
+      vi.mocked(PythonBridgeService.checkStoryFileExists).mockResolvedValue(false);
+
+      await act(async () => {
+        await result.current.loadChapter('test.xml', mockConfig, 'Story-Fractured_Assistance');
+      });
+
+      await act(async () => {
+        await result.current.handleUpdateDialog('1', '0', {
+          ...result.current.chapter!.dialogs[0],
+          character: 'Hendrixx-echo',
+          attributes: {
+            ...result.current.chapter!.dialogs[0].attributes,
+            character: 'Alice',
+          },
+        });
+      });
+
+      const issues = result.current.chapter?.dialogs[0].validationIssues || [];
+      expect(issues.map((issue) => issue.code)).toEqual(['invalid-dialog-effects', 'invalid-voice-sample']);
     });
   });
 
@@ -286,8 +336,8 @@ describe('useChapter', () => {
       });
 
       // Update dialog to create unsaved changes
-      act(() => {
-        result.current.handleUpdateDialog('1', '1', {
+      await act(async () => {
+        await result.current.handleUpdateDialog('1', '1', {
           _index: 0,
           dlgseq: '1',
           sectionId: '1',
@@ -325,7 +375,7 @@ describe('useChapter', () => {
       expect(result.current.chapter).not.toBeNull();
     });
 
-    it('should not update dialog if chapter is null', () => {
+    it('should not update dialog if chapter is null', async () => {
       const { result } = renderHook(() => useChapter());
       
       const testDialog = {
@@ -337,10 +387,32 @@ describe('useChapter', () => {
         attributes: {}
       };
       
-      // Should not throw
-      expect(() => {
-        result.current.handleUpdateDialog('1', '1', testDialog as DialogElement);
-      }).not.toThrow();
+      await expect(result.current.handleUpdateDialog('1', '1', testDialog as DialogElement)).resolves.toBeUndefined();
+    });
+
+    it('should flag missing voice-sample file on load', async () => {
+      const { result } = renderHook(() => useChapter('Story-Entanglement'));
+      const mockConfig = {
+        global: {
+          'story-dir': '', voices: '', chapters: '', 'story-xml': '', logs: '', 'story-audio': '', clips: '', 'clip-separation': 0,
+        },
+        'llm-xml-generator': [],
+        'dialog-effects': [],
+        'story-audio-post-process': {},
+        characters: [{ name: 'Alice', 'voice-sample': 'refs/alice.wav' }],
+      } as StoryConfig;
+
+      act(() => {
+        result.current.setConfig(mockConfig);
+      });
+      vi.mocked(PythonBridgeService.checkStoryFileExists).mockResolvedValue(false);
+
+      await act(async () => {
+        await result.current.loadChapter('test.xml', mockConfig, 'Story-Entanglement');
+      });
+
+      expect(PythonBridgeService.checkStoryFileExists).toHaveBeenCalledWith('Story-Entanglement', 'refs/alice.wav');
+      expect(result.current.chapter?.dialogs[0].validationIssues?.[0]?.code).toBe('invalid-voice-sample');
     });
   });
 });

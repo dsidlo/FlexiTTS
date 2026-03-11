@@ -285,6 +285,25 @@ export const PythonBridgeService = {
     return false;
   },
 
+  checkStoryFileExists: async (storyDir: string, relativePath: string): Promise<boolean> => {
+    const id = `${LOG_ID}:checkStoryFileExists`;
+    debugLog.info(id, 'ENTER checkStoryFileExists', { storyDir, relativePath });
+
+    if (typeof window !== 'undefined' && window.api && window.api.checkStoryFileExists) {
+      try {
+        const exists = await window.api.checkStoryFileExists(storyDir, relativePath);
+        debugLog.info(id, 'Successfully checked story file existence', { storyDir, relativePath, exists });
+        return exists;
+      } catch (e) {
+        debugLog.exception(id, 'checkStoryFileExists IPC call', e, { storyDir, relativePath });
+        throw e;
+      }
+    }
+
+    debugLog.warn(id, 'window.api.checkStoryFileExists not available', { storyDir, relativePath });
+    return false;
+  },
+
   readChapterFile: async (filePath: string): Promise<string> => {
     const id = `${LOG_ID}:readChapterFile`;
     debugLog.info(id, '[RESOURCE-ACCESS] Reading markdown file', { filePath, resourceType: 'markdown' });

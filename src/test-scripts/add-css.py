@@ -34,15 +34,23 @@ def add_dark_theme_css():
     # Dark theme CSS
     dark_theme_css = '''
 <style id="dark-theme">
-  body { background: #1a1a2e !important; color: #eaeaea !important; }
-  .container { background: #1a1a2e !important; }
-  table { background: #16213e !important; border-color: #0f3460 !important; }
-  th { background: #0f3460 !important; color: #eaeaea !important; border-color: #e94560 !important; }
-  td { background: #16213e !important; color: #eaeaea !important; border-color: #0f3460 !important; }
-  tr:hover td { background: #1a1a2e !important; }
+  body { background: #0f172a !important; color: #e2e8f0 !important; }
+  body * { color: inherit !important; }
+  .container { background: #0f172a !important; }
+  table { background: #0b1120 !important; border-color: #1d2a44 !important; }
+  th { background: #172554 !important; color: #e2e8f0 !important; border-color: #1d4ed8 !important; }
+  td { background: #111827 !important; color: #e2e8f0 !important; border-color: #1d2a44 !important; }
+  tr:hover td { background: #1e293b !important; }
   .passed .col-result { color: #22c55e !important; }
   .failed .col-result, .error .col-result { color: #ef4444 !important; }
   .skipped .col-result { color: #f59e0b !important; }
+  #environment { background: #0b1120 !important; }
+  #environment td { color: #e2e8f0 !important; border-color: #1d2a44 !important; }
+  .logwrapper { background: #0b1120 !important; border-color: #1d2a44 !important; }
+  .logwrapper .log { background: #020617 !important; color: #94a3b8 !important; border-color: #1d2a44 !important; }
+  .summary, .results-table-row { background: transparent !important; }
+  .controls button { color: #60a5fa !important; }
+  a { color: #93c5fd !important; }
 </style>
 '''
     

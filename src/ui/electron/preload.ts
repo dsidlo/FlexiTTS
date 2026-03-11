@@ -25,4 +25,5 @@ contextBridge.exposeInMainWorld('api', {
   loadStoryConfig: (storyDir: string) => ipcRenderer.invoke('load-story-config', storyDir),
   listChapterFilesForStory: (storyDir: string) => ipcRenderer.invoke('list-chapter-files-for-story', storyDir),
   checkXmlExistsForStory: (chapterStem: string, storyDir: string) => ipcRenderer.invoke('check-xml-exists-for-story', chapterStem, storyDir),
+  checkStoryFileExists: (storyDir: string, relativePath: string) => ipcRenderer.invoke('check-story-file-exists', storyDir, relativePath),
 });

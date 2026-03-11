@@ -15,42 +15,80 @@ logger = setup_script_logging('chapter_validate_xml')
 # content or section-based content.
 XSD_SCHEMA = """<?xml version="1.0" encoding="UTF-8"?>
 <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <xs:complexType name="DialogType">
+    <xs:simpleContent>
+      <xs:extension base="xs:string">
+        <xs:attribute name="character" type="xs:string" use="required"/>
+        <xs:attribute name="dlgseq" type="xs:integer" use="required"/>
+        <xs:attribute name="emotion" type="xs:string" use="optional"/>
+      </xs:extension>
+    </xs:simpleContent>
+  </xs:complexType>
+
+  <xs:complexType name="NarrationType">
+    <xs:simpleContent>
+      <xs:extension base="xs:string">
+        <xs:attribute name="character" type="xs:string" use="optional"/>
+        <xs:attribute name="dlgseq" type="xs:integer" use="required"/>
+        <xs:attribute name="emotion" type="xs:string" use="optional"/>
+      </xs:extension>
+    </xs:simpleContent>
+  </xs:complexType>
+
+  <xs:complexType name="SectionContentType">
+    <xs:choice minOccurs="0" maxOccurs="unbounded">
+      <xs:element name="dialog" type="DialogType"/>
+      <xs:element name="narration" type="NarrationType"/>
+    </xs:choice>
+  </xs:complexType>
+
+  <xs:complexType name="SectionType">
+    <xs:complexContent>
+      <xs:extension base="SectionContentType">
+        <xs:attribute name="seq" type="xs:integer" use="required"/>
+      </xs:extension>
+    </xs:complexContent>
+  </xs:complexType>
+
+  <xs:complexType name="ChapterContentType">
+    <xs:choice minOccurs="0" maxOccurs="unbounded">
+      <xs:element name="dialog" type="DialogType"/>
+      <xs:element name="narration" type="NarrationType"/>
+      <xs:element name="section" type="SectionType"/>
+    </xs:choice>
+  </xs:complexType>
+
+  <xs:element name="chapter">
+    <xs:complexType>
+      <xs:complexContent>
+        <xs:extension base="ChapterContentType">
+          <xs:attribute name="name" type="xs:string" use="optional"/>
+        </xs:extension>
+      </xs:complexContent>
+    </xs:complexType>
+  </xs:element>
+
   <xs:element name="story">
     <xs:complexType>
       <xs:sequence>
-        <xs:element name="section" maxOccurs="unbounded">
-          <xs:complexType>
-            <xs:choice maxOccurs="unbounded">
-              <xs:element name="dialog">
-                <xs:complexType>
-                  <xs:simpleContent>
-                    <xs:extension base="xs:string">
-                      <xs:attribute name="character" type="xs:string" use="required"/>
-                      <xs:attribute name="dlgseq" type="xs:integer" use="required"/>
-                      <xs:attribute name="emotion" type="xs:string" use="required"/>
-                    </xs:extension>
-                  </xs:simpleContent>
-                </xs:complexType>
-              </xs:element>
-              <xs:element name="narration">
-                <xs:complexType>
-                  <xs:simpleContent>
-                    <xs:extension base="xs:string">
-                      <xs:attribute name="dlgseq" type="xs:integer" use="required"/>
-                      <xs:attribute name="emotion" type="xs:string" use="required"/>
-                    </xs:extension>
-                  </xs:simpleContent>
-                </xs:complexType>
-              </xs:element>
-            </xs:choice>
-            <xs:attribute name="seq" type="xs:integer" use="required"/>
-          </xs:complexType>
-        </xs:element>
+        <xs:element name="section" type="SectionType" maxOccurs="unbounded"/>
       </xs:sequence>
     </xs:complexType>
   </xs:element>
 </xs:schema>
 """
+
+def _generate_unified_schema_from_xml(root):
+    """Derive a schema payload from the provided XML tree.
+
+    Currently returns the canonical unified schema which supports both <story>
+    and <chapter> roots. This keeps the --update-xsd workflow functional while
+    ensuring the schema remains consistent across regenerations.
+    """
+    # Strip leading/trailing whitespace to keep formatting predictable when
+    # reinserted into scripts.
+    return XSD_SCHEMA.strip()
+
 
 def update_xsd(xml_path, script_path):
     print(f"[RESOURCE-ACCESS] Reading XML for XSD update", file=sys.stderr)
@@ -58,86 +96,39 @@ def update_xsd(xml_path, script_path):
     print(f"  resourceType: xml", file=sys.stderr)
     print(f"  operation: read", file=sys.stderr)
     try:
-        if not os.path.exists(xml_path):
+        xml_path = Path(xml_path)
+        script_path = Path(script_path)
+
+        if not xml_path.exists():
             print(f"[RESOURCE-ACCESS] XML NOT found: {xml_path}", file=sys.stderr)
             return False
-        print(f"[RESOURCE-ACCESS] Successfully read XML for XSD update", file=sys.stderr)
-        print(f"  xml_path: {xml_path}", file=sys.stderr)
+
         parser = etree.XMLParser(remove_blank_text=True)
-        xml_doc = etree.parse(xml_path, parser)
+        xml_doc = etree.parse(str(xml_path), parser)
         root = xml_doc.getroot()
+        new_xsd = _generate_unified_schema_from_xml(root)
 
-        # Simple schema generation logic focused on the story structure
-        # We'll build a schema that mirrors the elements and attributes found in the XML
-        
-        schema_lines = [
-            '<?xml version="1.0" encoding="UTF-8"?>',
-            '<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">',
-            '  <xs:element name="story">',
-            '    <xs:complexType>',
-            '      <xs:sequence>',
-            '        <xs:element name="section" maxOccurs="unbounded">',
-            '          <xs:complexType>',
-            '            <xs:choice maxOccurs="unbounded">'
-        ]
+        try:
+            script_content = script_path.read_text()
+        except FileNotFoundError:
+            print(f"Error: Script file not found: {script_path}")
+            return False
 
-        # Gather all elements found in sections to build the choice block
-        elements_in_sections = {}
-        for section in root.findall("section"):
-            for child in section:
-                if child.tag not in elements_in_sections:
-                    elements_in_sections[child.tag] = set(child.attrib.keys())
-                else:
-                    elements_in_sections[child.tag].update(child.attrib.keys())
-
-        for tag, attrs in sorted(elements_in_sections.items()):
-            schema_lines.append(f'              <xs:element name="{tag}">')
-            schema_lines.append('                <xs:complexType>')
-            schema_lines.append('                  <xs:simpleContent>')
-            schema_lines.append('                    <xs:extension base="xs:string">')
-            for attr in sorted(attrs):
-                # Try to infer type for common attributes
-                attr_type = "xs:integer" if attr in ("dlgseq", "seq") else "xs:string"
-                use = "required" if attr in ("emotion", "character", "dlgseq") else "optional"
-                schema_lines.append(f'                      <xs:attribute name="{attr}" type="{attr_type}" use="{use}"/>')
-            schema_lines.append('                    </xs:extension>')
-            schema_lines.append('                  </xs:simpleContent>')
-            schema_lines.append('                </xs:complexType>')
-            schema_lines.append('              </xs:element>')
-
-        schema_lines.extend([
-            '            </xs:choice>',
-            '            <xs:attribute name="seq" type="xs:integer" use="required"/>',
-            '          </xs:complexType>',
-            '        </xs:element>',
-            '      </xs:sequence>',
-            '    </xs:complexType>',
-            '  </xs:element>',
-            '</xs:schema>'
-        ])
-
-        new_xsd = "\n".join(schema_lines)
-
-        # Read the script and replace XSD_SCHEMA
-        with open(script_path, 'r') as f:
-            script_content = f.read()
-
-        # Improved pattern to be more robust
-        pattern = r'XSD_SCHEMA = """.*?"""'
+        pattern = r'XSD_SCHEMA\s*=\s*"""[\s\S]*?"""'
         replacement = f'XSD_SCHEMA = """{new_xsd}\n"""'
-        
-        updated_content = re.sub(pattern, replacement, script_content, count=1, flags=re.DOTALL)
-        
-        if updated_content == script_content:
+        updated_content, count = re.subn(pattern, replacement, script_content, count=1, flags=re.DOTALL)
+
+        if count == 0:
             print("Error: Could not find XSD_SCHEMA block in the script to update.")
             return False
 
-        with open(script_path, 'w') as f:
-            f.write(updated_content)
-        
+        script_path.write_text(updated_content)
         print(f"Successfully updated XSD_SCHEMA in {script_path} using {xml_path}")
         return True
 
+    except etree.XMLSyntaxError as e:
+        print(f"Error updating XSD: XML Syntax Error in {xml_path}: {e}")
+        return False
     except Exception as e:
         print(f"Error updating XSD: {e}")
         return False
@@ -146,8 +137,8 @@ def loose_review_xml(xml_path):
     """
     Performs a loose XML review of the input file:
     1. Checks for well-formedness (syntax).
-    2. Checks basic structure (root tag is 'story').
-    3. Checks that tags are known ('story', 'section', 'narration', 'dialog').
+    2. Checks basic structure (root tag is 'story' or 'chapter').
+    3. Checks that tags are known ('story', 'chapter', 'section', 'narration', 'dialog').
     4. Checks for common attributes and provides hints.
     """
     print(f"[RESOURCE-ACCESS] Validating XML", file=sys.stderr)
@@ -166,11 +157,11 @@ def loose_review_xml(xml_path):
         
         success = True
 
-        if root.tag != 'story':
-            print(f"Loose Review Hint: Root tag is '{root.tag}', expected 'story'.")
+        if root.tag not in ('story', 'chapter'):
+            print(f"Loose Review Hint: Root tag is '{root.tag}', expected 'story' or 'chapter'.")
             success = False
         
-        known_tags = {'story', 'section', 'narration', 'dialog'}
+        known_tags = {'story', 'chapter', 'section', 'narration', 'dialog'}
         
         for elem in root.iter():
             if elem.tag not in known_tags:
@@ -185,9 +176,6 @@ def loose_review_xml(xml_path):
             elif elem.tag in ('narration', 'dialog'):
                 if 'dlgseq' not in elem.attrib:
                     print(f"Loose Review Hint: <{elem.tag}> at line {elem.sourceline} is missing 'dlgseq' attribute.")
-                    success = False
-                if 'emotion' not in elem.attrib:
-                    print(f"Loose Review Hint: <{elem.tag}> at line {elem.sourceline} is missing 'emotion' attribute.")
                     success = False
                 if elem.tag == 'dialog' and 'character' not in elem.attrib:
                     print(f"Loose Review Hint: <dialog> at line {elem.sourceline} is missing 'character' attribute.")

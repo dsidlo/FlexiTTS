@@ -27,12 +27,18 @@ export interface CharacterConfig {
   'dialog-effects'?: string[];
 }
 
+export interface DialogValidationIssue {
+  code: 'missing-character' | 'invalid-custom-voice' | 'invalid-voice-sample' | 'invalid-dialog-effects';
+  message: string;
+}
+
 export interface DialogElement {
   _index?: number;
   dlgseq: string;
   sectionId?: string; // Optional section sequence
   character: string;
   text: string;
+  validationIssues?: DialogValidationIssue[];
   // Other XML attributes (e.g. emotion, tone, pace)
   attributes: Record<string, any>;
 }

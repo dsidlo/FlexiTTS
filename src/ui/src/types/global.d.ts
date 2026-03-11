@@ -48,6 +48,7 @@ declare global {
       loadStoryConfig: (storyDir: string) => Promise<StoryConfig>;
       listChapterFilesForStory: (storyDir: string) => Promise<string[]>;
       checkXmlExistsForStory: (chapterStem: string, storyDir: string) => Promise<boolean>;
+      checkStoryFileExists: (storyDir: string, relativePath: string) => Promise<boolean>;
     };
   }
 }

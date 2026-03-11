@@ -117,10 +117,12 @@ characters:
   - name: Yamato-vc
     voice-sample: Yamato-voice.wav
   - name: Hendrix-echo
-    voice-sample: Hendricks-voice.wav
+    voice-sample: Hendricks-voice-x.wav
     dialog-effects:
       # named dialog-effects can be layered
       - cave
+      - caves
+      - xxx
   - name: Ayana-echo
     voice-sample: Ayana-voice.wav
     sox-effects:

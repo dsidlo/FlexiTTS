@@ -239,11 +239,10 @@ instance/
 .scrapy
 
 # Generated test reports
-all-test-reports/
-test-reports/
-src/scripts/test-reports/
-src/scripts/test-results/
-src/ui/test-reports/
+# all-test-reports/
+# src/scripts/test-reports/
+# src/scripts/test-results/
+# src/ui/test-reports/
 
 # Local build output
 src/ui/dist-electron/
@@ -356,3 +355,6 @@ cython_debug/
 
 # DyTopo Workspace
 .dytopo
+
+# Story audio clips
+*/story-audio/*

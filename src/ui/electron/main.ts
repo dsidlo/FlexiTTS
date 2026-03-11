@@ -31,6 +31,8 @@ let ttsServiceProcess: ChildProcess | null = null;
 
 // Track if we're shutting down to prevent new operations
 let isShuttingDown = false;
+let shutdownInProgress = false;
+let shutdownCompleted = false;
 
 // Store project root for path validation - initialized once at module load time
 const projectRoot: string = path.resolve(__dirname, '../../../../');
@@ -155,12 +157,164 @@ function killAllActiveProcesses() {
   }
 }
 
-// Force exit after cleanup timeout
-function forceExitAfterDelay() {
-  setTimeout(() => {
-    log.info('[App] Force quitting after cleanup timeout');
-    process.exit(0);
-  }, 5000);
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function getTtsServicePid(): number | null {
+  try {
+    const pidFile = '/tmp/FlexiTTS_tts_service.pid';
+    if (!fs.existsSync(pidFile)) return null;
+    const raw = fs.readFileSync(pidFile, 'utf-8').trim();
+    const pid = Number.parseInt(raw, 10);
+    return Number.isFinite(pid) ? pid : null;
+  } catch (e) {
+    log.warn('[App] Failed to read TTS PID file', e);
+    return null;
+  }
+}
+
+function isProcessRunning(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+async function waitForTtsServiceExit(timeoutMs: number): Promise<boolean> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const pid = getTtsServicePid();
+    if (!pid) {
+      log.info('[App] TTS service PID file missing; assuming stopped');
+      return true;
+    }
+    if (!isProcessRunning(pid)) {
+      log.info(`[App] TTS service process ${pid} is no longer running`);
+      try {
+        fs.unlinkSync('/tmp/FlexiTTS_tts_service.pid');
+      } catch (e) {
+        // ignore
+      }
+      return true;
+    }
+    await sleep(100);
+  }
+  return false;
+}
+
+function runStopTtsService(force: boolean): Promise<boolean> {
+  const { exec } = require('child_process');
+  const cmd = force
+    ? 'uv run python src/scripts/stop_tts_service.py --force --silent'
+    : 'uv run python src/scripts/stop_tts_service.py --silent';
+
+  log.info('[App] Invoking TTS stop command', { force, cmd });
+
+  return new Promise((resolve) => {
+    exec(cmd, {
+      cwd: projectRoot,
+      timeout: 10000
+    }, (err: any, stdout: string, stderr: string) => {
+      if (stdout?.trim()) log.info('[App] TTS stop stdout', stdout.trim());
+      if (stderr?.trim()) log.warn('[App] TTS stop stderr', stderr.trim());
+      if (err) {
+        log.warn('[App] TTS stop command returned error', { force, error: String(err) });
+        resolve(false);
+        return;
+      }
+      resolve(true);
+    });
+  });
+}
+
+async function ensureTtsServiceStoppedOrWarn(): Promise<void> {
+  const pidBefore = getTtsServicePid();
+  if (!pidBefore) {
+    log.info('[App] No TTS service PID file found during shutdown');
+    return;
+  }
+
+  log.info('[App] TTS shutdown verification starting', { pidBefore });
+
+  await runStopTtsService(false);
+  if (await waitForTtsServiceExit(3000)) {
+    log.info('[App] TTS service stopped after graceful shutdown');
+    return;
+  }
+
+  const pidAfterTerm = getTtsServicePid();
+  log.warn('[App] TTS service still running after SIGTERM window', { pidAfterTerm });
+
+  await runStopTtsService(true);
+  if (await waitForTtsServiceExit(3000)) {
+    log.info('[App] TTS service stopped after forced shutdown');
+    return;
+  }
+
+  const pidAfterKill = getTtsServicePid();
+  log.error('[App] TTS service still running after forced shutdown', { pidAfterKill });
+
+  await dialog.showMessageBox({
+    type: 'warning',
+    buttons: ['OK'],
+    defaultId: 0,
+    cancelId: 0,
+    title: 'TTS Service Still Running',
+    message: 'The TTS service is still running and could not be stopped automatically.',
+    detail: pidAfterKill
+      ? `The background TTS service (PID ${pidAfterKill}) is still running. Click OK to exit the app.`
+      : 'The background TTS service may still be running. Click OK to exit the app.'
+  });
+}
+
+async function performShutdownAndQuit() {
+  if (shutdownCompleted) {
+    log.info('[App] Shutdown already completed; quitting immediately');
+    app.exit(0);
+    return;
+  }
+  if (shutdownInProgress) {
+    log.info('[App] Shutdown already in progress; ignoring duplicate request');
+    return;
+  }
+
+  shutdownInProgress = true;
+  isShuttingDown = true;
+  log.info('[App] performShutdownAndQuit: starting cleanup');
+
+  try {
+    killAllActiveProcesses();
+    await ensureTtsServiceStoppedOrWarn();
+  } catch (e) {
+    log.error('[App] Error during TTS shutdown sequence', e);
+    try {
+      await dialog.showMessageBox({
+        type: 'warning',
+        buttons: ['OK'],
+        defaultId: 0,
+        cancelId: 0,
+        title: 'TTS Service Shutdown Error',
+        message: 'An error occurred while stopping the TTS service.',
+        detail: `${e}`
+      });
+    } catch {
+      // ignore dialog failures
+    }
+  }
+
+  try {
+    killDevServerProcesses();
+  } catch (e) {
+    log.warn('[App] Failed to kill dev server processes', e);
+  }
+
+  shutdownCompleted = true;
+  shutdownInProgress = false;
+  log.info('[App] Shutdown complete; exiting application');
+  app.exit(0);
 }
 
 // Kill dev server processes (vite, npm, concurrently) when app exits
@@ -318,31 +472,7 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', () => {
-  isShuttingDown = true;
-  log.info('[App] window-all-closed: Cleaning up...');
-  
-  // Kill all active Python processes
-  killAllActiveProcesses();
-  
-  // Stop TTS service (runs in background, don't wait)
-  const { exec } = require('child_process');
-  exec('uv run python src/scripts/stop_tts_service.py --silent', {
-    cwd: projectRoot,
-    timeout: 10000
-  }, (err: any) => {
-    if (err) {
-      log.info('[App] TTS service stop (may not be running)');
-    } else {
-      log.info('[App] TTS service stopped');
-    }
-  });
-  
-  // Kill dev server processes (vite, npm, concurrently)
-  killDevServerProcesses();
-  
-  // Force exit after delay to ensure app quits
-  forceExitAfterDelay();
-  
+  log.info('[App] window-all-closed received');
   if (process.platform !== 'darwin') {
     app.quit();
   }
@@ -350,30 +480,12 @@ app.on('window-all-closed', () => {
 
 // Also handle before-quit for macOS and other cases
 app.on('before-quit', (event) => {
-  isShuttingDown = true;
-  log.info('[App] before-quit: Cleaning up...');
-  
-  // Kill all active Python processes
-  killAllActiveProcesses();
-  
-  // Stop TTS service (async - don't block)
-  const { exec } = require('child_process');
-  exec('uv run python src/scripts/stop_tts_service.py --silent', {
-    cwd: projectRoot,
-    timeout: 10000
-  }, (err: any) => {
-    if (err) {
-      log.info('[App] TTS service stop (may not be running)');
-    } else {
-      log.info('[App] TTS service stopped');
-    }
-  });
-  
-  // Kill dev server processes (vite, npm, concurrently)
-  killDevServerProcesses();
-  
-  // Force exit after delay
-  forceExitAfterDelay();
+  log.info('[App] before-quit received', { shutdownCompleted, shutdownInProgress });
+  if (shutdownCompleted) {
+    return;
+  }
+  event.preventDefault();
+  void performShutdownAndQuit();
 });
 
 app.on('activate', () => {
@@ -933,6 +1045,38 @@ ipcMain.handle('check-xml-exists-for-story', async (event, chapterStem: string, 
     return exists;
   } catch (err) {
     log.error(`Failed to check if XML exists for ${storyDir}: ${err}`);
+    return false;
+  }
+});
+
+ipcMain.handle('check-story-file-exists', async (event, storyDir: string, relativePath: string) => {
+  try {
+    if (!/^[\w-]+$/.test(storyDir)) {
+      throw new Error('Invalid story directory name');
+    }
+
+    if (typeof relativePath !== 'string' || !relativePath.trim()) {
+      throw new Error('Invalid relative path');
+    }
+
+    if (path.isAbsolute(relativePath) || relativePath.includes('..')) {
+      throw new Error('Security: Invalid relative path');
+    }
+
+    const config = await loadGlobalConfig();
+    const storiesDir = getStoriesDirFromConfig(config);
+    const storyRoot = path.join(storiesDir, storyDir);
+    const targetPath = path.resolve(storyRoot, relativePath);
+
+    if (!isPathWithinParent(targetPath, storyRoot)) {
+      throw new Error('Security: Target path outside story directory');
+    }
+
+    const exists = fs.existsSync(targetPath);
+    log.info(`[check-story-file-exists] File existence check complete`, { storyDir, relativePath, targetPath, exists });
+    return exists;
+  } catch (err) {
+    log.error(`Failed to check story file existence for ${storyDir}: ${err}`);
     return false;
   }
 });
