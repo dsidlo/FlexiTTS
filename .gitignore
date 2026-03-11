@@ -357,4 +357,4 @@ cython_debug/
 .dytopo
 
 # Story audio clips
-*/story-audio/*
+*/*/story-audio/*
