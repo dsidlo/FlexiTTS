@@ -12,6 +12,7 @@ vi.mock('../services/pythonBridge', () => ({
     checkChapterAudio: vi.fn(),
     writeChapterFile: vi.fn(),
     checkXmlExists: vi.fn(),
+    checkXmlExistsForStory: vi.fn(),
     showConfirmDialog: vi.fn(),
     showErrorDialog: vi.fn(),
     validateConfig: vi.fn(),
@@ -263,7 +264,7 @@ describe('useChapter', () => {
     it('should load chapter when XML exists', async () => {
       const { result } = renderHook(() => useChapter());
       
-      vi.mocked(PythonBridgeService.checkXmlExists).mockResolvedValue(true);
+      vi.mocked(PythonBridgeService.checkXmlExistsForStory).mockResolvedValue(true);
       vi.mocked(PythonBridgeService.showConfirmDialog).mockResolvedValue(1); // Discard
       
       await act(async () => {

@@ -32,6 +32,7 @@ def resequence_xml(input_path, output_path=None):
     print(f"  operation: read", file=sys.stderr)
     if not os.path.exists(input_path):
         print(f"[RESOURCE-ACCESS] XML NOT found: {input_path}", file=sys.stderr)
+        print(f"Input XML not found: {input_path}")
         return
 
     try:

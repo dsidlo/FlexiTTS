@@ -5,6 +5,18 @@
 
 const LOG_FILE = '/tmp/FlexiTTS.log';
 
+const isTestEnvironment = (): boolean => {
+  try {
+    return Boolean(import.meta.env?.MODE === 'test' || import.meta.env?.VITEST || process.env.VITEST);
+  } catch {
+    return false;
+  }
+};
+
+const shouldEmitConsoleLogs = (): boolean => {
+  return !isTestEnvironment();
+};
+
 // Enable debug logging via localStorage or environment
 const isDebugEnabled = (): boolean => {
   try {
@@ -34,13 +46,15 @@ const writeLog = async (level: string, id: string, message: string, data?: unkno
   const timestamp = new Date().toISOString();
   const logLine = `[${timestamp}] [UI] ${level} ${id} ${message}`;
   
-  // Log to console first
-  if (level === 'ERROR') {
-    console.error(logLine, data || '');
-  } else if (level === 'WARN') {
-    console.warn(logLine, data || '');
-  } else {
-    console.log(logLine, data || '');
+  // Log to console first, except during tests where noisy output obscures results
+  if (shouldEmitConsoleLogs()) {
+    if (level === 'ERROR') {
+      console.error(logLine, data || '');
+    } else if (level === 'WARN') {
+      console.warn(logLine, data || '');
+    } else {
+      console.log(logLine, data || '');
+    }
   }
   
   // Try to write to file via Electron

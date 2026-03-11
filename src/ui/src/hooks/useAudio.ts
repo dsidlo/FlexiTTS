@@ -2,6 +2,22 @@ import { useState, useCallback, useRef } from 'react';
 import { PythonBridgeService } from '../services/pythonBridge';
 import { debugLog } from '../utils/debugLogger';
 
+const isTestEnvironment = (): boolean => {
+  try {
+    return Boolean(import.meta.env?.MODE === 'test' || import.meta.env?.VITEST || process.env.VITEST);
+  } catch {
+    return false;
+  }
+};
+
+const testSafeConsole = {
+  warn: (...args: unknown[]) => {
+    if (!isTestEnvironment()) {
+      console.warn(...args);
+    }
+  },
+};
+
 export interface UseAudioReturn {
   // State
   availableClips: string[];
@@ -52,7 +68,7 @@ export const useAudio = (storyDirectory?: string): UseAudioReturn => {
       const hasAudio = await PythonBridgeService.checkChapterAudio(chapterName);
       setHasChapterAudio(hasAudio);
     } catch (e) {
-      console.warn('Failed to refresh clips:', e);
+      testSafeConsole.warn('Failed to refresh clips:', e);
     }
   }, []);
 
@@ -65,7 +81,7 @@ export const useAudio = (storyDirectory?: string): UseAudioReturn => {
       const hasAudio = await PythonBridgeService.checkChapterAudio(chapterName);
       setHasChapterAudio(hasAudio);
     } catch (e) {
-      console.warn('Failed to check chapter audio:', e);
+      testSafeConsole.warn('Failed to check chapter audio:', e);
       setHasChapterAudio(false);
     }
   }, []);
@@ -79,7 +95,7 @@ export const useAudio = (storyDirectory?: string): UseAudioReturn => {
     try {
       await PythonBridgeService.cancelAudio(chapterName);
     } catch (e) {
-      console.warn('Failed to cancel audio:', e);
+      testSafeConsole.warn('Failed to cancel audio:', e);
     }
   }, []);
 

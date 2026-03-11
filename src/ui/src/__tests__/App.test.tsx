@@ -225,10 +225,13 @@ describe('App', () => {
   });
 
   describe('initialization', () => {
-    it('should show loading screen initially', () => {
-      vi.mocked(PythonBridgeService.loadStoryConfig).mockImplementation(() => new Promise(() => {}));
+    it('should show loading screen initially', async () => {
+      vi.mocked(PythonBridgeService.validateConfig).mockImplementation(() => new Promise(() => {}));
       
-      render(<App />);
+      await act(async () => {
+        render(<App />);
+      });
+
       expect(screen.getByText('Loading FlexiTTS...')).toBeInTheDocument();
     });
 
@@ -390,9 +393,9 @@ describe('App', () => {
         expect(screen.getByTestId('topbar')).toBeInTheDocument();
       }, { timeout: 3000 });
       
-      // Should call check XML (using checkXmlExists, not checkXmlExistsForStory - which is for story-aware ops)
+      // Should call story-aware XML existence check
       await waitFor(() => {
-        expect(PythonBridgeService.checkXmlExists).toHaveBeenCalled();
+        expect(PythonBridgeService.checkXmlExistsForStory).toHaveBeenCalled();
       });
     });
 

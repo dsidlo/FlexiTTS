@@ -238,6 +238,23 @@ instance/
 # Scrapy stuff:
 .scrapy
 
+# Generated test reports
+all-test-reports/
+test-reports/
+src/scripts/test-reports/
+src/scripts/test-results/
+src/ui/test-reports/
+
+# Local build output
+src/ui/dist-electron/
+
+# Local backup files
+*.backup
+
+# Generated story assets
+Stories/*/story-audio/
+Stories/*/story-voice-refs/
+
 # Sphinx documentation
 docs/_build/
 

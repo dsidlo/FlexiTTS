@@ -44,7 +44,7 @@ def load_config(config_path="story-config.yml", input_path=None):
     logger.info(f"load_config resolved_config={resolved_config}")
     print(f"[RESOURCE-ACCESS] Successfully loaded story config", file=sys.stderr)
     print(f"  config_path: {resolved_config}", file=sys.stderr)
-    return config, resolved_config
+    return config
 
 def get_prompt_template(notes_path="src/scripts/FlexiTTS-AI-Prompt-Chapter-to-XML.md"):
     print(f"[RESOURCE-ACCESS] Reading markdown prompt template", file=sys.stderr)
@@ -93,8 +93,28 @@ def main():
     parser = create_parser()
     args = parser.parse_args()
 
-    config, config_path = load_config(input_path=args.file_path)
-    config_base_dir = config_path.parent.resolve()
+    config_path = Path("story-config.yml")
+    if not config_path.exists() and args.file_path:
+        input_path = Path(args.file_path)
+        candidates = []
+        if input_path.is_absolute():
+            candidates.extend([
+                input_path.parent.parent / "story-config.yml",
+                input_path.parent / "story-config.yml",
+            ])
+        else:
+            cwd_input = (Path.cwd() / input_path).resolve()
+            candidates.extend([
+                cwd_input.parent.parent / "story-config.yml",
+                cwd_input.parent / "story-config.yml",
+            ])
+        for candidate in candidates:
+            if candidate.exists():
+                config_path = candidate
+                break
+
+    config = load_config(input_path=args.file_path)
+    config_base_dir = config_path.resolve().parent
     logger.info(f"main args file_path={args.file_path} all_chapters={args.all_chapters} llm={args.llm} config_path={config_path}")
 
     configured_story_dir = Path(config['global']['story-dir'])

@@ -14,6 +14,7 @@ SECURITY NOTES:
 
 import os
 import re
+import sys
 import yaml
 import json
 from pathlib import Path
@@ -93,19 +94,19 @@ class ConfigManager:
         home_dir = Path.home()
         config_home = os.environ.get('XDG_CONFIG_HOME', home_dir / '.config')
         
-        # Try .yml first (more common), then .yaml
-        config_path_yml = Path(config_home) / 'FlexiTTS' / 'FlexiTTS.yml'
+        # Prefer .yaml for compatibility with existing tests/config, then .yml
         config_path_yaml = Path(config_home) / 'FlexiTTS' / 'FlexiTTS.yaml'
+        config_path_yml = Path(config_home) / 'FlexiTTS' / 'FlexiTTS.yml'
         
-        if config_path_yml.exists():
-            print(f"[RESOURCE-ACCESS] Found config file: {config_path_yml}", file=sys.stderr)
-            return config_path_yml.resolve()
-        elif config_path_yaml.exists():
+        if config_path_yaml.exists():
             print(f"[RESOURCE-ACCESS] Found config file: {config_path_yaml}", file=sys.stderr)
             return config_path_yaml.resolve()
-        else:
-            print(f"[RESOURCE-ACCESS] Config file not found, defaulting to: {config_path_yml}", file=sys.stderr)
+        elif config_path_yml.exists():
+            print(f"[RESOURCE-ACCESS] Found config file: {config_path_yml}", file=sys.stderr)
             return config_path_yml.resolve()
+        else:
+            print(f"[RESOURCE-ACCESS] Config file not found, defaulting to: {config_path_yaml}", file=sys.stderr)
+            return config_path_yaml.resolve()
 
     def _sanitize_path(self, path: Union[str, Path]) -> Path:
         """

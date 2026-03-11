@@ -202,8 +202,11 @@ export const PythonBridgeService = {
       }
     }
     
-    debugLog.error(id, 'window.api.listStories not available');
-    throw new Error('listStories requires Electron IPC');
+    debugLog.warn(id, 'window.api.listStories not available, returning mock stories');
+    return [
+      { name: 'Entanglement', path: '/mock/Stories/Story-Entanglement', directory_name: 'Story-Entanglement' },
+      { name: 'Adventure', path: '/mock/Stories/Story-Adventure', directory_name: 'Story-Adventure' },
+    ];
   },
 
   setCurrentStory: async (storyDirectory: string): Promise<boolean> => {

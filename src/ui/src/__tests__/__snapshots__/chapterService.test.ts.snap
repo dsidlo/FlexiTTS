@@ -3,7 +3,7 @@
 exports[`chapterService > generateXMLFromChapter > should match snapshot for basic chapter > basic-chapter 1`] = `
 "<?xml version="1.0" encoding="UTF-8"?>
 <chapter name="Test Chapter">
-  <dialog id="1" character="Test Character" emotion="happy">
+  <dialog dlgseq="1" character="Test Character" emotion="happy">
     Hello world!
   </dialog>
 </chapter>"

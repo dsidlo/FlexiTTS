@@ -44,6 +44,27 @@ export interface UseTtsAlertsReturn {
 const DEFAULT_WS_URL = 'ws://localhost:8765';
 const RECONNECT_DELAY = 5000;
 
+const isTestEnvironment = (): boolean => {
+  try {
+    return Boolean(import.meta.env?.MODE === 'test' || import.meta.env?.VITEST || process.env.VITEST);
+  } catch {
+    return false;
+  }
+};
+
+const testSafeConsole = {
+  log: (...args: unknown[]) => {
+    if (!isTestEnvironment()) {
+      console.log(...args);
+    }
+  },
+  error: (...args: unknown[]) => {
+    if (!isTestEnvironment()) {
+      console.error(...args);
+    }
+  },
+};
+
 /**
  * Hook for listening to TTS service alerts via WebSocket
  * The TTS service sends alert messages that can be displayed to the user
@@ -114,7 +135,7 @@ export function useTtsAlerts(options: UseTtsAlertsOptions = {}): UseTtsAlertsRet
       ws.onopen = () => {
         connectAttemptInFlightRef.current = false;
         debugLog.info(logId, 'websocket open', { url: DEFAULT_WS_URL });
-        console.log('[TTS Alerts] Connected to TTS service');
+        testSafeConsole.log('[TTS Alerts] Connected to TTS service');
         isConnectedRef.current = true;
         setTtsWsStatus(true, false); // Connected but not yet known if ready
         onConnect?.();
@@ -135,10 +156,10 @@ export function useTtsAlerts(options: UseTtsAlertsOptions = {}): UseTtsAlertsRet
               alertType: (data as TtsAlertMessage).alertType,
               metadata: (data as TtsAlertMessage).metadata,
             });
-            console.log('[TTS Alerts] Received alert:', data.message);
+            testSafeConsole.log('[TTS Alerts] Received alert:', data.message);
             // Detect "TTS Service: Ready" alert and update ready status
             if (data.message === 'TTS Service: Ready') {
-              console.log('[TTS Alerts] Detected ready alert, updating status');
+              testSafeConsole.log('[TTS Alerts] Detected ready alert, updating status');
               setTtsWsStatus(true, true);
             }
             onAlert?.(data as TtsAlertMessage);
@@ -148,7 +169,7 @@ export function useTtsAlerts(options: UseTtsAlertsOptions = {}): UseTtsAlertsRet
               ready: (data as TtsStatusMessage).ready,
               cached: (data as TtsStatusMessage).cached,
             });
-            console.log('[TTS Alerts] Received status:', data.status);
+            testSafeConsole.log('[TTS Alerts] Received status:', data.status);
             // Update ready status from server status message
             const isReady = data.status === 'ready' || (data as TtsStatusMessage).ready;
             setTtsWsStatus(true, isReady);
@@ -158,14 +179,14 @@ export function useTtsAlerts(options: UseTtsAlertsOptions = {}): UseTtsAlertsRet
           debugLog.exception(logId, 'Failed to parse websocket message', err, {
             rawData: typeof event.data === 'string' ? event.data : '[non-string]',
           });
-          console.error('[TTS Alerts] Failed to parse message:', err);
+          testSafeConsole.error('[TTS Alerts] Failed to parse message:', err);
         }
       };
 
       ws.onerror = (error) => {
         connectAttemptInFlightRef.current = false;
         debugLog.error(logId, 'websocket error', { error });
-        console.error('[TTS Alerts] WebSocket error:', error);
+        testSafeConsole.error('[TTS Alerts] WebSocket error:', error);
         onError?.(error);
       };
 
@@ -175,7 +196,7 @@ export function useTtsAlerts(options: UseTtsAlertsOptions = {}): UseTtsAlertsRet
           shouldReconnect: shouldReconnectRef.current,
           reconnectDelayMs: RECONNECT_DELAY,
         });
-        console.log('[TTS Alerts] Disconnected from TTS service');
+        testSafeConsole.log('[TTS Alerts] Disconnected from TTS service');
         isConnectedRef.current = false;
         setTtsWsStatus(false, false); // Mark as disconnected
         onDisconnect?.();
@@ -184,7 +205,7 @@ export function useTtsAlerts(options: UseTtsAlertsOptions = {}): UseTtsAlertsRet
         if (shouldReconnectRef.current) {
           reconnectTimeoutRef.current = window.setTimeout(() => {
             debugLog.info(logId, 'attempting reconnect');
-            console.log('[TTS Alerts] Attempting to reconnect...');
+            testSafeConsole.log('[TTS Alerts] Attempting to reconnect...');
             connect();
           }, RECONNECT_DELAY);
         }
@@ -194,7 +215,7 @@ export function useTtsAlerts(options: UseTtsAlertsOptions = {}): UseTtsAlertsRet
       debugLog.info(logId, 'websocket ref assigned', { readyState: ws.readyState });
     } catch (err) {
       debugLog.exception(logId, 'Failed to connect websocket', err);
-      console.error('[TTS Alerts] Failed to connect:', err);
+      testSafeConsole.error('[TTS Alerts] Failed to connect:', err);
     }
   }, [enabled, onAlert, onStatus, onConnect, onDisconnect, onError]);
 

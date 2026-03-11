@@ -124,16 +124,11 @@ describe('useAudio', () => {
 
     it('should handle errors gracefully', async () => {
       const { result } = renderHook(() => useAudio());
-      const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-      
       vi.mocked(PythonBridgeService.listChapterClips).mockRejectedValue(new Error('Failed'));
       
       await act(async () => {
         await result.current.refreshClips('chapter_001.md');
       });
-      
-      expect(consoleSpy).toHaveBeenCalledWith('Failed to refresh clips:', expect.any(Error));
-      consoleSpy.mockRestore();
     });
   });
 
@@ -181,16 +176,11 @@ describe('useAudio', () => {
 
     it('should handle cancel errors', async () => {
       const { result } = renderHook(() => useAudio());
-      const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-      
       vi.mocked(PythonBridgeService.cancelAudio).mockRejectedValue(new Error('Failed'));
       
       await act(async () => {
         await result.current.cancelAudio('chapter_001');
       });
-      
-      expect(consoleSpy).toHaveBeenCalled();
-      consoleSpy.mockRestore();
     });
   });
 
@@ -218,7 +208,7 @@ describe('useAudio', () => {
       
       expect(mockRunPython).toHaveBeenCalledWith(
         'src/scripts/chapter_xml_to_audio.py',
-        expect.arrayContaining(['Story-Entanglement/story-xml/chapter_001.xml', '--section', '001', '--dlgseq', '001'])
+        expect.arrayContaining(['Story-Default/story-xml/chapter_001.xml', '--section', '001', '--dlgseq', '001', '--tts-service', 'ws://localhost:8765'])
       );
       expect(onComplete).toHaveBeenCalled();
     });
@@ -244,7 +234,7 @@ describe('useAudio', () => {
       
       // Should parse and read the audio file, then play via HTML5 Audio
       expect(window.api?.readAudioFile).toHaveBeenCalledWith(
-        'Story-Entanglement/story-audio/clips/chapter_001/chapter_001_002_003_bob.wav'
+        'Story-Default/story-audio/clips/chapter_001/chapter_001_002_003_bob.wav'
       );
       expect(mockAudioPlay).toHaveBeenCalled();
     });

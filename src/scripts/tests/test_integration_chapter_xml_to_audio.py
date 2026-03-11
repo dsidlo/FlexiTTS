@@ -99,12 +99,20 @@ def mock_env(tmp_path):
 def run_script(args, cwd=None, env=None):
     """Helper to run script via subprocess."""
     cmd = [sys.executable, str(SCRIPT_PATH)] + args
+    run_env = os.environ.copy()
+    if env:
+        run_env.update(env)
+    run_env.setdefault("PYTHONUTF8", "1")
+    run_env.setdefault("PYTHONIOENCODING", "utf-8")
+
     result = subprocess.run(
         cmd,
         capture_output=True,
         text=True,
+        encoding='utf-8',
+        errors='replace',
         cwd=cwd,
-        env=env or os.environ.copy(),
+        env=run_env,
         timeout=5  # Quick timeout to prevent hanging
     )
     return result

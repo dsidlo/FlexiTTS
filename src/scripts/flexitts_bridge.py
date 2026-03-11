@@ -20,12 +20,11 @@ from pathlib import Path
 # Add the project root to the path so we can import our modules
 project_root = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(project_root))
+# Ensure local script imports resolve before repository root modules in tests/runtime
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 # Import the enhanced config manager with security features
-from base_config_manager import ConfigManager, ConfigError, PathTraversalError
-
-# Create singleton instance
-config_manager = ConfigManager()
+from base_config_manager import ConfigManager, ConfigError, PathTraversalError, config_manager
 
 
 def _sanitize_directory_name(name: str) -> str:

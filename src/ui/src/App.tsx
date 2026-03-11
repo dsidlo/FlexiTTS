@@ -10,6 +10,32 @@ import { alertService, alerts } from './services/alertService';
 import { generateXMLFromChapter } from './services/chapterService';
 import { debugLog } from './utils/debugLogger';
 
+const isTestEnvironment = (): boolean => {
+  try {
+    return Boolean(import.meta.env?.MODE === 'test' || import.meta.env?.VITEST || process.env.VITEST);
+  } catch {
+    return false;
+  }
+};
+
+const testSafeConsole = {
+  log: (...args: unknown[]) => {
+    if (!isTestEnvironment()) {
+      console.log(...args);
+    }
+  },
+  warn: (...args: unknown[]) => {
+    if (!isTestEnvironment()) {
+      console.warn(...args);
+    }
+  },
+  error: (...args: unknown[]) => {
+    if (!isTestEnvironment()) {
+      console.error(...args);
+    }
+  },
+};
+
 function App() {
   const logId = 'App';
   // Story management state - MUST be declared before hooks that use it
@@ -118,12 +144,12 @@ function App() {
   }, []);
 
   const handleTtsConnect = useCallback(() => {
-    console.log('[App] Connected to TTS alerts');
+    testSafeConsole.log('[App] Connected to TTS alerts');
     alerts.success('TTS Service: Connected');
   }, []);
 
   const handleTtsDisconnect = useCallback(() => {
-    console.log('[App] Disconnected from TTS alerts');
+    testSafeConsole.log('[App] Disconnected from TTS alerts');
   }, []);
 
   // Subscribe to internal alerts
@@ -167,26 +193,26 @@ function App() {
         try {
           stories = await PythonBridgeService.listStories();
         } catch (storyErr) {
-          console.warn('Failed to list stories, falling back to default:', storyErr);
+          testSafeConsole.warn('Failed to list stories, falling back to default:', storyErr);
           stories = [];
         }
         
         let current = '';
         try {
           current = await PythonBridgeService.getCurrentStory();
-          console.log('[App.tsx] getCurrentStory returned:', current);
+          testSafeConsole.log('[App.tsx] getCurrentStory returned:', current);
         } catch (err) {
-          console.warn('Failed to get current story:', err);
+          testSafeConsole.warn('Failed to get current story:', err);
         }
         
-        console.log('[App.tsx] Available stories:', stories);
-        console.log('[App.tsx] Current story from state:', current);
+        testSafeConsole.log('[App.tsx] Available stories:', stories);
+        testSafeConsole.log('[App.tsx] Current story from state:', current);
         
         // Default to first story or use Story-Default for backward compatibility
         let selectedStory = stories[0] || null;
         if (current) {
           const found = stories.find(s => s.directory_name === current);
-          console.log('[App.tsx] Found story match:', found);
+          testSafeConsole.log('[App.tsx] Found story match:', found);
           if (found) selectedStory = found;
         } else if (!current && stories.length > 0) {
           // Fallback: try to get current-story from global config
@@ -194,23 +220,23 @@ function App() {
             const globalConfig = await PythonBridgeService.loadGlobalConfig();
             const configCurrentStory = globalConfig?.FlexiTTS?.['current-story'];
             const storyPrefix = globalConfig?.FlexiTTS?.['story-dir-prefix'] || 'Story-';
-            console.log('[App.tsx] Global config current-story:', configCurrentStory);
+            testSafeConsole.log('[App.tsx] Global config current-story:', configCurrentStory);
             if (configCurrentStory) {
               const fullDirName = `${storyPrefix}${configCurrentStory}`;
               const found = stories.find(s => s.directory_name === fullDirName);
-              console.log('[App.tsx] Found story from global config:', found);
+              testSafeConsole.log('[App.tsx] Found story from global config:', found);
               if (found) {
                 selectedStory = found;
                 current = fullDirName;
               }
             }
           } catch (err) {
-            console.warn('[App.tsx] Failed to load global config for fallback:', err);
+            testSafeConsole.warn('[App.tsx] Failed to load global config for fallback:', err);
           }
         }
         
         setCurrentStory(selectedStory);
-        console.log('[App.tsx] Selected story:', selectedStory);
+        testSafeConsole.log('[App.tsx] Selected story:', selectedStory);
         debugLog.info(`${logId}:init`, 'Selected story resolved', { selectedStory });
         
         // Set current story in main process
@@ -218,7 +244,7 @@ function App() {
           try {
             await PythonBridgeService.setCurrentStory(selectedStory.directory_name);
           } catch (err) {
-            console.warn('Failed to set current story:', err);
+            testSafeConsole.warn('Failed to set current story:', err);
           }
         }
         
@@ -226,8 +252,8 @@ function App() {
         let cfg;
         try {
           const storyDir = selectedStory?.directory_name;
-          console.log(`[App.tsx] Loading story config for: ${storyDir || 'NULL (legacy fallback)'}`);
-          console.log(`[App.tsx] Selected story object:`, selectedStory);
+          testSafeConsole.log(`[App.tsx] Loading story config for: ${storyDir || 'NULL (legacy fallback)'}`);
+          testSafeConsole.log(`[App.tsx] Selected story object:`, selectedStory);
           cfg = selectedStory 
             ? await PythonBridgeService.loadStoryConfigForStory(selectedStory.directory_name)
             : await PythonBridgeService.loadStoryConfig();
@@ -239,10 +265,10 @@ function App() {
             clipsDir: cfg?.global?.clips,
             voicesDir: cfg?.global?.voices,
           });
-          console.log(`[App.tsx] Successfully loaded config for: ${storyDir || 'legacy'}`);
+          testSafeConsole.log(`[App.tsx] Successfully loaded config for: ${storyDir || 'legacy'}`);
         } catch (err) {
-          console.error('[App.tsx] Failed to load story config:', err);
-          console.error('[App.tsx] Error details:', {
+          testSafeConsole.error('[App.tsx] Failed to load story config:', err);
+          testSafeConsole.error('[App.tsx] Error details:', {
             selectedStory: selectedStory?.directory_name,
             error: err instanceof Error ? err.message : String(err)
           });
@@ -257,7 +283,7 @@ function App() {
             ? await PythonBridgeService.listChapterFilesForStory(selectedStory.directory_name)
             : await PythonBridgeService.listChapterFiles();
         } catch (err) {
-          console.warn('Failed to list chapter files:', err);
+          testSafeConsole.warn('Failed to list chapter files:', err);
           list = [];
         }
         setChapterList(list);
@@ -615,10 +641,11 @@ function App() {
             <h2 style={{ marginTop: 0 }}>Dialogs</h2>
             {chapter?.dialogs.map(dialog => {
               const isFiltered = !!selectedCharacterFilter && dialog.character !== selectedCharacterFilter;
-              const displayId = dialog.sectionId ? `${dialog.sectionId}.${dialog.dlgseq}` : dialog.dlgseq;
+              const dialogSeq = String(dialog.dlgseq || dialog.attributes?.dlgseq || dialog.attributes?.id || '0');
+              const displayId = dialog.sectionId ? `${dialog.sectionId}.${dialogSeq}` : dialogSeq;
               const chapNum = chapter.fileName.match(/(\d+)/)?.[1]?.padStart(3, '0') || '000';
-              const secStr = (dialog.sectionId || '0').padStart(3, '0');
-              const dlgStr = dialog.dlgseq.padStart(3, '0');
+              const secStr = String(dialog.sectionId || '0').padStart(3, '0');
+              const dlgStr = dialogSeq.padStart(3, '0');
               const speakerFileName = dialog.character;
               const clipPrefix = `chapter_${chapNum}_${secStr}_${dlgStr}_${speakerFileName}`;
               const hasClip = availableClips.some(c => c === `${clipPrefix}.wav` || c.startsWith(`${clipPrefix}_s`));
