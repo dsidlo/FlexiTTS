@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld('api', {
   listChapterClips: (chapterName: string) => ipcRenderer.invoke('list-chapter-clips', chapterName),
   listChapterFiles: () => ipcRenderer.invoke('list-chapter-files'),
   checkChapterAudio: (chapterName: string) => ipcRenderer.invoke('check-chapter-audio', chapterName),
+  checkChapterRenderState: (chapterName: string, storyDir: string) => ipcRenderer.invoke('check-chapter-render-state', chapterName, storyDir),
   playSoundFile: (filePath: string) => ipcRenderer.invoke('play-sound-file', filePath),
   killProcess: (matchString: string) => ipcRenderer.invoke('kill-process', matchString),
   // FlexiTTS Global Config and Story Management

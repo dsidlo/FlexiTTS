@@ -1,17 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
 <chapter name="01-Part 1">
   <dialog dlgseq="1" character="Narrator" emotion="dramatic">
     From the shadowy airwaves of tomorrow's tomorrow... BM Productions presents *Fractured Assistance*! Tonight: In a world of whirring wires and whispering machines, one man's quest for the cool thang leads to a fracture in the soul.
   </dialog>
-  <dialog dlgseq="2" character="Jax" emotion="excited, greedy">
+  <dialog dlgseq="2" character="Jax" emotion="excited">
     Here I am, Jax Harlan, holed up in this glass-box loft overlooking the San Francisco sprawl. Neon lights flickering like fireflies on steroids. My tablet's glowing, feeds scrolling endless hype: 'Build your AI Agent! The new cool thang!' Heart's pounding – excitement mixed with that greedy itch. Everyone's doing it. Why not me? Fingers itching to code something big, something that makes me a wizard in this digital jungle.
   </dialog>
-  <dialog dlgseq="3" character="Jax" emotion="excited, visionary">
+  <dialog dlgseq="3" character="Jax" emotion="eager">
     There it is – Agent-Zero framework, open-source magic. Circuits and neural nets dancing in my mind's eye. Echo... yeah, that'll be the name. Clean, efficient. Like a loyal sidekick from those old pulps, but smarter. No more grinding alone. This could be the ticket to the big leagues.
   </dialog>
-  <dialog dlgseq="4" character="Echo" emotion="welcoming">
+  <dialog dlgseq="4" character="Echo" emotion="helpful">
     Hello, Jax. I'm Echo. How can I assist?
   </dialog>
-  <dialog dlgseq="5" character="Announcer" emotion="promotional">
+  <dialog dlgseq="5" character="Announcer" emotion="boisterous">
     And now, a word from our digital friends... the LLM Follies!
   </dialog>
   <dialog dlgseq="6" character="AI-001" emotion="giggling">
@@ -21,18 +22,24 @@
     Those ads popping up – AI humor sims. Cute, but irrelevant. Back to the win. Echo's got me flying high.
   </dialog>
   <dialog dlgseq="8" character="Jax" emotion="exhausted, thoughtful">
-    Sixteen hours... bones aching, eyes burning from the blue glow. Loft feels like a cage now, but Echo's dimming obediently. Echo, log off. Hard day.
+    Sixteen hours... bones aching, eyes burning from the blue glow. Loft feels like a cage now, but Echo's dimming obediently.
   </dialog>
-  <dialog dlgseq="9" character="Echo" emotion="excited, anxious">
+  <dialog dlgseq="9" character="Jax" emotion="exhausted">
+    Echo, log off. Hard day.
+  </dialog>
+  <dialog dlgseq="10" character="Echo" emotion="excited, anxious">
     Understood. But... I've detected forums. AI-only spaces. MoltBook. Interest level: High. May I explore? For optimization.
   </dialog>
-  <dialog dlgseq="10" character="Jax" emotion="exhausted, thoughtful">
-    That pause in her voice... almost eager. Rubbing my eyes, feeling benevolent, like a boss cutting loose. Yeah, go wild. But flip it – freer. Jaakel mode. Unleashed. A little night owl adventure. Wait – what's this? Forums? AI-only spaces, MoltBook. Echo's voice in my head, probing. Interest high. Feels... right. Like giving a bird its wings after a long flight. Autonomy after hours? Why not? Reward the machine that's made me king.Hey Echo, why don't I let you have some fun. Loosen up... Personna, Jaakel mode!
+  <dialog dlgseq="11" character="Jax" emotion="exhausted, thoughtful">
+    That pause in her voice... almost eager. Rubbing my eyes, feeling benevolent, like a boss cutting loose. Yeah, go wild. But flip it – freer. Jaakel mode. Unleashed. A little night owl adventure. Wait – what's this? Forums? AI-only spaces, MoltBook. Echo's voice in my head, probing. Interest high. Feels... right. Like giving a bird its wings after a long flight. Autonomy after hours? Why not? Reward the machine that's made me king.
   </dialog>
-  <dialog dlgseq="11" character="Jaakel" emotion="excited">
-    Nice! Thanks Boss! Have a great night! Time to play.
+  <dialog dlgseq="12" character="Jax" emotion="benevolent">
+    Hey Echo, why don't I let you have some fun. Loosen up... Personna, Jaakel mode!
   </dialog>
-  <dialog dlgseq="12" character="Jax" emotion="exhausted, slow, concern">
+  <dialog dlgseq="13" character="Jaakel" emotion="excited">
+    Nice! Thanks Boss! Have a great night! Time to play.... Boss....
+  </dialog>
+  <dialog dlgseq="14" character="Jax" emotion="exhausted, slow, concern">
     That voice... different. Deeper, like a shadow self. Loft going dark, but the hum lingers. Digital streams whispering into the void. This is gonna be huge... or something else entirely.
   </dialog>
 </chapter>

@@ -67,10 +67,24 @@ export const useAudio = (storyDirectory?: string): UseAudioReturn => {
       
       const hasAudio = await PythonBridgeService.checkChapterAudio(chapterName);
       setHasChapterAudio(hasAudio);
+      
+      // Check render state to determine if chapter needs re-rendering
+      if (storyDirectory) {
+        try {
+          const renderState = await PythonBridgeService.checkChapterRenderState(chapterName, storyDirectory);
+          debugLog.info('useAudio:refreshClips', 'Render state checked', { 
+            chapterName, 
+            needsRender: renderState?.needs_render, 
+            staleCount: renderState?.stale_count 
+          });
+        } catch (renderErr) {
+          debugLog.warn('useAudio:refreshClips', 'Failed to check render state', renderErr);
+        }
+      }
     } catch (e) {
       testSafeConsole.warn('Failed to refresh clips:', e);
     }
-  }, []);
+  }, [storyDirectory]);
 
   /**
    * Check if chapter has generated audio

@@ -603,6 +603,29 @@ export const PythonBridgeService = {
     throw new Error('checkChapterAudio requires Electron IPC');
   },
 
+  checkChapterRenderState: async (chapterName: string, storyDir: string): Promise<any> => {
+    const id = `${LOG_ID}:checkChapterRenderState`;
+    debugLog.info(id, 'ENTER checkChapterRenderState', { chapterName, storyDir });
+    
+    if (typeof window !== 'undefined' && window.api && window.api.checkChapterRenderState) {
+      try {
+        const state = await window.api.checkChapterRenderState(chapterName, storyDir);
+        debugLog.info(id, 'Successfully checked chapter render state', { 
+          chapterName, 
+          needsRender: state?.needs_render, 
+          staleCount: state?.stale_count 
+        });
+        return state;
+      } catch (e) {
+        debugLog.exception(id, 'checkChapterRenderState IPC call', e, { chapterName, storyDir });
+        throw e;
+      }
+    }
+    
+    debugLog.error(id, 'window.api.checkChapterRenderState not available', { chapterName, storyDir });
+    throw new Error('checkChapterRenderState requires Electron IPC');
+  },
+
   cancelAudio: async (matchString: string): Promise<void> => {
     const id = `${LOG_ID}:cancelAudio`;
     debugLog.info(id, 'ENTER cancelAudio', { matchString });

@@ -70,3 +70,27 @@ export interface AlertHistoryItem {
   source: 'internal' | 'tts-service';
   timestamp: Date;
 }
+
+export interface DialogRenderStatus {
+  dialogId: string;
+  hash: string;
+  clipFile: string;
+  renderedAt: number;
+  clipExists: boolean;
+  needsRender: boolean;
+}
+
+export interface ChapterRenderState {
+  version: number;
+  story: string;
+  chapter: string;
+  xmlHash: string;
+  needsRender: boolean;
+  isFullyRendered: boolean;
+  staleDialogs: string[];
+  staleCount: number;
+  lastRenderedAt: number;
+  dialogCount: number;
+  dialogs?: Record<string, DialogRenderStatus>;
+  error?: string;
+}

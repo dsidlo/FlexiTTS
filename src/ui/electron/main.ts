@@ -497,7 +497,11 @@ app.on('activate', () => {
 // IPC Handlers for Python Scripts
 // SECURITY: All handlers validate paths before file operations
 
-ipcMain.handle('run-python-script', async (event, scriptPath: string, args: string[]) => {
+/**
+ * Execute a Python script and capture output
+ * Reusable function for running Python scripts from main process
+ */
+async function executePythonScript(scriptPath: string, args: string[]): Promise<{ stdout: string; stderr: string; code: number | null }> {
   const config = await loadGlobalConfig();
   const storiesDir = getStoriesDirFromConfig(config);
 
@@ -506,7 +510,7 @@ ipcMain.handle('run-python-script', async (event, scriptPath: string, args: stri
       // Validate arguments for security
       const validatedArgs = validateScriptArguments(args);
       
-      log.info(`[IPC] run-python-script called: ${scriptPath} ${validatedArgs.join(' ')}`);
+      log.info(`[Python] Executing: ${scriptPath} ${validatedArgs.join(' ')}`);
       
       // Security: Validate script path is within project
       const fullScriptPath = path.join(projectRoot, scriptPath);
@@ -522,7 +526,7 @@ ipcMain.handle('run-python-script', async (event, scriptPath: string, args: stri
         }
         return arg;
       });
-      log.info(`[IPC] run-python-script resolved args: ${resolvedArgs.join(' ')}`);
+      log.info(`[Python] Resolved args: ${resolvedArgs.join(' ')}`);
       
       // Check if it's the validate_config.py call that might fail silently if uv isn't set up yet
       const isValidationCall = scriptPath.includes('validate_config.py');
@@ -539,38 +543,47 @@ ipcMain.handle('run-python-script', async (event, scriptPath: string, args: stri
       let errorOutput = '';
 
       pythonProcess.stdout.on('data', (data) => {
-        log.info(`[Python stdout] ${data.toString()}`);
         output += data.toString();
       });
 
       pythonProcess.stderr.on('data', (data) => {
-        log.error(`[Python stderr] ${data.toString()}`);
         errorOutput += data.toString();
       });
 
       pythonProcess.on('close', (code, signal) => {
         activeProcesses.delete(procId);
         log.info(`[Python] Process exited with code ${code} signal ${signal}`);
+        
         if (signal === 'SIGTERM' || signal === 'SIGKILL') {
            reject(new Error(`Process cancelled by user`));
            return;
         }
         
-        if (code !== 0) {
+        if (code !== 0 && errorOutput.trim()) {
           if (isValidationCall) {
               log.warn(`[Python] Ignoring validation error code ${code}`);
-              resolve(output);
+              resolve({ stdout: output, stderr: errorOutput, code: 0 });
           } else {
               reject(new Error(errorOutput || `Process exited with code ${code}`));
           }
         } else {
-          resolve(output);
+          resolve({ stdout: output, stderr: errorOutput, code });
         }
       });
     } catch (e: any) {
       reject(new Error(`Security validation failed: ${e.message}`));
     }
   });
+}
+
+// IPC handler - wrapper around executePythonScript
+ipcMain.handle('run-python-script', async (event, scriptPath: string, args: string[]) => {
+  try {
+    const result = await executePythonScript(scriptPath, args);
+    return result.stdout;
+  } catch (e: any) {
+    throw e;
+  }
 });
 
 ipcMain.handle('kill-process', async (event, matchString: string) => {
@@ -1158,6 +1171,58 @@ ipcMain.handle('check-chapter-audio', async (event, chapterName: string) => {
   } catch (err) {
     log.error(`Failed to check chapter audio for ${chapterName}: ${err}`);
     return false;
+  }
+});
+
+// Check chapter render state
+ipcMain.handle('check-chapter-render-state', async (event, chapterName: string, storyDir: string) => {
+  try {
+    const stem = path.basename(chapterName, path.extname(chapterName));
+    const config = await loadGlobalConfig();
+    const storiesDir = getStoriesDirFromConfig(config);
+    
+    // Validate paths
+    if (!isPathWithinParent(storiesDir, projectRoot)) {
+      throw new Error('Security: Stories path outside project root');
+    }
+    
+    const xmlPath = path.join(storiesDir, storyDir, 'story-xml', chapterName);
+    const storyName = storyDir.replace('Story-', '');
+    
+    // Call Python script to check render state
+    log.info(`Checking render state for ${chapterName} in ${storyDir}`);
+    
+    const result = await executePythonScript('src/scripts/chapter_render_state.py', [
+      xmlPath,
+      storyDir,
+      stem,
+      storyName
+    ]);
+    
+    // Parse JSON output
+    try {
+      const jsonOutput = JSON.parse(result.stdout);
+      log.info(`Render state check complete: needs_render=${jsonOutput.needs_render}, stale_count=${jsonOutput.stale_count}`);
+      return jsonOutput;
+    } catch (parseErr) {
+      log.error(`Failed to parse render state JSON: ${parseErr}`);
+      return {
+        needs_render: false,
+        is_fully_rendered: true,
+        stale_dialogs: [],
+        stale_count: 0,
+        error: 'Failed to parse render state'
+      };
+    }
+  } catch (err) {
+    log.error(`Failed to check chapter render state for ${chapterName}: ${err}`);
+    return {
+      needs_render: false,
+      is_fully_rendered: true,
+      stale_dialogs: [],
+      stale_count: 0,
+      error: (err as Error).message
+    };
   }
 });
 

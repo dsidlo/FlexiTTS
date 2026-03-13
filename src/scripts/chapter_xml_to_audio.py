@@ -16,6 +16,13 @@ from xml.etree import ElementTree as ET
 from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass
 from chapter_validate_xml import validate_and_fix_xml
+from chapter_render_state import (
+    load_render_state,
+    save_render_state,
+    remove_stale_clip_files,
+    update_render_state_with_new_clips,
+    ChapterRenderState
+)
 from log_utils import setup_script_logging
 
 logger = setup_script_logging('chapter_xml_to_audio')
@@ -615,6 +622,51 @@ def main():
         chapter_clip_dir = clips_dir / xml_path.stem
         chapter_clip_dir.mkdir(parents=True, exist_ok=True)
 
+        # Load and check render state
+        render_state = load_render_state(clips_dir, xml_path.stem)
+        render_state.story = story_name
+        render_state.chapter = xml_path.stem[:3].lstrip('0') or '001'
+        render_state.xml_path = str(xml_path)
+        render_state.clips_dir = str(chapter_clip_dir)
+        
+        from chapter_render_state import compute_file_md5, parse_xml_dialogs
+        render_state.xml_hash = compute_file_md5(xml_path)
+        
+        # Check for stale/missing dialogs
+        current_dialogs = parse_xml_dialogs(xml_path)
+        stale_dialogs = []
+        
+        for dialog_id, current_hash in current_dialogs.items():
+            stored_state = render_state.dialogs.get(dialog_id)
+            
+            if stored_state is None:
+                stale_dialogs.append(dialog_id)
+                log_debug("main:dialog_new", dialog_id=dialog_id, reason="never_rendered")
+                continue
+            
+            if stored_state.hash != current_hash:
+                stale_dialogs.append(dialog_id)
+                log_debug("main:dialog_changed", dialog_id=dialog_id, reason="hash_mismatch")
+                continue
+            
+            # Check if clip file still exists
+            if stored_state.clip_file:
+                clip_path = chapter_clip_dir / stored_state.clip_file
+                if not clip_path.exists():
+                    stale_dialogs.append(dialog_id)
+                    stored_state.clip_exists = False
+                    log_debug("main:dialog_missing", dialog_id=dialog_id, reason="file_deleted")
+        
+        render_state.stale_dialogs = stale_dialogs
+        render_state.needs_render = len(stale_dialogs) > 0
+        
+        # Delete stale clip files to force re-rendering
+        if stale_dialogs and args.create_missing_clips:
+            log_debug("main:deleting_stale_clips", count=len(stale_dialogs))
+            removed = remove_stale_clip_files(render_state, clips_dir, xml_path.stem)
+            if removed:
+                log_debug("main:stale_clips_removed", count=len(removed), files=removed)
+        
         all_generated_clips = []
         expected_clip_paths: List[Path] = []
 
@@ -938,6 +990,21 @@ def main():
                         print(f"[RESOURCE-ACCESS] Post-effects applied", file=sys.stderr)
                         print(f"  audio_path: {final_path}", file=sys.stderr)
 
+                    # Update render state with newly generated clips
+                    if not args.dry_run:
+                        updated_state = update_render_state_with_new_clips(
+                            render_state,
+                            all_generated_clips,
+                            clips_dir,
+                            xml_path.stem
+                        )
+                        log_debug(
+                            "main:render_state_updated",
+                            dialog_count=len(updated_state.dialogs),
+                            is_fully_rendered=updated_state.is_fully_rendered,
+                            needs_render=updated_state.needs_render,
+                        )
+                    
                     stale_removed_count, stale_removed_paths, stale_removed_details = cleanup_stale_chapter_clips(
                         chapter_clip_dir,
                         expected_clip_paths,

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { PythonBridgeService } from '../services/pythonBridge';
 import { debugLog } from '../utils/debugLogger';
 import { StoryDropdown } from './StoryDropdown';
@@ -37,6 +37,14 @@ export const TopBar: React.FC<TopBarProps> = ({
   const [isRendering, setIsRendering] = useState(false);
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
   const [showAlertHistory, setShowAlertHistory] = useState(false);
+  const [needsRender, setNeedsRender] = useState(false);
+  const [staleCount, setStaleCount] = useState(0);
+
+  // Check render state when chapter changes
+  useEffect(() => {
+    if (!chapter || !filePath) return;
+    checkRenderState();
+  }, [chapter, filePath, currentStory]);
 
   if (!chapter) {
     return (
@@ -98,6 +106,26 @@ export const TopBar: React.FC<TopBarProps> = ({
     }
   };
 
+  const checkRenderState = async () => {
+    const chapterName = filePath.split('/').pop()?.replace('.md', '.xml') || 'Unknown.xml';
+    const storyDir = currentStory?.directory_name || 'Story-Default';
+    
+    try {
+      const renderState = await PythonBridgeService.checkChapterRenderState(chapterName, storyDir);
+      setNeedsRender(renderState?.needs_render || false);
+      setStaleCount(renderState?.stale_count || 0);
+      debugLog.info('TopBar:checkRenderState', 'Render state checked', {
+        chapterName,
+        needsRender: renderState?.needs_render,
+        staleCount: renderState?.stale_count
+      });
+    } catch (err) {
+      debugLog.warn('TopBar:checkRenderState', 'Failed to check render state', err);
+      setNeedsRender(false);
+      setStaleCount(0);
+    }
+  };
+
   const handleRenderChapter = async () => {
     const chapterName = filePath.split('/').pop()?.replace('.md', '.xml') || 'Unknown.xml';
     
@@ -134,6 +162,9 @@ export const TopBar: React.FC<TopBarProps> = ({
          ]);
          
          if (onRenderComplete) onRenderComplete();
+         
+         // Re-check render state after rendering completes
+         await checkRenderState();
       } else {
         console.warn("API not available for rendering");
       }
@@ -391,7 +422,7 @@ export const TopBar: React.FC<TopBarProps> = ({
           onClick={handleRenderChapter} 
           style={{ 
             padding: '4px 16px',
-            backgroundColor: isRendering ? '#f44336' : (hasChapterAudio ? '#4CAF50' : '#888'),
+            backgroundColor: isRendering ? '#f44336' : (needsRender ? '#ff9800' : (hasChapterAudio ? '#4CAF50' : '#888')),
             color: 'white',
             border: 'none',
             borderRadius: '4px',
@@ -401,7 +432,11 @@ export const TopBar: React.FC<TopBarProps> = ({
             gap: '8px',
             opacity: 1
           }}
-          title={isRendering ? "Stop rendering" : (hasChapterAudio ? "Re-render chapter" : "Render full chapter")}
+          title={
+            isRendering ? "Stop rendering" : 
+            (needsRender ? `Re-render chapter (${staleCount} dialogs need update)` : 
+             (hasChapterAudio ? "Re-render chapter" : "Render full chapter"))
+          }
         >
           {isRendering ? (
             <>
