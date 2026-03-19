@@ -16,13 +16,6 @@ from xml.etree import ElementTree as ET
 from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass
 from chapter_validate_xml import validate_and_fix_xml
-from chapter_render_state import (
-    load_render_state,
-    save_render_state,
-    remove_stale_clip_files,
-    update_render_state_with_new_clips,
-    ChapterRenderState
-)
 from log_utils import setup_script_logging
 
 logger = setup_script_logging('chapter_xml_to_audio')
@@ -156,7 +149,7 @@ def parse_xml(xml_path: Path) -> List[Utterance]:
                 dlgseq = normalize_sequence_value(node.attrib.get("dlgseq") or legacy_id, "000")
                 emotion = node.attrib.get("emotion", "neutral")
                 post_effects = node.attrib.get("post-effects")
-                speaker = node.attrib.get("character", "unknown") if node.tag == "dialog" else "narrator"
+                speaker = node.attrib.get("character", "unknown") if node.tag == "dialog" else "Narrator"
                 text = normalize_ws("".join(node.itertext()))
                 if legacy_id and "dlgseq" not in node.attrib:
                     logger.warning(f"parse_xml found legacy id without dlgseq xml_path={xml_path} legacy_id={legacy_id}")
@@ -306,49 +299,6 @@ def emit_render_alert(provider, message: str, alert_type: str = "info", metadata
         logger.warning(f"emit_render_alert failed message={message} error={e}")
         log_debug("emit_render_alert:exception", error_type=type(e).__name__, error=str(e), message=message)
         return False
-
-
-def move_path_to_trash_or_delete(path: Path) -> str:
-    """Best-effort stale clip cleanup.
-
-    Returns the cleanup method used: 'trash' or 'delete'.
-    """
-    try:
-        from send2trash import send2trash  # type: ignore
-        send2trash(str(path))
-        return "trash"
-    except Exception:
-        path.unlink(missing_ok=True)
-        return "delete"
-
-
-def cleanup_stale_chapter_clips(chapter_clip_dir: Path, keep_paths: List[Path]) -> Tuple[int, List[str], List[Dict[str, str]]]:
-    """Remove/trash stale wav clips after full chapter render.
-
-    Keeps only the expected dialog-associated clip files for the current chapter.
-    """
-    keep_set = {str(path.resolve()) for path in keep_paths}
-    removed_paths: List[str] = []
-    removed_details: List[Dict[str, str]] = []
-
-    if not chapter_clip_dir.exists():
-        return 0, removed_paths, removed_details
-
-    for wav_path in sorted(chapter_clip_dir.glob("*.wav")):
-        resolved = str(wav_path.resolve())
-        if resolved in keep_set:
-            continue
-        cleanup_method = move_path_to_trash_or_delete(wav_path)
-        removed_paths.append(str(wav_path))
-        removed_details.append({"path": str(wav_path), "method": cleanup_method})
-        log_debug(
-            "main:stale_clip_removed",
-            clip_path=str(wav_path),
-            method=cleanup_method,
-            chapter_clip_dir=str(chapter_clip_dir),
-        )
-
-    return len(removed_paths), removed_paths, removed_details
 
 
 def main():
@@ -622,50 +572,9 @@ def main():
         chapter_clip_dir = clips_dir / xml_path.stem
         chapter_clip_dir.mkdir(parents=True, exist_ok=True)
 
-        # Load and check render state
-        render_state = load_render_state(clips_dir, xml_path.stem)
-        render_state.story = story_name
-        render_state.chapter = xml_path.stem[:3].lstrip('0') or '001'
-        render_state.xml_path = str(xml_path)
-        render_state.clips_dir = str(chapter_clip_dir)
-        
-        from chapter_render_state import compute_file_md5, parse_xml_dialogs
-        render_state.xml_hash = compute_file_md5(xml_path)
-        
-        # Check for stale/missing dialogs
-        current_dialogs = parse_xml_dialogs(xml_path)
-        stale_dialogs = []
-        
-        for dialog_id, current_hash in current_dialogs.items():
-            stored_state = render_state.dialogs.get(dialog_id)
-            
-            if stored_state is None:
-                stale_dialogs.append(dialog_id)
-                log_debug("main:dialog_new", dialog_id=dialog_id, reason="never_rendered")
-                continue
-            
-            if stored_state.hash != current_hash:
-                stale_dialogs.append(dialog_id)
-                log_debug("main:dialog_changed", dialog_id=dialog_id, reason="hash_mismatch")
-                continue
-            
-            # Check if clip file still exists
-            if stored_state.clip_file:
-                clip_path = chapter_clip_dir / stored_state.clip_file
-                if not clip_path.exists():
-                    stale_dialogs.append(dialog_id)
-                    stored_state.clip_exists = False
-                    log_debug("main:dialog_missing", dialog_id=dialog_id, reason="file_deleted")
-        
-        render_state.stale_dialogs = stale_dialogs
-        render_state.needs_render = len(stale_dialogs) > 0
-        
-        # Delete stale clip files to force re-rendering
-        if stale_dialogs and args.create_missing_clips:
-            log_debug("main:deleting_stale_clips", count=len(stale_dialogs))
-            removed = remove_stale_clip_files(render_state, clips_dir, xml_path.stem)
-            if removed:
-                log_debug("main:stale_clips_removed", count=len(removed), files=removed)
+        # Renderer is now decoupled from state management.
+        # State logic (stale detection, render state tracking) is handled by the UI.
+        # This script only: parses XML, applies filters, renders clips, returns results.
         
         all_generated_clips = []
         expected_clip_paths: List[Path] = []
@@ -946,7 +855,20 @@ def main():
                     )
                     all_generated_clips.append((silence_utt, silence_path, 999))
 
-        # Concatenate final audio
+        # Render state management is now handled by the UI layer.
+        # This script only generates clips and returns results.
+        # The UI is responsible for:
+        #   - Computing stale dialogs from XML + persisted state
+        #   - Setting needs_render, stale_dialogs, is_fully_rendered
+        #   - Updating .chapter_rendered.json from UI-controlled flow
+        if all_generated_clips and not args.dry_run:
+            log_debug(
+                "main:clips_generated",
+                clip_count=len(all_generated_clips),
+                is_selective=bool(args.section) or bool(args.dlgseq),
+            )
+
+        # Concatenate final audio (only for full chapter render)
         if all_generated_clips:
             if args.section or args.dlgseq:
                 print("Selective regeneration - final audio not updated")
@@ -990,32 +912,32 @@ def main():
                         print(f"[RESOURCE-ACCESS] Post-effects applied", file=sys.stderr)
                         print(f"  audio_path: {final_path}", file=sys.stderr)
 
-                    # Update render state with newly generated clips
-                    if not args.dry_run:
-                        updated_state = update_render_state_with_new_clips(
-                            render_state,
-                            all_generated_clips,
-                            clips_dir,
-                            xml_path.stem
-                        )
-                        log_debug(
-                            "main:render_state_updated",
-                            dialog_count=len(updated_state.dialogs),
-                            is_fully_rendered=updated_state.is_fully_rendered,
-                            needs_render=updated_state.needs_render,
-                        )
-                    
-                    stale_removed_count, stale_removed_paths, stale_removed_details = cleanup_stale_chapter_clips(
-                        chapter_clip_dir,
-                        expected_clip_paths,
-                    )
-                    log_debug(
-                        "main:stale_clip_cleanup_complete",
-                        chapter_clip_dir=str(chapter_clip_dir),
-                        expected_clip_count=len(expected_clip_paths),
-                        removed_count=stale_removed_count,
-                        removed_paths=stale_removed_paths,
-                    )
+                    # Update render state with newly generated clips (if render state module available)
+                    # This ensures timestamps and clip mappings are properly maintained
+                    try:
+                        from chapter_render_state import update_render_state_with_new_clips, load_render_state, get_state_file_path
+                        state_path = get_state_file_path(Path("Stories") / story_name / "story-audio" / "clips", xml_path.stem)
+                        if state_path.exists():
+                            state = load_render_state(
+                                Path("Stories") / story_name / "story-audio" / "clips",
+                                xml_path.stem
+                            )
+                            updated_state = update_render_state_with_new_clips(
+                                state, all_generated_clips,
+                                Path("Stories") / story_name / "story-audio" / "clips",
+                                xml_path.stem,
+                                is_full_render=True
+                            )
+                            logger.info(f"Updated render state with {len(all_generated_clips)} clips")
+                        else:
+                            logger.debug("No existing render state file, skipping update")
+                    except ImportError:
+                        logger.debug("chapter_render_state module not available, skipping render state update")
+                    except Exception as e:
+                        logger.warning(f"Failed to update render state: {e}")
+
+                    # Stale clip cleanup is now handled by the UI layer.
+                    # The renderer only generates clips; UI manages state and cleanup.
 
                     chapter_success_metadata = {
                         "story": story_name,
@@ -1026,8 +948,6 @@ def main():
                         "final_audio_path": str(final_path),
                         "clip_count": len(all_generated_clips),
                         "sample_rate": final_sr,
-                        "stale_clip_cleanup_removed_count": stale_removed_count,
-                        "stale_clip_cleanup_removed": stale_removed_details,
                     }
                     log_debug(
                         "main:chapter_render_alert_success_attempt",
@@ -1043,8 +963,7 @@ def main():
                     logger.info(
                         f"chapter_render_alert_success sent={chapter_alert_sent} story={story_name} "
                         f"chapter={chapter_success_metadata['chapter']} final_audio_path={final_path} "
-                        f"clip_count={len(all_generated_clips)} sample_rate={final_sr} "
-                        f"stale_removed_count={stale_removed_count}"
+                        f"clip_count={len(all_generated_clips)} sample_rate={final_sr}"
                     )
 
     finally:

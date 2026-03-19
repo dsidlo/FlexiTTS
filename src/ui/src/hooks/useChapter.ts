@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef } from 'react';
-import type { Chapter, StoryConfig, DialogElement } from '../models/types';
+import type { Chapter, StoryConfig, DialogElement, ChapterRenderState } from '../models/types';
 import { PythonBridgeService } from '../services/pythonBridge';
 import { generateXMLFromChapter } from '../services/chapterService';
 import { debugLog } from '../utils/debugLogger';
@@ -14,6 +14,7 @@ export interface UseChapterReturn {
   selectedCharacterFilter: string;
   availableClips: string[];
   hasChapterAudio: boolean;
+  renderState: ChapterRenderState | null;
   isGeneratingStructure: boolean;
   generateAttempt: number;
   xmlContent: string;
@@ -26,12 +27,16 @@ export interface UseChapterReturn {
   setChapterList: React.Dispatch<React.SetStateAction<string[]>>;
   setAvailableClips: React.Dispatch<React.SetStateAction<string[]>>;
   setHasChapterAudio: React.Dispatch<React.SetStateAction<boolean>>;
+  setRenderState: React.Dispatch<React.SetStateAction<ChapterRenderState | null>>;
   setSelectedCharacterFilter: React.Dispatch<React.SetStateAction<string>>;
   
   // Actions
   loadChapter: (filePath: string, loadedConfig?: StoryConfig, forceStoryDir?: string) => Promise<void>;
   handleChapterSelect: (filePath: string, loadedConfig?: StoryConfig) => Promise<void>;
   handleUpdateDialog: (dlgseq: string, sectionId: string, updatedDialog: DialogElement) => Promise<void>;
+  getIsStaleClip: (sectionId: string, dlgseq: string) => boolean;
+  refreshClips: (fullRefresh?: boolean) => Promise<void>;
+  checkRenderState: (refreshDialogHashes?: boolean) => Promise<void>;
   setCurrentChapterFile: React.Dispatch<React.SetStateAction<string>>;
   runXmlGenerationPipeline: (stem: string, attempt: number) => Promise<void>;
   setIsGeneratingStructure: React.Dispatch<React.SetStateAction<boolean>>;
@@ -62,6 +67,7 @@ export const useChapter = (storyDirectory?: string): UseChapterReturn => {
   const [selectedCharacterFilter, setSelectedCharacterFilter] = useState<string>('');
   const [availableClips, setAvailableClips] = useState<string[]>([]);
   const [hasChapterAudio, setHasChapterAudio] = useState(false);
+  const [renderState, setRenderState] = useState<ChapterRenderState | null>(null);
   const [isGeneratingStructure, setIsGeneratingStructure] = useState(false);
   const [generateAttempt, setGenerateAttempt] = useState(0);
   
@@ -71,14 +77,129 @@ export const useChapter = (storyDirectory?: string): UseChapterReturn => {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState<boolean>(false);
   
   // Use refs for synchronous access within handlers
-  const xmlContentRef = useRef(xmlContent);
-  const lastSavedXmlRef = useRef(lastSavedXml);
-  const hasUnsavedChangesRef = useRef(hasUnsavedChanges);
+  const xmlContentRef = useRef('');
+  const lastSavedXmlRef = useRef('');
+  const hasUnsavedChangesRef = useRef(false);
   
   // Keep refs in sync
   xmlContentRef.current = xmlContent;
   lastSavedXmlRef.current = lastSavedXml;
   hasUnsavedChangesRef.current = hasUnsavedChanges;
+
+  const checkRenderState = useCallback(async (refreshDialogHashes: boolean = false) => {
+    if (!chapter) {
+      setRenderState(null);
+      return;
+    }
+    const stem = chapter.fileName.split('/').pop()?.replace('.xml', '') || '';
+    const storyDir = storyDirectory || 'Story-Default';
+    try {
+      const state = await PythonBridgeService.checkChapterRenderState(stem, storyDir, refreshDialogHashes);
+      setRenderState(state);
+
+      // Log comprehensive state for debugging render state issues
+      debugLog.info('useChapter:checkRenderState', 'Updated render state from get_comprehensive_render_state()', {
+        stem,
+        refreshDialogHashes,
+        needsRender: state?.needs_render || state?.needsRender,
+        status: state?.status || state?.status,
+        staleCount: state?.stale_count || state?.staleCount,
+        hasTimestampStale: state?.has_timestamp_stale || state?.hasTimestampStale,
+        timestampStaleCount: (state?.timestamp_stale_dialogs || state?.timestampStaleDialogs || []).length,
+        chapterReason: state?.chapter?.reason || state?.chapterReason || 'unknown',
+        chapterRenderedAt: state?.chapter_rendered_at || state?.chapterRenderedAt || 0,
+        xmlHash: state?.xml_hash?.substring(0, 8) || 'N/A'
+      });
+    } catch (err) {
+      debugLog.warn('useChapter:checkRenderState', 'Failed', err);
+      setRenderState(null);
+    }
+  }, [chapter?.fileName, storyDirectory]);
+
+  const refreshClips = useCallback(async (fullRefresh: boolean = false) => {
+    if (!chapter) return;
+    const stem = chapter.fileName.split('/').pop()?.replace('.xml', '') || '';
+    try {
+      const clips = await PythonBridgeService.listChapterClips(stem);
+      setAvailableClips(clips);
+      setHasChapterAudio(await PythonBridgeService.checkChapterAudio(stem));
+      
+      // After full render, do a complete refresh with multiple checks to ensure UI updates
+      if (fullRefresh) {
+        await new Promise(resolve => setTimeout(resolve, 300)); // Allow file system to settle
+        await checkRenderState(true); // First check
+        await new Promise(resolve => setTimeout(resolve, 200)); 
+        await checkRenderState(true); // Second check to ensure state is fresh
+      } else {
+        await checkRenderState(false);
+      }
+    } catch (err) {
+      debugLog.warn('useChapter:refreshClips', 'Failed', err);
+    }
+  }, [chapter?.fileName, checkRenderState]);
+
+  const getIsStaleClip = useCallback((sectionId: string, dlgseq: string): boolean => {
+    if (!renderState) {
+      debugLog.warn('useChapter:getIsStaleClip', 'No renderState available yet', { sectionId, dlgseq });
+      return false;
+    }
+
+    const dialogId = `${String(sectionId || '0').padStart(3, '0')}_${String(dlgseq).padStart(3, '0')}`;
+
+    // Check both content staleness and timestamp staleness per requirements
+    const isContentStale = renderState.stale_dialogs?.includes(dialogId) || false;
+
+    // Support both camelCase and snake_case from Python JSON (get_comprehensive_render_state)
+    const timestampStaleDialogs = renderState.timestamp_stale_dialogs ||
+                                 renderState.timestampStaleDialogs ||
+                                 renderState.timestamp_stale || [];
+    const isTimestampStale = timestampStaleDialogs.includes(dialogId);
+
+    // Also check the comprehensive has_timestamp_stale flag
+    const hasGlobalTimestampStale = renderState.has_timestamp_stale ||
+                                   renderState.hasTimestampStale ||
+                                   false;
+
+    const isStale = isContentStale || isTimestampStale || (hasGlobalTimestampStale && isTimestampStale);
+
+    // Additional safeguard: if we have chapter-level staleness and this dialog has a clip
+    // that should be newer than chapter, treat it as stale
+    const chapterState = renderState?.chapter;
+    const chapterReason = (typeof chapterState === 'object' && chapterState !== null && 'reason' in chapterState)
+      ? (chapterState as any).reason
+      : (renderState?.chapterReason || renderState?.status || '');
+    if (!isStale && chapterReason === 'newer_clips') {
+      // For now, just log - we could make all dialogs stale in this case
+      debugLog.debug('useChapter:getIsStaleClip', 'Chapter has newer_clips but dialog not marked stale', {
+        dialogId,
+        chapterReason
+      });
+    }
+
+    if (isStale) {
+      debugLog.info('useChapter:getIsStaleClip', 'Dialog staleness detected', {
+        dialogId,
+        isContentStale,
+        isTimestampStale,
+        hasGlobalTimestampStale,
+        chapterReason: renderState.chapterState?.reason || renderState.chapterReason || renderState.status,
+        timestampStaleDialogsCount: timestampStaleDialogs.length,
+        allTimestampStaleDialogs: timestampStaleDialogs
+      });
+    } else if (dialogId === '002_003') {
+      // Debug specifically for dialog 2.3
+      debugLog.info('useChapter:getIsStaleClip', 'Dialog 002_003 staleness check (should be blue)', {
+        dialogId,
+        isContentStale,
+        isTimestampStale,
+        hasGlobalTimestampStale,
+        timestampStaleDialogs,
+        renderStateKeys: Object.keys(renderState)
+      });
+    }
+
+    return isStale;
+  }, [renderState]);
 
   /**
    * Parse XML string into Chapter object
@@ -185,12 +306,17 @@ export const useChapter = (storyDirectory?: string): UseChapterReturn => {
       setXmlContent(newXml);
       setLastSavedXml(newXml);
       setHasUnsavedChanges(false);
+
+      // Full refresh after loading chapter to ensure fresh render state
+      await refreshClips(true);
+      await checkRenderState(true);
+
       debugLog.info(id, '[RESOURCE-ACCESS] Chapter loaded successfully', { filePath });
     } catch (err) {
       debugLog.exception(id, '[RESOURCE-ACCESS] Failed to load chapter', err as Error, { filePath });
       throw err;
     }
-  }, [parseChapterXML]);
+  }, [parseChapterXML, refreshClips, checkRenderState]);
 
   /**
    * Run XML generation pipeline with retries
@@ -332,7 +458,18 @@ export const useChapter = (storyDirectory?: string): UseChapterReturn => {
       const newXml = generateXMLFromChapter(updatedChapter);
       setXmlContent(newXml);
       const hasChanges = newXml !== lastSavedXmlRef.current;
-      setHasUnsavedChanges(hasChanges);
+      
+      if (hasChanges) {
+        const stem = chapter.fileName.split('/').pop()?.replace('.xml', '') || '';
+        const xmlPath = `${effectiveStoryDir}/story-xml/${stem}.xml`;
+        await PythonBridgeService.writeChapterFile(xmlPath, newXml);
+        setLastSavedXmlValue(newXml);
+        setHasUnsavedChangesValue(false);
+      }
+
+      // Full refresh after dialog updates to ensure staleness is properly reflected
+      await refreshClips(true);
+      await checkRenderState(true);
     } catch (error) {
       debugLog.exception('useChapter:handleUpdateDialog', 'validateChapterDialogs failed', error, {
         dlgseq,
@@ -340,9 +477,9 @@ export const useChapter = (storyDirectory?: string): UseChapterReturn => {
         character: updatedDialog.character,
         storyDirectory: effectiveStoryDir,
       });
-      // Keep optimistic state (empty issues) to avoid UI freeze, but rethrow for upstream handling if needed
+      // Keep optimistic state to avoid UI freeze
     }
-  }, [chapter, config, storyDirectory]);
+  }, [chapter, config, storyDirectory, lastSavedXmlRef, refreshClips, checkRenderState]);
 
   /**
    * Set lastSavedXml ref value directly
@@ -368,6 +505,7 @@ export const useChapter = (storyDirectory?: string): UseChapterReturn => {
     selectedCharacterFilter,
     availableClips,
     hasChapterAudio,
+    renderState,
     isGeneratingStructure,
     generateAttempt,
     xmlContent,
@@ -379,11 +517,15 @@ export const useChapter = (storyDirectory?: string): UseChapterReturn => {
     setChapterList,
     setAvailableClips,
     setHasChapterAudio,
+    setRenderState,
     setSelectedCharacterFilter,
     
     loadChapter,
     handleChapterSelect,
     handleUpdateDialog,
+    getIsStaleClip,
+    refreshClips,
+    checkRenderState,
     setCurrentChapterFile,
     runXmlGenerationPipeline,
     setIsGeneratingStructure,
@@ -392,9 +534,9 @@ export const useChapter = (storyDirectory?: string): UseChapterReturn => {
     setLastSavedXmlValue,
     setHasUnsavedChangesValue,
     
-    xmlContentRef,
-    lastSavedXmlRef,
-    hasUnsavedChangesRef,
+    xmlContentRef: xmlContentRef as React.MutableRefObject<string>,
+    lastSavedXmlRef: lastSavedXmlRef as React.MutableRefObject<string>,
+    hasUnsavedChangesRef: hasUnsavedChangesRef as React.MutableRefObject<boolean>,
     setXmlContent,
     setLastSavedXml,
     setHasUnsavedChanges,

@@ -63,3 +63,52 @@ Given these changes, update App UI code and python scripts to reflect the config
 ### Rename Chapter
 
 
+ ### Re-Render Status Issues
+
+ What scripts and exists that update the state of .chapter_rendered.json?
+ Based on my analysis, here are the only scripts that update .chapter_rendered.json:
+ Scripts That Update .chapter_rendered.json
+
+ ### 1. src/scripts/chapter_render_state.py (The ONLY updater)
+
+ This is the only script that writes to .chapter_rendered.json. It has two functions that call save_render_state():
+
+ ┌──────────────────────────────────────┬──────┬────────────────────────────┬─────────────────────────────────────────────┐
+ │ Function                             │ Line │ When Called                │ What It Does                                │
+ ├──────────────────────────────────────┼──────┼────────────────────────────┼─────────────────────────────────────────────┤
+ │ check_render_state()                 │ 362  │ Every time UI checks state │ Computes hashes, detects stale, saves state │
+ ├──────────────────────────────────────┼──────┼────────────────────────────┼─────────────────────────────────────────────┤
+ │ update_render_state_with_new_clips() │ 435  │ Never called (dead code)   │ Would update after render, but not used     │
+ └──────────────────────────────────────┴──────┴────────────────────────────┴─────────────────────────────────────────────┘
+
+ ### 2. TypeScript Callers (Trigger the Python script)
+
+ These TypeScript files execute chapter_render_state.py as a subprocess, which then updates .chapter_rendered.json:
+
+ ┌─────────────────────────────────────────┬───────────────────────────┬───────────────────────────────────┐
+ │ File                                    │ Function                  │ When Called                       │
+ ├─────────────────────────────────────────┼───────────────────────────┼───────────────────────────────────┤
+ │ src/ui/src/services/pythonBridge.ts:616 │ checkChapterRenderState() │ UI checks if chapter needs render │
+ ├─────────────────────────────────────────┼───────────────────────────┼───────────────────────────────────┤
+ │ src/ui/electron/main.ts:1195            │ IPC handler               │ Electron main process handler     │
+ └─────────────────────────────────────────┴───────────────────────────┴───────────────────────────────────┘
+
+ ### Entry Point Flow
+
+ ```
+  TypeScript: checkChapterRenderState()                                             
+       │                                                                                  
+       ▼                                                                                  
+   Executes: chapter_render_state.py <xml_path> <story_dir> <chapter_stem>            
+       │                                                                                  
+       ▼                                                                                  
+   Python: get_render_state_json()  (line 480)                                        
+       │                                                                                  
+       ▼                                                                                  
+   Python: check_render_state()  (line 322)                                           
+       │                                                                                  
+       ▼                                                                                  
+   Python: save_render_state()  (line 362)  ◄─── WRITES .chapter_rendered.json        
+ ```                                                        
+
+

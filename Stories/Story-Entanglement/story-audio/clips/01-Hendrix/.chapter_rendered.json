@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "story": "Entanglement",
+  "chapter": "1-",
+  "xml_hash": "9a684f99b7c7d23a8075bd63f31fa1da",
+  "xml_path": "Stories/Story-Entanglement/story-xml/01-Hendrix.xml",
+  "clips_dir": "Stories/Story-Entanglement/story-audio/clips/01-Hendrix",
+  "dialogs": {
+    "001_001": {
+      "dialog_id": "001_001",
+      "hash": "ac347cc7d2b70ff32fe66df92d6b5e41",
+      "rendered_at": 1773689038462
+    },
+    "001_002": {
+      "dialog_id": "001_002",
+      "hash": "26148a5d35ee54e5af937df873dfa9d2",
+      "rendered_at": 1773957402092
+    },
+    "002_001": {
+      "dialog_id": "002_001",
+      "hash": "dd1a37c17d8898d40a74d7c7482c6ccb",
+      "rendered_at": 1773957908793
+    },
+    "002_002": {
+      "dialog_id": "002_002",
+      "hash": "0fd7bc8d985e06d7841d7a0abcd55f2c",
+      "rendered_at": 1773957908793
+    },
+    "002_003": {
+      "dialog_id": "002_003",
+      "hash": "8d248a97470156f72be6b456a9b92488",
+      "rendered_at": 1773957908793
+    },
+    "002_004": {
+      "dialog_id": "002_004",
+      "hash": "b1cbb9a6ee961fd2642590aeddf19b5d",
+      "rendered_at": 1773957908793
+    },
+    "002_005": {
+      "dialog_id": "002_005",
+      "hash": "48c4f8529baffb690e901a92e3eb436e",
+      "rendered_at": 1773957908793
+    },
+    "002_006": {
+      "dialog_id": "002_006",
+      "hash": "937faafc36a413f6fa98f164154dd432",
+      "rendered_at": 1773957908793
+    }
+  },
+  "chapter_rendered_at": 1773957424671,
+  "timestamp_stale_dialogs": [],
+  "has_timestamp_stale": false
+}

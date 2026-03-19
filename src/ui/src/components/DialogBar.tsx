@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import type { DialogElement, DialogValidationIssue } from '../models/types';
 import { getColorForCharacter } from '../utils/colors';
 import { useAudioPlayer } from '../hooks/useAudioPlayer';
+import { debugLog } from '../utils/debugLogger';
 
 import { PythonBridgeService } from '../services/pythonBridge';
 
@@ -12,6 +13,8 @@ interface DialogBarProps {
   storyDirectory?: string; // Story directory for path construction (e.g., 'Story-Entanglement')
   isFilteredOut?: boolean;
   hasAudioClip?: boolean;
+  isStaleClip?: boolean;
+  isTimestampStale?: boolean;  // New: specifically for timestamp out of sync
   availableCharacters?: string[];
   onSaveRequest?: () => Promise<void>;
   onUpdateDialog: (dlgseq: string, sectionId: string, updatedDialog: DialogElement) => Promise<void>;
@@ -19,7 +22,7 @@ interface DialogBarProps {
 }
 
 export const DialogBar: React.FC<DialogBarProps> = ({
-  dialog, displayId, chapterFileName, storyDirectory, isFilteredOut, hasAudioClip, availableCharacters = [],
+  dialog, displayId, chapterFileName, storyDirectory, isFilteredOut, hasAudioClip, isStaleClip = false, isTimestampStale = false, availableCharacters = [],
   onSaveRequest, onUpdateDialog, onRefreshClips
 }) => {
   const validationIssues = dialog.validationIssues || [];
@@ -37,6 +40,18 @@ export const DialogBar: React.FC<DialogBarProps> = ({
   const { isPlaying: isPlayingAudio, play: playAudio, stop: stopAudio } = useAudioPlayer();
 
   const bgColor = getColorForCharacter(dialog.character, parseInt(dialog.dlgseq) || 0);
+
+  // Log button state for debugging timestamp/color logic
+  if (isTimestampStale || isStaleClip) {
+    debugLog.info('DialogBar:render', 'Dialog button state', {
+      dialogId: displayId || dialog.dlgseq,
+      character: dialog.character,
+      hasAudioClip,
+      isStaleClip,
+      isTimestampStale,
+      color: isTimestampStale ? 'blue (#2196F3)' : (isStaleClip ? 'orange (#ff9800)' : 'green (#4CAF50)')
+    });
+  }
 
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -246,15 +261,31 @@ export const DialogBar: React.FC<DialogBarProps> = ({
 
               setIsGeneratingAudio(true);
               try {
+                  // Pass onRefreshClips as onGenerationComplete to update render state
+                  // This ensures dialog turns from blue to green after successful re-render
+                  const onGenerationComplete = onRefreshClips || undefined;
+
                   // Pass playAudio as the onPlay callback to use useAudioPlayer state management
-                  await PythonBridgeService.playAudio(chapterName, sectionNum, dlgseq, undefined, false, playAudio);
-                  if (onRefreshClips) onRefreshClips();
+                  await PythonBridgeService.playAudio(
+                    chapterName,
+                    sectionNum,
+                    dlgseq,
+                    onGenerationComplete,
+                    false,
+                    playAudio
+                  );
               } finally {
                   setIsGeneratingAudio(false);
               }
             }}
             style={{
-              background: hasAudioClip ? '#4CAF50' : '#888',
+              background: !hasAudioClip
+                ? '#888'
+                : isTimestampStale
+                  ? '#2196F3'  // Blue: timestamp out of sync (per requirements)
+                  : isStaleClip
+                    ? '#ff9800'  // Orange: content/hash stale
+                    : '#4CAF50', // Green: in sync
               border: '2px solid rgba(255,255,255,0.2)',
               borderRadius: '50%',
               width: '24px',
@@ -267,9 +298,18 @@ export const DialogBar: React.FC<DialogBarProps> = ({
               alignItems: 'center',
               justifyContent: 'center',
               opacity: isGeneratingAudio ? 0.8 : 1.0,
-              boxShadow: hasAudioClip ? '0px 0px 5px rgba(76,175,80,0.8)' : 'none'
+              boxShadow: hasAudioClip && !isStaleClip ? '0px 0px 5px rgba(76,175,80,0.8)' : (isStaleClip ? '0px 0px 5px rgba(255,152,0,0.8)' : 'none')
             }}
-            title={isGeneratingAudio ? "Stop Generating Audio..." : (hasAudioClip ? "Re-render Audio" : "Render Audio")}
+            title={isGeneratingAudio
+              ? "Stop Generating Audio..."
+              : !hasAudioClip
+                ? "No clip - Render Audio"
+                : isTimestampStale
+                  ? "Timestamp out of sync - Re-render to update timestamp"
+                  : isStaleClip
+                    ? "Clip stale - Re-render"
+                    : "Has clip - Re-render Audio"
+            }
           >
             {isGeneratingAudio ? (
               <span className="spinner-icon" style={{

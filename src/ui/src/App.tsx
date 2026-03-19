@@ -49,7 +49,7 @@ function App() {
     isGeneratingStructure, setIsGeneratingStructure, generateAttempt, setGenerateAttempt,
     xmlContentRef, hasUnsavedChangesRef,
     setLastSavedXmlValue, setHasUnsavedChangesValue,
-    loadChapter, handleUpdateDialog,
+    loadChapter, handleUpdateDialog, getIsStaleClip, checkRenderState, renderState,
   } = useChapter(currentStory?.directory_name);
 
   // Markdown state from hook
@@ -70,10 +70,10 @@ function App() {
   const { alerts: alertList, addAlert, removeAlert, clearAlerts } = useAlerts();
   const [alertHistory, setAlertHistory] = useState<AlertHistoryItem[]>([]);
   const [, setTtsServiceReady] = useState(false);  // State tracked but value unused (WebSocket always enabled)
-  
+
   // Ref to prevent double initialization in React StrictMode
   const initStarted = useRef(false);
-  
+
   // Ref to track if we've already shown TTS ready alert
   const ttsReadyShownRef = useRef(false);
   const latestTtsAlertRef = useRef<Record<string, string> | null>(null);
@@ -115,10 +115,10 @@ function App() {
         parts.push(alert.metadata.character);
       }
     }
-    
+
     let fullMsg = alert.message;
     if (parts.length > 0) {
-      fullMsg = `${alert.message} – ${parts.join(", ")}`;
+      fullMsg = `${alert.message} - ${parts.join(", ")}`;
     }
     debugLog.info(`${logId}:tts-alert`, 'handleTtsAlert normalized alert', {
       fullMsg,
@@ -160,7 +160,7 @@ function App() {
     });
     return unsubscribe;
   }, [addAlert, pushAlertHistory]);
-  
+
   useTtsAlerts({
     enabled: true,  // Always enabled to receive startup alerts via WebSocket
     onAlert: handleTtsAlert,
@@ -181,13 +181,13 @@ function App() {
     // Prevent double initialization in React StrictMode
     if (initStarted.current) return;
     initStarted.current = true;
-    
+
     const init = async () => {
       try {
         setLoading(true);
         debugLog.info(`${logId}:init`, 'Initializing app bootstrap');
         await PythonBridgeService.validateConfig();
-        
+
         // Load available stories and set current story
         let stories: { name: string; path: string; directory_name: string }[] = [];
         try {
@@ -196,7 +196,7 @@ function App() {
           testSafeConsole.warn('Failed to list stories, falling back to default:', storyErr);
           stories = [];
         }
-        
+
         let current = '';
         try {
           current = await PythonBridgeService.getCurrentStory();
@@ -204,10 +204,10 @@ function App() {
         } catch (err) {
           testSafeConsole.warn('Failed to get current story:', err);
         }
-        
+
         testSafeConsole.log('[App.tsx] Available stories:', stories);
         testSafeConsole.log('[App.tsx] Current story from state:', current);
-        
+
         // Default to first story or use Story-Default for backward compatibility
         let selectedStory = stories[0] || null;
         if (current) {
@@ -234,11 +234,11 @@ function App() {
             testSafeConsole.warn('[App.tsx] Failed to load global config for fallback:', err);
           }
         }
-        
+
         setCurrentStory(selectedStory);
         testSafeConsole.log('[App.tsx] Selected story:', selectedStory);
         debugLog.info(`${logId}:init`, 'Selected story resolved', { selectedStory });
-        
+
         // Set current story in main process
         if (selectedStory) {
           try {
@@ -247,14 +247,14 @@ function App() {
             testSafeConsole.warn('Failed to set current story:', err);
           }
         }
-        
+
         // Load story config for selected story
         let cfg;
         try {
           const storyDir = selectedStory?.directory_name;
           testSafeConsole.log(`[App.tsx] Loading story config for: ${storyDir || 'NULL (legacy fallback)'}`);
           testSafeConsole.log(`[App.tsx] Selected story object:`, selectedStory);
-          cfg = selectedStory 
+          cfg = selectedStory
             ? await PythonBridgeService.loadStoryConfigForStory(selectedStory.directory_name)
             : await PythonBridgeService.loadStoryConfig();
           debugLog.info(`${logId}:init`, 'Story config loaded', {
@@ -275,7 +275,7 @@ function App() {
           throw err;
         }
         setConfig(cfg);
-        
+
         // Load chapter files for selected story
         let list: string[] = [];
         try {
@@ -287,12 +287,12 @@ function App() {
           list = [];
         }
         setChapterList(list);
-        
+
         if (list.length > 0) await handleChapterSelect(list[0], cfg, selectedStory?.directory_name);
-        
+
         // Start TTS service - service will broadcast warmup alerts via WebSocket
         alerts.info('Starting TTS Service...', 5000);
-        
+
         // enableWebSocket connects when service is running (not waiting for full warmup)
         const success = await PythonBridgeService.startAndConnectTtsService(setTtsServiceReady);
         if (!success) {
@@ -351,7 +351,7 @@ function App() {
           const storyDir = forcedStoryDir || currentStory?.directory_name || 'Story-Default';
           if (hasUnsavedChangesRef.current) {
             await PythonBridgeService.writeChapterFile(
-              `${storyDir}/story-xml/${stem}.xml`, 
+              `${storyDir}/story-xml/${stem}.xml`,
               xmlContentRef.current
             );
             setLastSavedXmlValue(xmlContentRef.current);
@@ -359,7 +359,7 @@ function App() {
           if (hasUnsavedMarkdownChangesRef.current) {
             const storyDir = forcedStoryDir || currentStory?.directory_name || 'Story-Default';
             await PythonBridgeService.writeChapterFile(
-              `${storyDir}/story-chapters/${stem}.md`, 
+              `${storyDir}/story-chapters/${stem}.md`,
               markdownContent
             );
             setLastSavedMarkdownValue(markdownContent);
@@ -376,11 +376,11 @@ function App() {
     setLoading(true);
     setCurrentChapterFile(filePath);
     const stem = filePath.split('/').pop()?.replace('.md', '')?.replace('.xml', '') || 'unknown';
-    
+
     const storyDir = forcedStoryDir || currentStory?.directory_name || 'Story-Default';
     debugLog.info(`${logId}:handleChapterSelect`, 'Selecting chapter', { filePath, stem, storyDir, forcedStoryDir });
     await loadMarkdown(stem, storyDir);
-    
+
     const xmlPath = `${storyDir}/story-xml/${stem}.xml`;
     const xmlExists = await PythonBridgeService.checkXmlExistsForStory(stem, storyDir);
     debugLog.info(`${logId}:handleChapterSelect`, 'XML existence decision', { stem, storyDir, xmlPath, xmlExists });
@@ -400,7 +400,7 @@ function App() {
       }
     }
     setLoading(false);
-  }, [currentChapterFile, currentStory, currentStory?.directory_name, hasUnsavedChangesRef, hasUnsavedMarkdownChangesRef, xmlContentRef, 
+  }, [currentChapterFile, currentStory, currentStory?.directory_name, hasUnsavedChangesRef, hasUnsavedMarkdownChangesRef, xmlContentRef,
       markdownContent, setLastSavedXmlValue, setLastSavedMarkdownValue, setHasUnsavedMarkdownChangesValue,
       setCurrentChapterFile, loadMarkdown, loadChapter, setIsGeneratingStructure, setGenerateAttempt,
       setLoading, resetMarkdown]);
@@ -408,7 +408,7 @@ function App() {
   // Story selection handler
   const handleStorySelect = useCallback(async (story: StoryInfo | null) => {
     if (!story) return;
-    
+
     // Check for unsaved changes
     if ((hasUnsavedChangesRef.current || hasUnsavedMarkdownChangesRef.current) && currentChapterFile) {
       const res = await PythonBridgeService.showConfirmDialog(
@@ -422,12 +422,12 @@ function App() {
         await handleSave();
       }
     }
-    
+
     setLoading(true);
     setCurrentStory(story);
     debugLog.info(`${logId}:handleStorySelect`, 'Switching story', { story });
     await PythonBridgeService.setCurrentStory(story.directory_name);
-    
+
     // Load config for new story
     const cfg = await PythonBridgeService.loadStoryConfigForStory(story.directory_name);
     debugLog.info(`${logId}:handleStorySelect`, 'Loaded story config after switch', {
@@ -439,18 +439,18 @@ function App() {
       voicesDir: cfg?.global?.voices,
     });
     setConfig(cfg);
-    
+
     // Load chapters for new story
     const files = await PythonBridgeService.listChapterFilesForStory(story.directory_name);
     setChapterList(files);
-    
+
     // Select first chapter of new story
     if (files.length > 0) {
       await handleChapterSelect(files[0], cfg, story.directory_name);
     }
-    
+
     setLoading(false);
-  }, [hasUnsavedChangesRef, hasUnsavedMarkdownChangesRef, currentChapterFile, 
+  }, [hasUnsavedChangesRef, hasUnsavedMarkdownChangesRef, currentChapterFile,
       setLoading, setCurrentStory, setConfig, setChapterList, handleChapterSelect]);
 
   // Save handler
@@ -464,7 +464,7 @@ function App() {
       const hadXmlChanges = hasUnsavedChangesRef.current;
 
       debugLog.info(`${logId}:handleSave`, 'Starting save', { stem, storyDir, mdPath, xmlPath, hadMarkdownChanges, hadXmlChanges });
-      
+
       if (hadXmlChanges && chapter) {
         const xml = generateXMLFromChapter(chapter);
         debugLog.info(`${logId}:handleSave`, 'Saving edited chapter XML from dialog UI', { xmlPath, stem, storyDir, dialogCount: chapter.dialogs.length });
@@ -509,7 +509,7 @@ function App() {
       debugLog.exception(`${logId}:handleSave`, 'Save failed', e, { currentChapterFile, currentStory: currentStory?.directory_name });
       console.error('Save failed:', e);
     }
-  }, [currentChapterFile, currentStory, chapter, hasUnsavedChangesRef, hasUnsavedMarkdownChangesRef, 
+  }, [currentChapterFile, currentStory, chapter, hasUnsavedChangesRef, hasUnsavedMarkdownChangesRef,
       markdownContent, setLastSavedXmlValue, setHasUnsavedChangesValue,
       setLastSavedMarkdownValue, setHasUnsavedMarkdownChangesValue, runXmlGenerationPipeline,
       loadChapter, config, setIsGeneratingStructure, setGenerateAttempt]);
@@ -533,13 +533,17 @@ function App() {
   }, [editorMode, hasUnsavedMarkdownChangesRef, lastSavedMarkdownRef, handleSave,
       setEditorMode, setMarkdownContent, setHasUnsavedMarkdownChangesValue]);
 
-  // Refresh clips
-  const refreshClips = useCallback(async () => {
+  // Refresh clips and render state
+  const refreshClips = useCallback(async (fullRefresh: boolean = false) => {
     if (!currentChapterFile) return;
     const name = currentChapterFile.split('/').pop()?.replace('.md', '.xml') || '';
     setAvailableClips(await PythonBridgeService.listChapterClips(name));
     setHasChapterAudio(await PythonBridgeService.checkChapterAudio(name));
-  }, [currentChapterFile, setAvailableClips, setHasChapterAudio]);
+    // Also refresh render state so stale indicators update after selective dialog re-renders
+    if (checkRenderState) {
+      await checkRenderState(fullRefresh);
+    }
+  }, [currentChapterFile, setAvailableClips, setHasChapterAudio, checkRenderState]);
 
   useEffect(() => {
     const metadata = latestTtsAlertRef.current;
@@ -588,7 +592,7 @@ function App() {
       )}
 
       {chapter && (
-        <TopBar 
+        <TopBar
           config={config}
           chapter={chapter}
           filePath={currentChapterFile}
@@ -610,6 +614,9 @@ function App() {
           }}
           currentStory={currentStory}
           onStorySelect={handleStorySelect}
+          // Pass centralized renderState from useChapter hook
+          // This ensures TopBar reflects the authoritative computed state
+          renderState={renderState}
         />
       )}
 
@@ -649,9 +656,32 @@ function App() {
               const speakerFileName = dialog.character;
               const clipPrefix = `chapter_${chapNum}_${secStr}_${dlgStr}_${speakerFileName}`;
               const hasClip = availableClips.some(c => c === `${clipPrefix}.wav` || c.startsWith(`${clipPrefix}_s`));
+              const isStaleClip = getIsStaleClip(secStr, dlgStr);
+
+              // Check for timestamp-specific staleness (for blue button color)
+              // Support both camelCase and snake_case from Python JSON response
+              const timestampStaleDialogs = renderState?.timestamp_stale_dialogs ||
+                                          renderState?.timestampStaleDialogs ||
+                                          renderState?.timestamp_stale || [];
+              const dialogId = `${secStr}_${dlgStr}`;
+              const isTimestampStale = timestampStaleDialogs.includes(dialogId);
+
+              // After full chapter render, dialogs should be considered in sync
+              // Only show blue if explicitly marked as timestamp stale by the backend
+              const finalIsTimestampStale = isTimestampStale;
+
+              if (dialogId === '002_003') {
+                debugLog.info('App:getIsStaleClip', `Dialog ${dialogId} - isTimestampStale=${finalIsTimestampStale}`, {
+                  dialogId,
+                  finalIsTimestampStale,
+                  hasRenderState: !!renderState,
+                  renderStateKeys: renderState ? Object.keys(renderState) : [],
+                  timestampStaleDialogsCount: timestampStaleDialogs.length
+                });
+              }
 
               return (
-                <DialogBar 
+                <DialogBar
                   key={`${dialog.sectionId || '1'}-${dialog.dlgseq}-${dialog._index}`}
                   dialog={dialog}
                   displayId={displayId}
@@ -659,6 +689,8 @@ function App() {
                   storyDirectory={currentStory?.directory_name}
                   isFilteredOut={isFiltered}
                   hasAudioClip={hasClip}
+                  isStaleClip={isStaleClip}
+                  isTimestampStale={finalIsTimestampStale}
                   onSaveRequest={handleSave}
                   onUpdateDialog={handleUpdateDialog}
                   onRefreshClips={refreshClips}
@@ -680,7 +712,7 @@ function App() {
             const name = chFile.split('/').pop()?.replace('.md', '')?.replace('.xml', '') || chFile;
             const isActive = chFile === currentChapterFile;
             return (
-              <div 
+              <div
                 key={idx}
                 style={{ padding: '5px 15px', cursor: 'pointer', color: '#333', background: isActive ? '#e6f7ff' : 'transparent', fontWeight: isActive ? 'bold' : 'normal' }}
                 onClick={() => {

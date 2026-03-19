@@ -507,10 +507,47 @@ export const PythonBridgeService = {
         if (wavName) {
             debugLog.info(id, 'Found WAV filename', { wavName, chapterStem: chapterName.replace('.xml', '') });
             
-            // Generation is done
+            // Generation is done - refresh render state so dialog button turns green
             if (onGenerationComplete) {
                 debugLog.info(id, 'Calling onGenerationComplete callback');
                 onGenerationComplete();
+            }
+
+            // Explicitly refresh render state AND update timestamp after selective render
+            // This ensures the re-rendered dialog turns from blue to green, and chapter button
+            // turns yellow if other dialogs are stale (per requirements)
+            try {
+                const stem = chapterName.replace('.xml', '').replace('.md', '');
+                const storyDir = await PythonBridgeService.getCurrentStory();
+                const dialogId = `${String(sectionNum || '0').padStart(3, '0')}_${String(dlgseqNum || '0').padStart(3, '0')}`;
+
+                debugLog.info(id, 'Updating dialog timestamp after individual render', {
+                    stem,
+                    storyDir,
+                    dialogId,
+                    wavName,
+                    chapterName,
+                    note: 'Individual dialog render now updates timestamp (per updated requirements)'
+                });
+
+                // Update the specific dialog's timestamp to current time
+                const now = Date.now();
+                await PythonBridgeService.updateDialogTimestamp(
+                    stem,
+                    dialogId,
+                    storyDir || 'Story-Default',
+                    now
+                );
+
+                // Then do a comprehensive state check to update UI
+                await PythonBridgeService.checkChapterRenderState(stem, storyDir || 'Story-Default');
+                debugLog.info(id, 'Successfully updated timestamp and refreshed render state after selective render');
+            } catch (refreshErr) {
+                debugLog.exception(id, 'refresh render state after selective render', refreshErr, {
+                    stem: chapterName.replace('.xml', '').replace('.md', ''),
+                    dialogId: `${sectionNum}_${dlgseqNum}`,
+                    wavName
+                });
             }
             
             // Reconstruct the full path
@@ -603,27 +640,172 @@ export const PythonBridgeService = {
     throw new Error('checkChapterAudio requires Electron IPC');
   },
 
-  checkChapterRenderState: async (chapterName: string, storyDir: string): Promise<any> => {
+  checkChapterRenderState: async (chapterName: string, storyDir: string = 'Story-Default', refreshDialogHashes: boolean = false): Promise<any> => {
     const id = `${LOG_ID}:checkChapterRenderState`;
     debugLog.info(id, 'ENTER checkChapterRenderState', { chapterName, storyDir });
     
-    if (typeof window !== 'undefined' && window.api && window.api.checkChapterRenderState) {
-      try {
-        const state = await window.api.checkChapterRenderState(chapterName, storyDir);
-        debugLog.info(id, 'Successfully checked chapter render state', { 
-          chapterName, 
-          needsRender: state?.needs_render, 
-          staleCount: state?.stale_count 
-        });
-        return state;
-      } catch (e) {
-        debugLog.exception(id, 'checkChapterRenderState IPC call', e, { chapterName, storyDir });
-        throw e;
+    try {
+      // Normalize chapter stem (remove .xml/.md)
+      let stem = chapterName.replace('.xml', '').replace('.md', '');
+      const xmlPath = `${storyDir}/story-xml/${stem}.xml`;
+      
+      debugLog.info(id, 'Calling chapter_render_state.py', { 
+        xmlPath, 
+        storyDir, 
+        stem, 
+        script: 'src/scripts/chapter_render_state.py' 
+      });
+      
+      if (typeof window !== 'undefined' && window.api && window.api.runPythonScript) {
+        const args = [xmlPath, storyDir, stem];
+        if (refreshDialogHashes) {
+          args.push('refresh_dialogs');
+        }
+
+        const output = await window.api.runPythonScript(
+          'src/scripts/chapter_render_state.py',
+          args
+        );
+        
+        let state;
+        try {
+          state = JSON.parse(output.trim());
+          debugLog.info(id, 'Successfully parsed render state', { 
+            chapterName, 
+            needsRender: state?.needs_render, 
+            staleCount: state?.stale_count || state?.stale_dialogs?.length || 0,
+            staleDialogs: state?.stale_dialogs 
+          });
+        } catch (parseErr) {
+          debugLog.warn(id, 'Failed to parse JSON from render state script', { output: output.substring(0, 200), parseErr });
+          state = { needs_render: false, stale_count: 0, stale_dialogs: [] };
+        }
+        
+        return {
+          needs_render: state.needs_render !== undefined ? state.needs_render : state.needsRender || false,
+          stale_count: state.stale_count || state.stale_dialogs?.length || 0,
+          stale_dialogs: state.stale_dialogs || [],
+          ...state
+        };
+      } else {
+        debugLog.warn(id, 'No runPythonScript API - returning mock state', { chapterName });
+        return { needs_render: false, stale_count: 0, stale_dialogs: [] };
       }
+    } catch (err: any) {
+      debugLog.exception(id, 'checkChapterRenderState failed', err, { chapterName, storyDir });
+      // Graceful fallback per CODING_DISCIPLINE (non-critical UX)
+      return { needs_render: false, stale_count: 0, stale_dialogs: [], error: err.message };
     }
-    
-    debugLog.error(id, 'window.api.checkChapterRenderState not available', { chapterName, storyDir });
-    throw new Error('checkChapterRenderState requires Electron IPC');
+  },
+
+  /**
+   * Update Chapter XML hash after successful full chapter render.
+   * This should ONLY be called after "Render Chapter" completes successfully.
+   */
+  updateChapterXmlHash: async (chapterName: string, storyDir: string = 'Story-Default'): Promise<any> => {
+    const id = `${LOG_ID}:updateChapterXmlHash`;
+    debugLog.info(id, 'ENTER updateChapterXmlHash', { chapterName, storyDir });
+
+    try {
+      let stem = chapterName.replace('.xml', '').replace('.md', '');
+      const xmlPath = `${storyDir}/story-xml/${stem}.xml`;
+
+      debugLog.info(id, 'Calling chapter_render_state.py to update XML hash', {
+        xmlPath,
+        storyDir,
+        stem,
+        script: 'src/scripts/chapter_render_state.py'
+      });
+
+      if (typeof window !== 'undefined' && window.api && window.api.runPythonScript) {
+        // Call the update function by passing a special flag or using a different approach
+        // For now, we'll use the main entry point but we need to extend it
+        const output = await window.api.runPythonScript(
+          'src/scripts/chapter_render_state.py',
+          [xmlPath, storyDir, stem, 'update_hash']
+        );
+
+        let result;
+        try {
+          result = JSON.parse(output.trim());
+          debugLog.info(id, 'Successfully updated XML hash', { chapterName });
+        } catch (parseErr) {
+          debugLog.warn(id, 'Failed to parse update response', { output: output.substring(0, 100) });
+          result = { success: false };
+        }
+
+        return result;
+      } else {
+        debugLog.warn(id, 'No runPythonScript API', { chapterName });
+        return { success: false };
+      }
+    } catch (err: any) {
+      debugLog.exception(id, 'updateChapterXmlHash failed', err, { chapterName, storyDir });
+      return { success: false, error: err.message };
+    }
+  },
+
+  /**
+   * Update timestamp for a specific dialog after individual re-render.
+   * This ensures the dialog turns from blue (timestamp stale) to green.
+   */
+  updateDialogTimestamp: async (
+    chapterName: string,
+    dialogId: string,
+    storyDir: string = 'Story-Default',
+    timestamp?: number
+  ): Promise<any> => {
+    const id = `${LOG_ID}:updateDialogTimestamp`;
+    debugLog.info(id, 'ENTER updateDialogTimestamp', { chapterName, dialogId, storyDir });
+
+    try {
+      let stem = chapterName.replace('.xml', '').replace('.md', '');
+      const xmlPath = `${storyDir}/story-xml/${stem}.xml`;
+
+      debugLog.info(id, 'Calling chapter_render_state.py to update dialog timestamp', {
+        xmlPath,
+        storyDir,
+        stem,
+        dialogId,
+        script: 'src/scripts/chapter_render_state.py'
+      });
+
+      if (typeof window !== 'undefined' && window.api && window.api.runPythonScript) {
+        const args = [xmlPath, storyDir, stem, 'update_dialog_timestamp', dialogId];
+        if (timestamp !== undefined) {
+          args.push(timestamp.toString());
+        }
+
+        const output = await window.api.runPythonScript(
+          'src/scripts/chapter_render_state.py',
+          args
+        );
+
+        let result;
+        try {
+          result = JSON.parse(output.trim());
+          debugLog.info(id, 'Successfully updated dialog timestamp', {
+            chapterName,
+            dialogId,
+            timestamp: result.get('updated_timestamp') || timestamp
+          });
+        } catch (parseErr) {
+          debugLog.warn(id, 'Failed to parse update response', {
+            output: output.substring(0, 100),
+            parseErr
+          });
+          result = { success: false };
+        }
+
+        return result;
+      } else {
+        debugLog.warn(id, 'No runPythonScript API', { chapterName, dialogId });
+        return { success: false };
+      }
+    } catch (err: any) {
+      debugLog.exception(id, 'updateDialogTimestamp failed', err, { chapterName, dialogId, storyDir });
+      return { success: false, error: err.message };
+    }
   },
 
   cancelAudio: async (matchString: string): Promise<void> => {

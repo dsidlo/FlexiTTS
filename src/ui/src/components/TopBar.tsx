@@ -24,14 +24,16 @@ interface TopBarProps {
   // Story selection props
   currentStory?: StoryInfo | null;
   onStorySelect?: (story: StoryInfo | null) => void;
+  // Render state from centralized hook (preferred source of truth)
+  renderState?: any;
 }
 
-export const TopBar: React.FC<TopBarProps> = ({ 
+export const TopBar: React.FC<TopBarProps> = ({
   config, chapter, filePath, chapterList, hasChapterAudio,
   selectedCharacter, onChapterSelect, onCharacterSelect, onSave, onRenderComplete,
   hasUnsavedChanges, editorMode, onToggleEditor,
   alertHistory = [], onRemoveAlertHistoryItem, onClearAlertHistory,
-  currentStory, onStorySelect
+  currentStory, onStorySelect, renderState
 }) => {
   const [isSaving, setIsSaving] = useState(false);
   const [isRendering, setIsRendering] = useState(false);
@@ -39,12 +41,48 @@ export const TopBar: React.FC<TopBarProps> = ({
   const [showAlertHistory, setShowAlertHistory] = useState(false);
   const [needsRender, setNeedsRender] = useState(false);
   const [staleCount, setStaleCount] = useState(0);
+  const [xmlChanged, setXmlChanged] = useState(false);
+  const [hasTimestampStale, setHasTimestampStale] = useState(false);
 
   // Check render state when chapter changes
   useEffect(() => {
     if (!chapter || !filePath) return;
     checkRenderState();
   }, [chapter, filePath, currentStory]);
+
+  // Sync with centralized renderState from useChapter hook (preferred source of truth)
+  // This ensures TopBar reflects the actual computed state from get_comprehensive_render_state()
+  useEffect(() => {
+    if (renderState) {
+      const needsRenderValue = renderState.needs_render !== undefined
+        ? renderState.needs_render
+        : (renderState.needsRender !== undefined ? renderState.needsRender : false);
+
+      const staleCountValue = renderState.stale_count !== undefined
+        ? renderState.stale_count
+        : (renderState.staleCount !== undefined ? renderState.staleCount : 0);
+
+      const xmlChangedValue = renderState.xml_changed !== undefined
+        ? renderState.xml_changed
+        : (renderState.xmlChanged !== undefined ? renderState.xmlChanged : false);
+
+      const hasTimestampStaleValue = renderState.has_timestamp_stale !== undefined
+        ? renderState.has_timestamp_stale
+        : (renderState.hasTimestampStale !== undefined ? renderState.hasTimestampStale : false);
+
+      setNeedsRender(needsRenderValue);
+      setStaleCount(staleCountValue);
+      setXmlChanged(xmlChangedValue);
+      setHasTimestampStale(hasTimestampStaleValue);
+
+      debugLog.info('TopBar:renderStateSync', 'Synced with centralized render state', {
+        needsRender: needsRenderValue,
+        staleCount: staleCountValue,
+        hasTimestampStale: hasTimestampStaleValue,
+        chapterReason: renderState.chapter?.reason || renderState.chapterReason
+      });
+    }
+  }, [renderState]);
 
   if (!chapter) {
     return (
@@ -106,18 +144,30 @@ export const TopBar: React.FC<TopBarProps> = ({
     }
   };
 
-  const checkRenderState = async () => {
+  const checkRenderState = async (refreshDialogHashes: boolean = false) => {
     const chapterName = filePath.split('/').pop()?.replace('.md', '.xml') || 'Unknown.xml';
     const storyDir = currentStory?.directory_name || 'Story-Default';
-    
+
     try {
-      const renderState = await PythonBridgeService.checkChapterRenderState(chapterName, storyDir);
+      const renderState = await PythonBridgeService.checkChapterRenderState(chapterName, storyDir, refreshDialogHashes);
       setNeedsRender(renderState?.needs_render || false);
       setStaleCount(renderState?.stale_count || 0);
+      setXmlChanged(renderState?.xml_changed || false);
+      // Support both camelCase and snake_case from Python JSON
+      setHasTimestampStale(
+        renderState?.has_timestamp_stale ||
+        renderState?.hasTimestampStale ||
+        false
+      );
       debugLog.info('TopBar:checkRenderState', 'Render state checked', {
         chapterName,
         needsRender: renderState?.needs_render,
-        staleCount: renderState?.stale_count
+        staleCount: renderState?.stale_count,
+        xmlChanged: renderState?.xml_changed,
+        hasTimestampStale: renderState?.has_timestamp_stale || renderState?.hasTimestampStale,
+        timestampStaleCount: (renderState?.timestamp_stale_dialogs || renderState?.timestampStaleDialogs || []).length,
+        xmlHash: renderState?.xml_hash?.substring(0, 8),
+        refreshDialogHashes
       });
     } catch (err) {
       debugLog.warn('TopBar:checkRenderState', 'Failed to check render state', err);
@@ -144,7 +194,7 @@ export const TopBar: React.FC<TopBarProps> = ({
       }
 
       console.log(`[TopBar] Rendering full chapter: ${chapterName}`);
-      
+
       // We can use runPythonScript explicitly to process the whole chapter
       if (typeof window !== 'undefined' && window.api && window.api.runPythonScript) {
          const storyDir = currentStory?.directory_name || 'Story-Default';
@@ -160,11 +210,54 @@ export const TopBar: React.FC<TopBarProps> = ({
             `--create-missing-clips`,
             `--tts-service`, ttsServiceUrl
          ]);
-         
+
          if (onRenderComplete) onRenderComplete();
-         
-         // Re-check render state after rendering completes
-         await checkRenderState();
+
+         // After successful full chapter render, update XML hash AND refresh dialog state
+         // This ensures the comprehensive render state reflects the completed render
+         const renderStoryDir = currentStory?.directory_name || 'Story-Default';
+
+         // First update the XML hash to mark this render as complete
+         await PythonBridgeService.updateChapterXmlHash(chapterName, renderStoryDir);
+         debugLog.info('TopBar:handleRenderChapter', 'Updated XML hash after successful render');
+
+         // Then do a full refresh of all dialog signatures and timestamps
+         // This triggers get_comprehensive_render_state() with refresh_dialog_hashes=true
+         const updatedState = await PythonBridgeService.checkChapterRenderState(chapterName, renderStoryDir, true);
+
+         // Update local state from the fresh comprehensive render state
+         // This ensures TopBar immediately reflects the corrected state
+         const needsRenderValue = updatedState?.needs_render !== undefined
+           ? updatedState.needs_render
+           : (updatedState?.needsRender !== undefined ? updatedState.needsRender : false);
+
+         const staleCountValue = updatedState?.stale_count !== undefined
+           ? updatedState.stale_count
+           : (updatedState?.staleCount !== undefined ? updatedState.staleCount : 0);
+
+         const hasTimestampStaleValue = updatedState?.has_timestamp_stale !== undefined
+           ? updatedState.has_timestamp_stale
+           : (updatedState?.hasTimestampStale !== undefined ? updatedState.hasTimestampStale : false);
+
+         setNeedsRender(needsRenderValue);
+         setStaleCount(staleCountValue);
+         setXmlChanged(false); // XML hash was just updated
+         setHasTimestampStale(hasTimestampStaleValue);
+
+         debugLog.info('TopBar:handleRenderChapter', 'Successfully refreshed render state after full chapter render', {
+           needsRender: needsRenderValue,
+           staleCount: staleCountValue,
+           hasTimestampStale: hasTimestampStaleValue,
+           chapterReason: updatedState?.chapter?.reason || updatedState?.chapterReason || 'good'
+         });
+
+         // Also call onRenderComplete to ensure parent (useChapter) also refreshes its state
+         // Use full refresh to ensure timestamp staleness is properly recalculated
+         if (onRenderComplete) {
+           setTimeout(() => {
+             onRenderComplete();
+           }, 1000); // Give files time to settle
+         }
       } else {
         console.warn("API not available for rendering");
       }
@@ -418,11 +511,15 @@ export const TopBar: React.FC<TopBarProps> = ({
             </div>
           </div>
         )}
-        <button 
-          onClick={handleRenderChapter} 
-          style={{ 
+        <button
+          onClick={handleRenderChapter}
+          style={{
             padding: '4px 16px',
-            backgroundColor: isRendering ? '#f44336' : (needsRender ? '#ff9800' : (hasChapterAudio ? '#4CAF50' : '#888')),
+            backgroundColor: isRendering
+              ? '#f44336'
+              : needsRender
+                ? '#ff9800'  // Yellow: any staleness (timestamp, content, or missing clips)
+                : '#4CAF50', // Green: fully in sync
             color: 'white',
             border: 'none',
             borderRadius: '4px',
@@ -433,9 +530,11 @@ export const TopBar: React.FC<TopBarProps> = ({
             opacity: 1
           }}
           title={
-            isRendering ? "Stop rendering" : 
-            (needsRender ? `Re-render chapter (${staleCount} dialogs need update)` : 
-             (hasChapterAudio ? "Re-render chapter" : "Render full chapter"))
+            isRendering
+              ? "Stop rendering"
+              : needsRender
+                ? `Chapter needs render - ${staleCount} dialogs affected (${hasTimestampStale ? 'timestamp issues' : xmlChanged ? 'XML changed' : 'stale content'})`
+                : "Chapter is up to date (timestamps and hashes in sync)"
           }
         >
           {isRendering ? (

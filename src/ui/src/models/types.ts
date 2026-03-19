@@ -81,16 +81,33 @@ export interface DialogRenderStatus {
 }
 
 export interface ChapterRenderState {
-  version: number;
-  story: string;
-  chapter: string;
-  xmlHash: string;
+  version?: number;
+  story?: string;
+  chapter?: string;
+  xmlHash?: string;
   needsRender: boolean;
-  isFullyRendered: boolean;
-  staleDialogs: string[];
-  staleCount: number;
-  lastRenderedAt: number;
-  dialogCount: number;
+  isFullyRendered?: boolean;
+  staleDialogs?: string[];
+  staleCount?: number;
+  chapterRenderedAt?: number;
+  dialogCount?: number;
+  // Timestamp-based staleness fields (added 2026-03-17)
+  hasTimestampStale?: boolean;
+  has_timestamp_stale?: boolean;  // Python uses snake_case
+  timestampStaleDialogs?: string[];
+  timestamp_stale_dialogs?: string[];  // Python uses snake_case
   dialogs?: Record<string, DialogRenderStatus>;
   error?: string;
+  // Additional fields from comprehensive render state function
+  status?: string;
+  chapterState?: {
+    reason?: string;
+    [key: string]: any;
+  };
+  summary?: any;
+  metadata?: any;
+  // Explicit properties from get_comprehensive_render_state()
+  stale_dialogs?: string[];
+  timestamp_stale?: string[];
+  [key: string]: any;  // Allow any additional properties from Python comprehensive function
 }
