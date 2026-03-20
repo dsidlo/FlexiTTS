@@ -28,6 +28,17 @@ export default defineConfig({
       reporter: ['text', 'html'],
       reportsDirectory: './test-reports/coverage',
       enabled: process.env.VITE_COVERAGE === 'true',
+      all: false,
+      include: ['src/**/*.ts', 'src/**/*.tsx'],
+      exclude: [
+        // Test files
+        'src/__tests__/**',
+        // Type definitions only
+        'src/models/**',
+        // Config files
+        '**/*.config.*',
+        '**/*.d.ts',
+      ],
     },
   },
 })
