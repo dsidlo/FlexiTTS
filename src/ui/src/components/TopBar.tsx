@@ -43,10 +43,19 @@ export const TopBar: React.FC<TopBarProps> = ({
   const [staleCount, setStaleCount] = useState(0);
   const [xmlChanged, setXmlChanged] = useState(false);
   const [hasTimestampStale, setHasTimestampStale] = useState(false);
+  
+  // Track which chapter is currently being rendered to prevent duplicate renders
+  const currentRenderChapterRef = React.useRef<string | null>(null);
 
   // Check render state when chapter changes
   useEffect(() => {
     if (!chapter || !filePath) return;
+    // Skip render state check if we're currently rendering this chapter
+    const chapterName = filePath.split('/').pop()?.replace('.md', '.xml') || '';
+    if (currentRenderChapterRef.current === chapterName) {
+      debugLog.info('TopBar:useEffect', 'Skipping render state check while rendering in progress', { chapterName });
+      return;
+    }
     checkRenderState();
   }, [chapter, filePath, currentStory]);
 
@@ -179,85 +188,131 @@ export const TopBar: React.FC<TopBarProps> = ({
   const handleRenderChapter = async () => {
     const chapterName = filePath.split('/').pop()?.replace('.md', '.xml') || 'Unknown.xml';
     
+    // Prevent concurrent renders of the same chapter
     if (isRendering) {
       // Cancel operation
       await PythonBridgeService.cancelAudio(chapterName);
       setIsRendering(false);
+      currentRenderChapterRef.current = null;
+      return;
+    }
+    
+    // Check if we're already rendering this specific chapter
+    if (currentRenderChapterRef.current === chapterName) {
+      debugLog.warn('TopBar:handleRenderChapter', 'Render already in progress for this chapter, skipping', { chapterName });
       return;
     }
 
     setIsRendering(true);
+    currentRenderChapterRef.current = chapterName;
+    
     try {
       if (hasUnsavedChanges && onSave) {
         console.log(`[TopBar] Auto-saving unsaved changes before rendering...`);
         await handleSave();
       }
 
-      console.log(`[TopBar] Rendering full chapter: ${chapterName}`);
+      console.log(`[TopBar] Rendering chapter: ${chapterName}`);
 
-      // We can use runPythonScript explicitly to process the whole chapter
       if (typeof window !== 'undefined' && window.api && window.api.runPythonScript) {
-         const storyDir = currentStory?.directory_name || 'Story-Default';
-         const ttsServiceUrl = 'ws://localhost:8765';
-         debugLog.info('TopBar:handleRenderChapter', 'Invoking chapter_xml_to_audio.py for full chapter render', {
-           storyDir,
-           chapterName,
-           ttsServiceUrl,
-           script: 'src/scripts/chapter_xml_to_audio.py',
-         });
-         await window.api.runPythonScript('src/scripts/chapter_xml_to_audio.py', [
+        const storyDir = currentStory?.directory_name || 'Story-Default';
+        const ttsServiceUrl = 'ws://localhost:8765';
+        const renderStoryDir = currentStory?.directory_name || 'Story-Default';
+
+        // Get the list of dialogs that need rendering from renderState
+        // These are dialogs with content changes (hash mismatch) or missing clips
+        const dialogsToRender = renderState?.dialogs?.needs_render || 
+                                renderState?.needsRenderDialogs || 
+                                renderState?.stale_dialogs || 
+                                renderState?.staleDialogs || 
+                                [];
+        
+        // Filter to only content-stale dialogs (not just timestamp-stale)
+        // Timestamp-stale dialogs don't need re-rendering, just timestamp update
+        const timestampStaleDialogs = renderState?.dialogs?.timestamp_stale || 
+                                     renderState?.timestampStaleDialogs || 
+                                     [];
+        
+        // Only render dialogs that are content-stale or missing
+        const contentStaleDialogs = dialogsToRender.filter((id: string) => !timestampStaleDialogs.includes(id));
+        
+        debugLog.info('TopBar:handleRenderChapter', 'Starting selective render', {
+          totalStale: dialogsToRender.length,
+          contentStale: contentStaleDialogs.length,
+          timestampStale: timestampStaleDialogs.length,
+          chapterName
+        });
+
+        // Step 1: Render each content-stale dialog individually
+        for (const dialogId of contentStaleDialogs) {
+          // Parse dialogId format: "section_dlgseq" e.g., "002_003"
+          const [sectionNum, dlgseqNum] = dialogId.split('_');
+          
+          debugLog.info('TopBar:handleRenderChapter', 'Rendering individual dialog', {
+            dialogId,
+            sectionNum,
+            dlgseqNum,
+            chapterName
+          });
+
+          await window.api.runPythonScript('src/scripts/chapter_xml_to_audio.py', [
             `${storyDir}/story-xml/${chapterName}`,
-            `--create-missing-clips`,
+            `--section`, sectionNum,
+            `--dlgseq`, dlgseqNum,
             `--tts-service`, ttsServiceUrl
-         ]);
+          ]);
+        }
 
-         if (onRenderComplete) onRenderComplete();
+        // Step 2: Call with --create-missing-clips to stitch all clips together
+        // This creates the final chapter audio file without re-rendering individual dialogs
+        debugLog.info('TopBar:handleRenderChapter', 'Stitching chapter audio with --create-missing-clips', {
+          chapterName
+        });
+        
+        await window.api.runPythonScript('src/scripts/chapter_xml_to_audio.py', [
+          `${storyDir}/story-xml/${chapterName}`,
+          `--create-missing-clips`,
+          `--tts-service`, ttsServiceUrl
+        ]);
 
-         // After successful full chapter render, update XML hash AND refresh dialog state
-         // This ensures the comprehensive render state reflects the completed render
-         const renderStoryDir = currentStory?.directory_name || 'Story-Default';
+        // Step 3: Update .chapter_rendered.json with actual file timestamps
+        // This updates timestamps based on the actual audio clip files and chapter audio file
+        await PythonBridgeService.updateChapterXmlHash(chapterName, renderStoryDir);
+        debugLog.info('TopBar:handleRenderChapter', 'Updated render state with file timestamps');
 
-         // First update the XML hash to mark this render as complete
-         await PythonBridgeService.updateChapterXmlHash(chapterName, renderStoryDir);
-         debugLog.info('TopBar:handleRenderChapter', 'Updated XML hash after successful render');
+        // Step 4: Refresh the render state to update UI
+        const updatedState = await PythonBridgeService.checkChapterRenderState(chapterName, renderStoryDir, true);
 
-         // Then do a full refresh of all dialog signatures and timestamps
-         // This triggers get_comprehensive_render_state() with refresh_dialog_hashes=true
-         const updatedState = await PythonBridgeService.checkChapterRenderState(chapterName, renderStoryDir, true);
+        const needsRenderValue = updatedState?.needs_render !== undefined
+          ? updatedState.needs_render
+          : (updatedState?.needsRender !== undefined ? updatedState.needsRender : false);
 
-         // Update local state from the fresh comprehensive render state
-         // This ensures TopBar immediately reflects the corrected state
-         const needsRenderValue = updatedState?.needs_render !== undefined
-           ? updatedState.needs_render
-           : (updatedState?.needsRender !== undefined ? updatedState.needsRender : false);
+        const staleCountValue = updatedState?.stale_count !== undefined
+          ? updatedState.stale_count
+          : (updatedState?.staleCount !== undefined ? updatedState.staleCount : 0);
 
-         const staleCountValue = updatedState?.stale_count !== undefined
-           ? updatedState.stale_count
-           : (updatedState?.staleCount !== undefined ? updatedState.staleCount : 0);
+        const hasTimestampStaleValue = updatedState?.has_timestamp_stale !== undefined
+          ? updatedState.has_timestamp_stale
+          : (updatedState?.hasTimestampStale !== undefined ? updatedState.hasTimestampStale : false);
 
-         const hasTimestampStaleValue = updatedState?.has_timestamp_stale !== undefined
-           ? updatedState.has_timestamp_stale
-           : (updatedState?.hasTimestampStale !== undefined ? updatedState.hasTimestampStale : false);
+        setNeedsRender(needsRenderValue);
+        setStaleCount(staleCountValue);
+        setXmlChanged(false);
+        setHasTimestampStale(hasTimestampStaleValue);
 
-         setNeedsRender(needsRenderValue);
-         setStaleCount(staleCountValue);
-         setXmlChanged(false); // XML hash was just updated
-         setHasTimestampStale(hasTimestampStaleValue);
+        debugLog.info('TopBar:handleRenderChapter', 'Chapter render complete', {
+          needsRender: needsRenderValue,
+          staleCount: staleCountValue,
+          hasTimestampStale: hasTimestampStaleValue,
+          chapterReason: updatedState?.chapter?.reason || updatedState?.chapterReason || 'good'
+        });
 
-         debugLog.info('TopBar:handleRenderChapter', 'Successfully refreshed render state after full chapter render', {
-           needsRender: needsRenderValue,
-           staleCount: staleCountValue,
-           hasTimestampStale: hasTimestampStaleValue,
-           chapterReason: updatedState?.chapter?.reason || updatedState?.chapterReason || 'good'
-         });
-
-         // Also call onRenderComplete to ensure parent (useChapter) also refreshes its state
-         // Use full refresh to ensure timestamp staleness is properly recalculated
-         if (onRenderComplete) {
-           setTimeout(() => {
-             onRenderComplete();
-           }, 1000); // Give files time to settle
-         }
+        // Notify parent to refresh state
+        if (onRenderComplete) {
+          setTimeout(() => {
+            onRenderComplete();
+          }, 500);
+        }
       } else {
         console.warn("API not available for rendering");
       }
@@ -265,6 +320,7 @@ export const TopBar: React.FC<TopBarProps> = ({
       console.error("[TopBar] Render chapter failed or was cancelled:", error);
     } finally {
       setIsRendering(false);
+      currentRenderChapterRef.current = null;
     }
   };
 

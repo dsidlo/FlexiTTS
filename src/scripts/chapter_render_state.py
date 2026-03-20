@@ -67,27 +67,37 @@ class ChapterRenderState:
     story: str = ""
     chapter: str = ""
     xml_hash: str = ""  # Last known XML hash (for change detection)
+@dataclass
+class ChapterRenderState:
+    """
+    Minimal signature cache for render state tracking.
+    
+    IMPORTANT: This is NOT application state - it is a signature cache only.
+    All render state (needs_render, stale_dialogs, timestamp_stale, etc.) is 
+    DERIVED AT RUNTIME from observation of XML + filesystem vs this cache.
+    
+    Fields stored in .chapter_rendered.json:
+    - version: File format version
+    - story/chapter: Identifiers
+    - xml_hash: Last known XML signature (updated after successful render)
+    - xml_path/clips_dir: Path references
+    - dialogs: Map of dialog_id → {hash, rendered_at} (signatures + timestamps only)
+    - chapter_rendered_at: When chapter audio file was last created
+    """
+    version: int = 1
+    story: str = ""
+    chapter: str = ""
+    xml_hash: str = ""  # MD5 of XML at last successful render
     xml_path: str = ""
     clips_dir: str = ""
     dialogs: Dict[str, DialogRenderState] = None  # Only stores signatures + timestamps
     chapter_rendered_at: int = 0  # When the chapter as a whole was last rendered (chapter audio file)
-    is_fully_rendered: bool = True
-    needs_render: bool = False
-    stale_dialogs: List[str] = None
-    stale_count: int = 0
-    # Computed fields (derived from observation):
-    xml_changed: bool = False
-    current_xml_hash: str = ""
-    has_timestamp_stale: bool = False
-    timestamp_stale_dialogs: List[str] = None
+    # Note: stale_dialogs, needs_render, timestamp_stale are COMPUTED AT RUNTIME
+    # and NOT stored in the signature cache. See get_comprehensive_render_state().
 
     def __post_init__(self):
         if self.dialogs is None:
             self.dialogs = {}
-        if self.stale_dialogs is None:
-            self.stale_dialogs = []
-        if self.timestamp_stale_dialogs is None:
-            self.timestamp_stale_dialogs = []
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to minimal persisted format - only signatures and timestamps."""
@@ -100,14 +110,13 @@ class ChapterRenderState:
             "clips_dir": self.clips_dir,
             "dialogs": {k: v.to_dict() for k, v in self.dialogs.items()},
             "chapter_rendered_at": self.chapter_rendered_at,
-            # Persist computed fields so UI always has access to timestamp staleness
-            "timestamp_stale_dialogs": getattr(self, 'timestamp_stale_dialogs', []),
-            "has_timestamp_stale": getattr(self, 'has_timestamp_stale', False),
+            # Note: All computed fields (needs_render, stale_dialogs, timestamp_stale, etc.)
+            # are DERIVED AT RUNTIME and NOT persisted. See get_comprehensive_render_state().
         }
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "ChapterRenderState":
-        """Load from persisted signature store. Most fields are computed from observation."""
+        """Load from persisted signature store. All state is computed from observation."""
         dialogs = {}
         for k, v in data.get("dialogs", {}).items():
             dialogs[k] = DialogRenderState.from_dict(v)
@@ -121,11 +130,8 @@ class ChapterRenderState:
             clips_dir=data.get("clips_dir", ""),
             dialogs=dialogs,
             chapter_rendered_at=data.get("chapter_rendered_at", 0),
-            # Load computed timestamp staleness fields if present
-            has_timestamp_stale=data.get("has_timestamp_stale", False),
-            timestamp_stale_dialogs=data.get("timestamp_stale_dialogs", []),
-            stale_dialogs=data.get("stale_dialogs", []),
-            stale_count=data.get("stale_count", 0),
+            # Note: stale_dialogs, needs_render, timestamp_stale are COMPUTED AT RUNTIME
+            # We do NOT load them from file - they're derived fresh each check.
         )
 
 
@@ -496,10 +502,16 @@ def get_comprehensive_render_state(
             )
 
         state.xml_hash = current_xml_hash
-        # Use chapter audio file timestamp for chapter_rendered_at (per requirements)
+        # chapter_rendered_at should reflect the actual chapter audio file timestamp
+        # This will be set below after we check the chapter audio file
         chapter_audio_mtime = get_chapter_audio_timestamp(clips_dir, chapter_stem)
-        state.chapter_rendered_at = chapter_audio_mtime if chapter_audio_mtime > 0 else now
-        logger.info(f"Updated all {len(current_dialogs)} dialog signatures, chapter_rendered_at={state.chapter_rendered_at} (from chapter audio file)")
+        if chapter_audio_mtime > 0:
+            state.chapter_rendered_at = chapter_audio_mtime
+            logger.info(f"Updated all {len(current_dialogs)} dialog signatures, chapter_rendered_at={state.chapter_rendered_at} (from chapter audio file)")
+        else:
+            # No chapter audio file yet, use current time
+            state.chapter_rendered_at = now
+            logger.info(f"Updated all {len(current_dialogs)} dialog signatures, chapter_rendered_at={state.chapter_rendered_at} (no chapter audio file yet)")
 
     # Now perform comprehensive observation and analysis
     missing_dialogs = []
@@ -655,11 +667,10 @@ def get_comprehensive_render_state(
 
     logger.info(f"get_comprehensive_render_state: save decision - refresh={refresh_dialog_hashes}, state_file_exists={state_file_exists}, has_xml_hash={has_xml_hash}, should_save={should_save}")
 
-    # Store computed fields on the state object so they get persisted
-    state.has_timestamp_stale = len(timestamp_stale_dialogs) > 0
-    state.timestamp_stale_dialogs = timestamp_stale_dialogs.copy()
-    state.stale_dialogs = all_stale.copy()
-    state.stale_count = len(all_stale)
+    # Note: We do NOT store computed fields (has_timestamp_stale, timestamp_stale_dialogs,
+    # stale_dialogs, stale_count) on the state object because they are DERIVED AT RUNTIME
+    # from observation. The .chapter_rendered.json is a signature cache only.
+    # See requirement doc: docs/implementation/2026-03-11-chapter-render-state-tracking.md
 
     if should_save:
         logger.info(f"get_comprehensive_render_state: saving state with {len(state.dialogs)} dialogs")
@@ -754,25 +765,37 @@ def update_render_state_with_new_clips(
         # Use single canonical hash function (per docs)
         hash_val = compute_dialog_hash(utt)
 
+        # Get the actual clip file mtime for the timestamp
+        clip_path = Path(path_str) if path_str else None
+        if clip_path and clip_path.exists():
+            file_mtime = int(clip_path.stat().st_mtime * 1000)
+        else:
+            file_mtime = now
+
         # Update the signature cache
         if dialog_id in state.dialogs:
             state.dialogs[dialog_id] = DialogRenderState(
                 dialog_id=dialog_id,
                 hash=hash_val,
-                rendered_at=now,
+                rendered_at=file_mtime,
             )
-            logger.debug(f"Updated timestamp for re-rendered dialog {dialog_id}")
+            logger.debug(f"Updated timestamp for re-rendered dialog {dialog_id} to file mtime {file_mtime}")
         else:
             state.dialogs[dialog_id] = DialogRenderState(
                 dialog_id=dialog_id,
                 hash=hash_val,
-                rendered_at=now,
+                rendered_at=file_mtime,
             )
-            logger.debug(f"Added new dialog {dialog_id} to signature cache")
+            logger.debug(f"Added new dialog {dialog_id} to signature cache with file mtime {file_mtime}")
 
-    # Use chapter_rendered_at (per requirements - always from chapter audio file)
+    # chapter_rendered_at should reflect the actual chapter audio file timestamp
     chapter_audio_mtime = get_chapter_audio_timestamp(clips_dir, chapter_stem)
-    state.chapter_rendered_at = chapter_audio_mtime if chapter_audio_mtime > 0 else now
+    if chapter_audio_mtime > 0:
+        state.chapter_rendered_at = chapter_audio_mtime
+    else:
+        # No chapter audio file yet, don't set chapter_rendered_at
+        # It will be set when the chapter audio file is created
+        logger.debug(f"No chapter audio file yet, leaving chapter_rendered_at as {state.chapter_rendered_at}")
     save_render_state(state, clips_dir, chapter_stem)
 
     # Use the single authoritative function to get updated state
@@ -826,11 +849,11 @@ def update_dialog_timestamp(
         state = load_render_state(clips_dir, chapter_stem)
         if dialog_id in state.dialogs:
             state.dialogs[dialog_id].rendered_at = new_timestamp
-            # chapter_rendered_at must ALWAYS come from chapter audio file (per requirements)
-            chapter_audio_mtime = get_chapter_audio_timestamp(clips_dir, chapter_stem)
-            state.chapter_rendered_at = chapter_audio_mtime if chapter_audio_mtime > 0 else max(state.chapter_rendered_at or 0, new_timestamp)
+            # Note: Do NOT update chapter_rendered_at for individual dialog renders.
+            # Updating it would make OTHER dialogs appear timestamp stale since they
+            # have older timestamps. Only update dialog-specific timestamp.
             save_render_state(state, clips_dir, chapter_stem)
-            logger.info(f"Updated timestamp for {dialog_id} to {new_timestamp}, chapter_rendered_at={state.chapter_rendered_at} (from chapter audio file)")
+            logger.info(f"Updated timestamp for {dialog_id} to {new_timestamp} (chapter_rendered_at unchanged: {state.chapter_rendered_at})")
             # Recompute comprehensive state with updated timestamp
             comprehensive = get_comprehensive_render_state(
                 xml_path, clips_dir, chapter_stem, story_name, refresh_dialog_hashes=False
@@ -852,11 +875,11 @@ def update_dialog_timestamp(
         if clip_path and clip_path.exists():
             now = int(clip_path.stat().st_mtime * 1000)
             state.dialogs[dialog_id].rendered_at = now
-            # chapter_rendered_at must ALWAYS come from chapter audio file (per requirements)
-            chapter_audio_mtime = get_chapter_audio_timestamp(clips_dir, chapter_stem)
-            state.chapter_rendered_at = chapter_audio_mtime if chapter_audio_mtime > 0 else max(state.chapter_rendered_at or 0, now)
+            # Note: Do NOT update chapter_rendered_at for individual dialog renders.
+            # Updating it would make OTHER dialogs appear timestamp stale since they
+            # have older timestamps. Only update dialog-specific timestamp.
             save_render_state(state, clips_dir, chapter_stem)
-            logger.info(f"Updated timestamp for {dialog_id} to file mtime {now}, chapter_rendered_at={state.chapter_rendered_at} (from chapter audio file)")
+            logger.info(f"Updated timestamp for {dialog_id} to file mtime {now} (chapter_rendered_at unchanged: {state.chapter_rendered_at})")
             comprehensive = get_comprehensive_render_state(
                 xml_path, clips_dir, chapter_stem, story_name, refresh_dialog_hashes=False
             )
@@ -865,11 +888,10 @@ def update_dialog_timestamp(
             now = int(time.time() * 1000)
             if dialog_id in state.dialogs:
                 state.dialogs[dialog_id].rendered_at = now
-                # chapter_rendered_at must ALWAYS come from chapter audio file (per requirements)
-                chapter_audio_mtime = get_chapter_audio_timestamp(clips_dir, chapter_stem)
-                state.chapter_rendered_at = chapter_audio_mtime if chapter_audio_mtime > 0 else max(state.chapter_rendered_at or 0, now)
+                # Note: Do NOT update chapter_rendered_at for individual dialog renders.
+                # Updating it would make OTHER dialogs appear timestamp stale.
                 save_render_state(state, clips_dir, chapter_stem)
-                logger.info(f"Updated timestamp for {dialog_id} to current time {now}, chapter_rendered_at={state.chapter_rendered_at} (from chapter audio file, no clip found)")
+                logger.info(f"Updated timestamp for {dialog_id} to current time {now} (chapter_rendered_at unchanged: {state.chapter_rendered_at})")
                 comprehensive = get_comprehensive_render_state(
                     xml_path, clips_dir, chapter_stem, story_name, refresh_dialog_hashes=False
                 )
@@ -972,10 +994,8 @@ def refresh_all_dialog_hashes_after_render(
     # Use chapter audio file timestamp for chapter_rendered_at (per requirements)
     chapter_audio_mtime = get_chapter_audio_timestamp(clips_dir, chapter_stem)
     state.chapter_rendered_at = chapter_audio_mtime if chapter_audio_mtime > 0 else now
-    state.stale_dialogs = []
-    state.stale_count = 0
-    state.needs_render = False
-    state.is_fully_rendered = True
+    # Note: We do NOT set computed fields (stale_dialogs, needs_render, etc.) on state.
+    # These are DERIVED AT RUNTIME from observation in get_comprehensive_render_state().
 
     # Save updated state
     save_render_state(state, clips_dir, chapter_stem)
@@ -1014,16 +1034,24 @@ def refresh_all_dialog_hashes_after_render(
 
 
 def remove_stale_clip_files(
-    state: ChapterRenderState, clips_dir: Path, chapter_stem: str
+    state: ChapterRenderState, stale_dialogs: List[str], clips_dir: Path, chapter_stem: str
 ) -> List[str]:
     """
     Remove clip files for stale dialogs to force re-rendering.
-
-    Returns list of removed file paths.
+    
+    Args:
+        state: The render state containing dialog info
+        stale_dialogs: List of dialog IDs that are stale (passed separately since
+                      this is derived at runtime, not stored in state)
+        clips_dir: Base clips directory
+        chapter_stem: Chapter stem name
+    
+    Returns:
+        List of removed file paths.
     """
     removed = []
 
-    for dialog_id in state.stale_dialogs:
+    for dialog_id in stale_dialogs:
         dialog_state = state.dialogs.get(dialog_id)
         if not dialog_state or not dialog_state.clip_file:
             continue

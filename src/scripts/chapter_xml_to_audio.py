@@ -649,15 +649,10 @@ def main():
                     "clip_path": str(out_path),
                     "stage": "rendering",
                 }
-                log_debug("main:render_alert_start_attempt", message=f"Rendering {utt.kind} {utt.dlgseq} for {utt.speaker}", metadata=render_metadata)
-                alert_sent = emit_render_alert(
-                    provider,
-                    f"Rendering {utt.kind} {utt.dlgseq} for {utt.speaker}",
-                    alert_type="info",
-                    metadata=render_metadata,
-                )
+                log_debug("main:render_start", message=f"Rendering {utt.kind} {utt.dlgseq} for {utt.speaker}", metadata=render_metadata)
+                # Note: TTS WebSocket server sends start alert, so we don't send duplicate here
                 logger.info(
-                    f"render_alert_start sent={alert_sent} story={story_name} chapter={utt.chapter_num} "
+                    f"render_start story={story_name} chapter={utt.chapter_num} "
                     f"section={utt.section_num} dialog={utt.dlgseq} speaker={utt.speaker}"
                 )
 
@@ -916,21 +911,20 @@ def main():
                     # This ensures timestamps and clip mappings are properly maintained
                     try:
                         from chapter_render_state import update_render_state_with_new_clips, load_render_state, get_state_file_path
-                        state_path = get_state_file_path(Path("Stories") / story_name / "story-audio" / "clips", xml_path.stem)
+                        # Use actual story directory name (with hyphens) not the transformed title
+                        clips_base_path = Path("Stories") / story_dir.name / "story-audio" / "clips"
+                        state_path = get_state_file_path(clips_base_path, xml_path.stem)
                         if state_path.exists():
-                            state = load_render_state(
-                                Path("Stories") / story_name / "story-audio" / "clips",
-                                xml_path.stem
-                            )
+                            state = load_render_state(clips_base_path, xml_path.stem)
                             updated_state = update_render_state_with_new_clips(
                                 state, all_generated_clips,
-                                Path("Stories") / story_name / "story-audio" / "clips",
+                                clips_base_path,
                                 xml_path.stem,
                                 is_full_render=True
                             )
                             logger.info(f"Updated render state with {len(all_generated_clips)} clips")
                         else:
-                            logger.debug("No existing render state file, skipping update")
+                            logger.debug(f"No existing render state file at {state_path}, skipping update")
                     except ImportError:
                         logger.debug("chapter_render_state module not available, skipping render state update")
                     except Exception as e:

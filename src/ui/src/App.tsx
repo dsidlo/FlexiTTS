@@ -541,7 +541,7 @@ function App() {
     setHasChapterAudio(await PythonBridgeService.checkChapterAudio(name));
     // Also refresh render state so stale indicators update after selective dialog re-renders
     if (checkRenderState) {
-      await checkRenderState(fullRefresh);
+      await checkRenderState(null, fullRefresh); // Pass null for chapterOverride to use current chapter
     }
   }, [currentChapterFile, setAvailableClips, setHasChapterAudio, checkRenderState]);
 

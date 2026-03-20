@@ -35,8 +35,8 @@ export interface UseChapterReturn {
   handleChapterSelect: (filePath: string, loadedConfig?: StoryConfig) => Promise<void>;
   handleUpdateDialog: (dlgseq: string, sectionId: string, updatedDialog: DialogElement) => Promise<void>;
   getIsStaleClip: (sectionId: string, dlgseq: string) => boolean;
-  refreshClips: (fullRefresh?: boolean) => Promise<void>;
-  checkRenderState: (refreshDialogHashes?: boolean) => Promise<void>;
+  refreshClips: (fullRefresh?: boolean, chapterOverride?: Chapter | null) => Promise<void>;
+  checkRenderState: (chapterOverride?: Chapter | null, refreshDialogHashes?: boolean) => Promise<void>;
   setCurrentChapterFile: React.Dispatch<React.SetStateAction<string>>;
   runXmlGenerationPipeline: (stem: string, attempt: number) => Promise<void>;
   setIsGeneratingStructure: React.Dispatch<React.SetStateAction<boolean>>;
@@ -86,12 +86,17 @@ export const useChapter = (storyDirectory?: string): UseChapterReturn => {
   lastSavedXmlRef.current = lastSavedXml;
   hasUnsavedChangesRef.current = hasUnsavedChanges;
 
-  const checkRenderState = useCallback(async (refreshDialogHashes: boolean = false) => {
-    if (!chapter) {
+  const checkRenderState = useCallback(async (
+    chapterOverride: Chapter | null = null,
+    refreshDialogHashes: boolean = false
+  ) => {
+    // Use the provided chapterOverride if available, otherwise fall back to current chapter state
+    const chapterToUse = chapterOverride || chapter;
+    if (!chapterToUse) {
       setRenderState(null);
       return;
     }
-    const stem = chapter.fileName.split('/').pop()?.replace('.xml', '') || '';
+    const stem = chapterToUse.fileName.split('/').pop()?.replace('.xml', '') || '';
     const storyDir = storyDirectory || 'Story-Default';
     try {
       const state = await PythonBridgeService.checkChapterRenderState(stem, storyDir, refreshDialogHashes);
@@ -116,23 +121,22 @@ export const useChapter = (storyDirectory?: string): UseChapterReturn => {
     }
   }, [chapter?.fileName, storyDirectory]);
 
-  const refreshClips = useCallback(async (fullRefresh: boolean = false) => {
-    if (!chapter) return;
-    const stem = chapter.fileName.split('/').pop()?.replace('.xml', '') || '';
+  const refreshClips = useCallback(async (
+    _fullRefresh: boolean = false,
+    chapterOverride: Chapter | null = null
+  ) => {
+    // Use the provided chapterOverride if available, otherwise fall back to current chapter state
+    const chapterToUse = chapterOverride || chapter;
+    if (!chapterToUse) return;
+    const stem = chapterToUse.fileName.split('/').pop()?.replace('.xml', '') || '';
     try {
       const clips = await PythonBridgeService.listChapterClips(stem);
       setAvailableClips(clips);
       setHasChapterAudio(await PythonBridgeService.checkChapterAudio(stem));
       
-      // After full render, do a complete refresh with multiple checks to ensure UI updates
-      if (fullRefresh) {
-        await new Promise(resolve => setTimeout(resolve, 300)); // Allow file system to settle
-        await checkRenderState(true); // First check
-        await new Promise(resolve => setTimeout(resolve, 200)); 
-        await checkRenderState(true); // Second check to ensure state is fresh
-      } else {
-        await checkRenderState(false);
-      }
+      // Check render state to update UI staleness indicators
+      // Note: Never refresh hashes here - hashes only update after actual rendering
+      await checkRenderState(chapterToUse, false);
     } catch (err) {
       debugLog.warn('useChapter:refreshClips', 'Failed', err);
     }
@@ -156,8 +160,8 @@ export const useChapter = (storyDirectory?: string): UseChapterReturn => {
     const isTimestampStale = timestampStaleDialogs.includes(dialogId);
 
     // Also check the comprehensive has_timestamp_stale flag
-    const hasGlobalTimestampStale = renderState.has_timestamp_stale ||
-                                   renderState.hasTimestampStale ||
+    const hasGlobalTimestampStale = renderState?.has_timestamp_stale ||
+                                   renderState?.hasTimestampStale ||
                                    false;
 
     const isStale = isContentStale || isTimestampStale || (hasGlobalTimestampStale && isTimestampStale);
@@ -165,8 +169,8 @@ export const useChapter = (storyDirectory?: string): UseChapterReturn => {
     // Additional safeguard: if we have chapter-level staleness and this dialog has a clip
     // that should be newer than chapter, treat it as stale
     const chapterState = renderState?.chapter;
-    const chapterReason = (typeof chapterState === 'object' && chapterState !== null && 'reason' in chapterState)
-      ? (chapterState as any).reason
+    const chapterReason = chapterState && typeof chapterState === 'object' && 'reason' in chapterState
+      ? (chapterState as { reason: string }).reason
       : (renderState?.chapterReason || renderState?.status || '');
     if (!isStale && chapterReason === 'newer_clips') {
       // For now, just log - we could make all dialogs stale in this case
@@ -307,9 +311,11 @@ export const useChapter = (storyDirectory?: string): UseChapterReturn => {
       setLastSavedXml(newXml);
       setHasUnsavedChanges(false);
 
-      // Full refresh after loading chapter to ensure fresh render state
-      await refreshClips(true);
-      await checkRenderState(true);
+      // Check render state after loading chapter to update UI staleness indicators
+      // Pass parsedChapter explicitly to avoid stale closure issues
+      // Note: Never refresh hashes here - hashes only update after actual rendering
+      await refreshClips(false, parsedChapter);
+      await checkRenderState(parsedChapter, false);
 
       debugLog.info(id, '[RESOURCE-ACCESS] Chapter loaded successfully', { filePath });
     } catch (err) {
@@ -467,9 +473,10 @@ export const useChapter = (storyDirectory?: string): UseChapterReturn => {
         setHasUnsavedChangesValue(false);
       }
 
-      // Full refresh after dialog updates to ensure staleness is properly reflected
-      await refreshClips(true);
-      await checkRenderState(true);
+      // Check staleness after dialog updates - do NOT refresh hashes, just check current state
+      // Hashes should only be updated after actual rendering completes
+      await refreshClips(false, updatedChapter);
+      await checkRenderState(updatedChapter, false);
     } catch (error) {
       debugLog.exception('useChapter:handleUpdateDialog', 'validateChapterDialogs failed', error, {
         dlgseq,
