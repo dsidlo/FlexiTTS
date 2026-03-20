@@ -14,7 +14,7 @@ The idea with FlexiTTS (Flexi-tus) is to create a simple flexible text to audio-
   - AI Augmented workflow
 
 ## Features:
-   * Clone or Synthesize Voices + post-processing audio effects to voices.
+  * Clone or Synthesize Voices + post-processing audio effects to voices.
   * Character parameters
 	* Clone or Synthesize
     * Post-Processing effects
@@ -27,6 +27,15 @@ The idea with FlexiTTS (Flexi-tus) is to create a simple flexible text to audio-
     * Appls effects to audio-clips based on tags
     * Append audio-clips into your favorite DAW.
     * Final audio-clips are also appended together by chapter.
+
+## Latest Changes
+
+- Added Electron-based UI.
+
+## Requirements
+
+- GPU with 8 Gig or more VRAM
+  - Known to work with NVIDIA GPU
 
 ## Examples of generated audio
 
@@ -58,18 +67,21 @@ The idea with FlexiTTS (Flexi-tus) is to create a simple flexible text to audio-
 
 ## Hardware Requirements
 
-  * CPU with at least 4 cores and 8GB of RAM
+  * Linux Only (for now)
+  * CPU with at least 4 cores and 16GB of RAM
   * GPU with at least 8GB of VRAM
     * Use for local audio dialog generation. 
   * SSD with at least 500GB of storage
-  * Access to a commercial grade LLM
+  * Access to a commercial grade LLM (Grok, GPT)
     * Used to generate the required XML representation of the original Chapter document augmented with tags indicating dialogs for the Narrator and other Characters.
 
-## Setup
+## Setup & Run
 
 - Run `git clone https://github.com/QwenLM/Qwen3-TTS.git`
 - Run `uv init --python 3.12`
 - Run `uv sync`
+- cd src/ui
+- npm start
 
 ## Scripts
 
@@ -95,7 +107,8 @@ The idea with FlexiTTS (Flexi-tus) is to create a simple flexible text to audio-
 
 ## Possible Future Enhancements
 
-- **Web Interface**: Develop a web-based interface for managing chapters, editing XML, and generating audio.
+- **Flatpack or AppImage**: Package the application for easy distribution and installation.
+- **Character Asses Interface**: Character voice resources.
 - **Advanced Audio Effects**: Integrate more advanced audio effects and filters for better audio quality.
 - **Multi-Language Support**: Extend the system to support multiple languages for diverse content.
 - **AI Video Generation**: Generate video clips with synchronized audio for immersive storytelling.
