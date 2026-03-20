@@ -35,6 +35,22 @@ export const DialogBar: React.FC<DialogBarProps> = ({
   const [attrEditValue, setAttrEditValue] = useState<string>('');
   const [isGeneratingAudio, setIsGeneratingAudio] = useState(false);
   const [isEditingCharacter, setIsEditingCharacter] = useState(false);
+  
+  // Local state for text editing to prevent cursor jumping
+  // We use local state during editing and only sync to parent on blur
+  const [localText, setLocalText] = useState(dialog.text || '');
+  const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+  const cursorPositionRef = React.useRef<number>(0);
+
+  // Sync local text when dialog prop changes (e.g., from external updates)
+  // but preserve cursor position if we're currently editing
+  React.useEffect(() => {
+    const newText = dialog.text || '';
+    // Only update if the text actually changed and we're not currently focused
+    if (newText !== localText && document.activeElement !== textareaRef.current) {
+      setLocalText(newText);
+    }
+  }, [dialog.text]);
 
   // Client-side audio player hook
   const { isPlaying: isPlayingAudio, play: playAudio, stop: stopAudio } = useAudioPlayer();
@@ -97,15 +113,32 @@ export const DialogBar: React.FC<DialogBarProps> = ({
     setIsEditingCharacter(false);
   };
 
-  const handleTextChange = async (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    // Stop propagation so it doesn't trigger the expand/collapse from a parent
-    e.stopPropagation();
-    await onUpdateDialog(dialog.dlgseq, dialog.sectionId || '0', {
-      ...dialog,
-      text: e.target.value,
-      attributes: { ...dialog.attributes, dlgseq: dialog.dlgseq, section_seq: dialog.sectionId || '0' }
-    });
+  const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    // Store cursor position before React state update
+    if (textareaRef.current) {
+      cursorPositionRef.current = textareaRef.current.selectionStart;
+    }
+    // Update local state only - don't call parent yet
+    setLocalText(e.target.value);
   };
+
+  const handleTextBlur = async () => {
+    // Only sync to parent if text actually changed
+    if (localText !== (dialog.text || '')) {
+      await onUpdateDialog(dialog.dlgseq, dialog.sectionId || '0', {
+        ...dialog,
+        text: localText,
+        attributes: { ...dialog.attributes, dlgseq: dialog.dlgseq, section_seq: dialog.sectionId || '0' }
+      });
+    }
+  };
+
+  // Restore cursor position after React re-render
+  React.useEffect(() => {
+    if (textareaRef.current && document.activeElement === textareaRef.current) {
+      textareaRef.current.setSelectionRange(cursorPositionRef.current, cursorPositionRef.current);
+    }
+  });
 
   const handleAttrClick = (key: string, value: string) => {
     setEditingAttr(key);
@@ -479,8 +512,10 @@ export const DialogBar: React.FC<DialogBarProps> = ({
           onClick={(e) => e.stopPropagation()}
         >
           <textarea
-            value={dialog.text || ''}
+            ref={textareaRef}
+            value={localText}
             onChange={handleTextChange}
+            onBlur={handleTextBlur}
             onClick={(e) => e.stopPropagation()}
             style={{
               width: '100%',
