@@ -465,13 +465,8 @@ export const useChapter = (storyDirectory?: string): UseChapterReturn => {
       setXmlContent(newXml);
       const hasChanges = newXml !== lastSavedXmlRef.current;
       
-      if (hasChanges) {
-        const stem = chapter.fileName.split('/').pop()?.replace('.xml', '') || '';
-        const xmlPath = `${effectiveStoryDir}/story-xml/${stem}.xml`;
-        await PythonBridgeService.writeChapterFile(xmlPath, newXml);
-        setLastSavedXmlValue(newXml);
-        setHasUnsavedChangesValue(false);
-      }
+      // Set unsaved changes status based on whether content changed
+      setHasUnsavedChangesValue(hasChanges);
 
       // Check staleness after dialog updates - do NOT refresh hashes, just check current state
       // Hashes should only be updated after actual rendering completes
