@@ -358,3 +358,12 @@ cython_debug/
 
 # Story audio clips
 */*/story-audio/*
+
+# Scratch / local model / dependency work directories
+demucs/
+Qwen3-TTS/
+Qwen3-TTS_server/
+chatterbox-tts/
+heartlib-main/
+docs/electrobun-migration/
+docs/FlexiTTS Create Character UI-Plan.md
