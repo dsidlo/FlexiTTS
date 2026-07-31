@@ -56,7 +56,8 @@ export const TopBar: React.FC<TopBarProps> = ({
       debugLog.info('TopBar:useEffect', 'Skipping render state check while rendering in progress', { chapterName });
       return;
     }
-    checkRenderState();
+    void checkRenderState();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chapter, filePath, currentStory]);
 
   // Sync with centralized renderState from useChapter hook (preferred source of truth)

@@ -60,6 +60,7 @@ export const DialogBar: React.FC<DialogBarProps> = ({
     if (newText !== localText && document.activeElement !== textareaRef.current) {
       setLocalText(newText);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dialog.text]);
 
   // Client-side audio player hook

@@ -19,15 +19,7 @@ const ChapterWindow: React.FC = () => {
   const [loadingStories, setLoadingStories] = useState(false);
   const [storyError, setStoryError] = useState<string | null>(null);
 
-  // Fetch stories on component mount
-  useEffect(() => {
-    fetchStories();
-  }, []);
-
-  /**
-   * Fetch available stories from the backend
-   */
-  const fetchStories = async () => {
+  const fetchStories = useCallback(async () => {
     setLoadingStories(true);
     setStoryError(null);
     
@@ -45,7 +37,12 @@ const ChapterWindow: React.FC = () => {
     } finally {
       setLoadingStories(false);
     }
-  };
+  }, [selectedStory]);
+
+  // Fetch stories on component mount
+  useEffect(() => {
+    fetchStories();
+  }, [fetchStories]);
 
   /**
    * Handle story selection change

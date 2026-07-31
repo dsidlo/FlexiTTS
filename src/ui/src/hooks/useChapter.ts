@@ -119,7 +119,7 @@ export const useChapter = (storyDirectory?: string): UseChapterReturn => {
       debugLog.warn('useChapter:checkRenderState', 'Failed', err);
       setRenderState(null);
     }
-  }, [chapter?.fileName, storyDirectory]);
+  }, [chapter, storyDirectory]);
 
   const refreshClips = useCallback(async (
     chapterOverride: Chapter | null = null
@@ -139,7 +139,7 @@ export const useChapter = (storyDirectory?: string): UseChapterReturn => {
     } catch (err) {
       debugLog.warn('useChapter:refreshClips', 'Failed', err);
     }
-  }, [chapter?.fileName, checkRenderState]);
+  }, [chapter, checkRenderState]);
 
   const getIsStaleClip = useCallback((sectionId: string, dlgseq: string): boolean => {
     if (!renderState) {
@@ -321,7 +321,7 @@ export const useChapter = (storyDirectory?: string): UseChapterReturn => {
       debugLog.exception(id, '[RESOURCE-ACCESS] Failed to load chapter', err as Error, { filePath });
       throw err;
     }
-  }, [parseChapterXML, refreshClips, checkRenderState]);
+  }, [parseChapterXML, storyDirectory, config, refreshClips, checkRenderState]);
 
   /**
    * Run XML generation pipeline with retries
@@ -368,7 +368,7 @@ export const useChapter = (storyDirectory?: string): UseChapterReturn => {
       }
       await runXmlGenerationPipeline(stem, attempt + 1);
     }
-  }, []);
+  }, [storyDirectory]);
 
   /**
    * Handle chapter selection with unsaved changes check
@@ -420,7 +420,23 @@ export const useChapter = (storyDirectory?: string): UseChapterReturn => {
         setIsGeneratingStructure(false);
       }
     }
-  }, [currentChapterFile, loadChapter, runXmlGenerationPipeline]);
+  }, [currentChapterFile, storyDirectory, loadChapter, runXmlGenerationPipeline]);
+
+  /**
+   * Set lastSavedXml ref value directly
+   */
+  const setLastSavedXmlValue = useCallback((value: string) => {
+    lastSavedXmlRef.current = value;
+    setLastSavedXml(value);
+  }, []);
+
+  /**
+   * Set hasUnsavedChanges ref value directly
+   */
+  const setHasUnsavedChangesValue = useCallback((value: boolean) => {
+    hasUnsavedChangesRef.current = value;
+    setHasUnsavedChanges(value);
+  }, []);
 
   /**
    * Update a dialog element within the chapter
@@ -480,23 +496,7 @@ export const useChapter = (storyDirectory?: string): UseChapterReturn => {
       });
       // Keep optimistic state to avoid UI freeze
     }
-  }, [chapter, config, storyDirectory, lastSavedXmlRef, refreshClips, checkRenderState]);
-
-  /**
-   * Set lastSavedXml ref value directly
-   */
-  const setLastSavedXmlValue = useCallback((value: string) => {
-    lastSavedXmlRef.current = value;
-    setLastSavedXml(value);
-  }, []);
-
-  /**
-   * Set hasUnsavedChanges ref value directly
-   */
-  const setHasUnsavedChangesValue = useCallback((value: boolean) => {
-    hasUnsavedChangesRef.current = value;
-    setHasUnsavedChanges(value);
-  }, []);
+  }, [chapter, config, storyDirectory, lastSavedXmlRef, refreshClips, checkRenderState, setHasUnsavedChangesValue]);
 
   return {
     config,

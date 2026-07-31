@@ -223,7 +223,7 @@ export const useAudio = (storyDirectory?: string): UseAudioReturn => {
         throw err;
       }
     }
-  }, []);
+  }, [storyDirectory]);
 
   return {
     availableClips,

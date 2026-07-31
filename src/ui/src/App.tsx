@@ -309,7 +309,7 @@ function App() {
   }, []);
 
   // XML generation pipeline
-  const runXmlGenerationPipeline = async (stem: string, attempt: number, storyDirOverride?: string): Promise<void> => {
+  const runXmlGenerationPipeline = useCallback(async (stem: string, attempt: number, storyDirOverride?: string): Promise<void> => {
     if (attempt > 3) throw new Error('Exceeded max retries');
     setGenerateAttempt(attempt);
     try {
@@ -333,7 +333,7 @@ function App() {
       if (attempt >= 3) throw err;
       await runXmlGenerationPipeline(stem, attempt + 1, storyDirOverride);
     }
-  };
+  }, [currentStory?.directory_name, setGenerateAttempt]);
 
   // Chapter selection handler
   const handleChapterSelect = useCallback(async (filePath: string, loadedConfig?: StoryConfig, forcedStoryDir?: string) => {
@@ -400,58 +400,10 @@ function App() {
       }
     }
     setLoading(false);
-  }, [currentChapterFile, currentStory, currentStory?.directory_name, hasUnsavedChangesRef, hasUnsavedMarkdownChangesRef, xmlContentRef,
+  }, [currentChapterFile, currentStory, hasUnsavedChangesRef, hasUnsavedMarkdownChangesRef, xmlContentRef,
       markdownContent, setLastSavedXmlValue, setLastSavedMarkdownValue, setHasUnsavedMarkdownChangesValue,
       setCurrentChapterFile, loadMarkdown, loadChapter, setIsGeneratingStructure, setGenerateAttempt,
-      setLoading, resetMarkdown]);
-
-  // Story selection handler
-  const handleStorySelect = useCallback(async (story: StoryInfo | null) => {
-    if (!story) return;
-
-    // Check for unsaved changes
-    if ((hasUnsavedChangesRef.current || hasUnsavedMarkdownChangesRef.current) && currentChapterFile) {
-      const res = await PythonBridgeService.showConfirmDialog(
-        'Unsaved Changes',
-        'You have unsaved changes.',
-        'Save before switching stories?'
-      );
-      if (res === 2) return; // Cancel
-      if (res === 0) {
-        // Save current chapter before switching
-        await handleSave();
-      }
-    }
-
-    setLoading(true);
-    setCurrentStory(story);
-    debugLog.info(`${logId}:handleStorySelect`, 'Switching story', { story });
-    await PythonBridgeService.setCurrentStory(story.directory_name);
-
-    // Load config for new story
-    const cfg = await PythonBridgeService.loadStoryConfigForStory(story.directory_name);
-    debugLog.info(`${logId}:handleStorySelect`, 'Loaded story config after switch', {
-      storyDir: story.directory_name,
-      chaptersDir: cfg?.global?.chapters,
-      storyXmlDir: cfg?.global?.['story-xml'],
-      storyAudioDir: cfg?.global?.['story-audio'],
-      clipsDir: cfg?.global?.clips,
-      voicesDir: cfg?.global?.voices,
-    });
-    setConfig(cfg);
-
-    // Load chapters for new story
-    const files = await PythonBridgeService.listChapterFilesForStory(story.directory_name);
-    setChapterList(files);
-
-    // Select first chapter of new story
-    if (files.length > 0) {
-      await handleChapterSelect(files[0], cfg, story.directory_name);
-    }
-
-    setLoading(false);
-  }, [hasUnsavedChangesRef, hasUnsavedMarkdownChangesRef, currentChapterFile,
-      setLoading, setCurrentStory, setConfig, setChapterList, handleChapterSelect]);
+      setLoading, resetMarkdown, runXmlGenerationPipeline]);
 
   // Save handler
   const handleSave = useCallback(async () => {
@@ -513,6 +465,54 @@ function App() {
       markdownContent, setLastSavedXmlValue, setHasUnsavedChangesValue,
       setLastSavedMarkdownValue, setHasUnsavedMarkdownChangesValue, runXmlGenerationPipeline,
       loadChapter, config, setIsGeneratingStructure, setGenerateAttempt]);
+
+  // Story selection handler
+  const handleStorySelect = useCallback(async (story: StoryInfo | null) => {
+    if (!story) return;
+
+    // Check for unsaved changes
+    if ((hasUnsavedChangesRef.current || hasUnsavedMarkdownChangesRef.current) && currentChapterFile) {
+      const res = await PythonBridgeService.showConfirmDialog(
+        'Unsaved Changes',
+        'You have unsaved changes.',
+        'Save before switching stories?'
+      );
+      if (res === 2) return; // Cancel
+      if (res === 0) {
+        // Save current chapter before switching
+        await handleSave();
+      }
+    }
+
+    setLoading(true);
+    setCurrentStory(story);
+    debugLog.info(`${logId}:handleStorySelect`, 'Switching story', { story });
+    await PythonBridgeService.setCurrentStory(story.directory_name);
+
+    // Load config for new story
+    const cfg = await PythonBridgeService.loadStoryConfigForStory(story.directory_name);
+    debugLog.info(`${logId}:handleStorySelect`, 'Loaded story config after switch', {
+      storyDir: story.directory_name,
+      chaptersDir: cfg?.global?.chapters,
+      storyXmlDir: cfg?.global?.['story-xml'],
+      storyAudioDir: cfg?.global?.['story-audio'],
+      clipsDir: cfg?.global?.clips,
+      voicesDir: cfg?.global?.voices,
+    });
+    setConfig(cfg);
+
+    // Load chapters for new story
+    const files = await PythonBridgeService.listChapterFilesForStory(story.directory_name);
+    setChapterList(files);
+
+    // Select first chapter of new story
+    if (files.length > 0) {
+      await handleChapterSelect(files[0], cfg, story.directory_name);
+    }
+
+    setLoading(false);
+  }, [hasUnsavedChangesRef, hasUnsavedMarkdownChangesRef, currentChapterFile,
+      setLoading, setCurrentStory, setConfig, setChapterList, handleChapterSelect, handleSave]);
 
   // Toggle editor handler
   const handleToggleEditor = useCallback(async () => {
