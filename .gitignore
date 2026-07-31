@@ -361,6 +361,10 @@ cython_debug/
 
 # Scratch / local model / dependency work directories
 demucs/
+Qwen3-TTS
+Qwen3-TTS_server
+chatterbox-tts
+heartlib-main
 Qwen3-TTS/
 Qwen3-TTS_server/
 chatterbox-tts/
