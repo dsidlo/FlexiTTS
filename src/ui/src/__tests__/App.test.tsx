@@ -189,7 +189,7 @@ describe('App', () => {
     vi.clearAllMocks();
     
     // Setup window.api for IPC mocking
-    (window as any).api = {
+    (window as unknown as { api: Partial<Window['api']> }).api = {
       listStories: vi.fn().mockResolvedValue([
         { name: 'Entanglement', path: '/home/user/Stories/Story-Entanglement', directory_name: 'Story-Entanglement' }
       ]),

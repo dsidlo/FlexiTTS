@@ -48,7 +48,7 @@ export default class DarkThemeReporter implements Reporter {
   }
 
   private processFile(file: TestModule): TestResult | null {
-    const filePath = file.moduleId || (file as any).filepath || file.id || 'unknown'
+    const filePath = file.moduleId || (file as TestModule).filepath || file.id || 'unknown'
     const fileName = path.basename(String(filePath))
     
     const testCases: TestResult['assertionResults'] = []
@@ -76,21 +76,21 @@ export default class DarkThemeReporter implements Reporter {
           title: this.buildTestName(testCase),
           status: mappedState,
           duration: testCase.result?.duration || 0,
-          failureMessages: testCase.result?.errors?.map((e: any) => String(e.message || e)) || []
+          failureMessages: testCase.result?.errors?.map((e: Error) => String(e.message || e)) || []
         })
       } else if (task.type === 'suite' || task.type === 'custom') {
         // Recurse into collections
         const collection = task as TestSuite
         if (collection.tasks) {
           collection.tasks.forEach(walkTasks)
-        } else if ((collection as any).children) {
-          (collection as any).children.forEach(walkTasks)
+        } else if ((collection as TestSuite).children) {
+          (collection as TestSuite).children?.forEach(walkTasks)
         }
       }
     }
 
     // Start from file's tasks
-    const tasks = (file as any).tasks || file.children || []
+    const tasks = (file as TestModule).tasks || file.children || []
     tasks.forEach(walkTasks)
 
     if (testCases.length === 0) return null
@@ -106,7 +106,7 @@ export default class DarkThemeReporter implements Reporter {
     const parts: string[] = [testCase.name]
     
     // Walk up the parent chain
-    let current: any = testCase
+    let current: Task = testCase
     while (current.parent) {
       current = current.parent
       if (current.name && current.type === 'suite') {
@@ -358,7 +358,6 @@ export default class DarkThemeReporter implements Reporter {
   private generateTestFilesHtml(): string {
     return this.testResults.map(file => {
       const passed = file.assertionResults.filter(t => t.status === 'passed').length
-      const failed = file.assertionResults.filter(t => t.status === 'failed').length
       const total = file.assertionResults.length
 
       const testsList = file.assertionResults.map(test => {

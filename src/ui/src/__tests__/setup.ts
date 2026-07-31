@@ -34,7 +34,7 @@ Object.defineProperty(window, 'api', {
 // Mock window.DOMParser if needed
 if (!window.DOMParser) {
   class MockDOMParser {
-    parseFromString(_str: string, _type: string) {
+    parseFromString() {
       return {
         querySelector: (sel: string) => {
           if (sel === 'parsererror') return null;

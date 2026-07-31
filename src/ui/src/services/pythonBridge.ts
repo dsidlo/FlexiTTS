@@ -4,7 +4,7 @@ import { debugLog } from '../utils/debugLogger';
 const LOG_ID = '[pythonBridge]';
 
 // Module-level WebSocket connection status (set by useTtsAlerts hook)
-let wsConnectionStatus: { isConnected: boolean; isReady: boolean; lastConnectedAt: number | null } = {
+const wsConnectionStatus: { isConnected: boolean; isReady: boolean; lastConnectedAt: number | null } = {
   isConnected: false,
   isReady: false,
   lastConnectedAt: null
@@ -143,7 +143,7 @@ export const PythonBridgeService = {
     } as StoryConfig;
   },
 
-  loadGlobalConfig: async (): Promise<any> => {
+  loadGlobalConfig: async (): Promise<unknown> => {
     const id = `${LOG_ID}:loadGlobalConfig`;
     debugLog.info(id, 'ENTER loadGlobalConfig');
     
@@ -168,7 +168,7 @@ export const PythonBridgeService = {
     };
   },
 
-  saveGlobalConfig: async (configData: any): Promise<boolean> => {
+  saveGlobalConfig: async (configData: unknown): Promise<boolean> => {
     const id = `${LOG_ID}:saveGlobalConfig`;
     debugLog.info(id, 'ENTER saveGlobalConfig', { configData });
     
@@ -640,13 +640,13 @@ export const PythonBridgeService = {
     throw new Error('checkChapterAudio requires Electron IPC');
   },
 
-  checkChapterRenderState: async (chapterName: string, storyDir: string = 'Story-Default', refreshDialogHashes: boolean = false): Promise<any> => {
+  checkChapterRenderState: async (chapterName: string, storyDir: string = 'Story-Default', refreshDialogHashes: boolean = false): Promise<ChapterRenderState> => {
     const id = `${LOG_ID}:checkChapterRenderState`;
     debugLog.info(id, 'ENTER checkChapterRenderState', { chapterName, storyDir });
     
     try {
       // Normalize chapter stem (remove .xml/.md)
-      let stem = chapterName.replace('.xml', '').replace('.md', '');
+      const stem = chapterName.replace('.xml', '').replace('.md', '');
       const xmlPath = `${storyDir}/story-xml/${stem}.xml`;
       
       debugLog.info(id, 'Calling chapter_render_state.py', { 
@@ -691,7 +691,7 @@ export const PythonBridgeService = {
         debugLog.warn(id, 'No runPythonScript API - returning mock state', { chapterName });
         return { needs_render: false, stale_count: 0, stale_dialogs: [] };
       }
-    } catch (err: any) {
+    } catch (err: Error) {
       debugLog.exception(id, 'checkChapterRenderState failed', err, { chapterName, storyDir });
       // Graceful fallback per CODING_DISCIPLINE (non-critical UX)
       return { needs_render: false, stale_count: 0, stale_dialogs: [], error: err.message };
@@ -702,12 +702,12 @@ export const PythonBridgeService = {
    * Update Chapter XML hash after successful full chapter render.
    * This should ONLY be called after "Render Chapter" completes successfully.
    */
-  updateChapterXmlHash: async (chapterName: string, storyDir: string = 'Story-Default'): Promise<any> => {
+  updateChapterXmlHash: async (chapterName: string, storyDir: string = 'Story-Default'): Promise<Record<string, unknown>> => {
     const id = `${LOG_ID}:updateChapterXmlHash`;
     debugLog.info(id, 'ENTER updateChapterXmlHash', { chapterName, storyDir });
 
     try {
-      let stem = chapterName.replace('.xml', '').replace('.md', '');
+      const stem = chapterName.replace('.xml', '').replace('.md', '');
       const xmlPath = `${storyDir}/story-xml/${stem}.xml`;
 
       debugLog.info(id, 'Calling chapter_render_state.py to update XML hash', {
@@ -729,7 +729,7 @@ export const PythonBridgeService = {
         try {
           result = JSON.parse(output.trim());
           debugLog.info(id, 'Successfully updated XML hash', { chapterName });
-        } catch (parseErr) {
+        } catch {
           debugLog.warn(id, 'Failed to parse update response', { output: output.substring(0, 100) });
           result = { success: false };
         }
@@ -739,7 +739,7 @@ export const PythonBridgeService = {
         debugLog.warn(id, 'No runPythonScript API', { chapterName });
         return { success: false };
       }
-    } catch (err: any) {
+    } catch (err: Error) {
       debugLog.exception(id, 'updateChapterXmlHash failed', err, { chapterName, storyDir });
       return { success: false, error: err.message };
     }
@@ -754,12 +754,12 @@ export const PythonBridgeService = {
     dialogId: string,
     storyDir: string = 'Story-Default',
     timestamp?: number
-  ): Promise<any> => {
+  ): Promise<Record<string, unknown>> => {
     const id = `${LOG_ID}:updateDialogTimestamp`;
     debugLog.info(id, 'ENTER updateDialogTimestamp', { chapterName, dialogId, storyDir });
 
     try {
-      let stem = chapterName.replace('.xml', '').replace('.md', '');
+      const stem = chapterName.replace('.xml', '').replace('.md', '');
       const xmlPath = `${storyDir}/story-xml/${stem}.xml`;
 
       debugLog.info(id, 'Calling chapter_render_state.py to update dialog timestamp', {
@@ -802,7 +802,7 @@ export const PythonBridgeService = {
         debugLog.warn(id, 'No runPythonScript API', { chapterName, dialogId });
         return { success: false };
       }
-    } catch (err: any) {
+    } catch (err: Error) {
       debugLog.exception(id, 'updateDialogTimestamp failed', err, { chapterName, dialogId, storyDir });
       return { success: false, error: err.message };
     }

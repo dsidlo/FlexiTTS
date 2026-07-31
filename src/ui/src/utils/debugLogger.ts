@@ -24,7 +24,7 @@ const isDebugEnabled = (): boolean => {
       return localStorage.getItem('FlexiTTS_DEBUG') === '1' || 
              process.env.VITE_DEBUG === '1';
     }
-  } catch (e) {
+  } catch {
     // localStorage not available
   }
   return false;
@@ -64,7 +64,7 @@ const writeLog = async (level: string, id: string, message: string, data?: unkno
       const fullLine = `${logLine}${dataStr}\n`;
       await (window as unknown as { api: { writeFile: (path: string, content: string) => Promise<void> } }).api.writeFile(LOG_FILE, fullLine);
     }
-  } catch (e) {
+  } catch {
     // Silent fail - console logging already done
   }
 };

@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { AlertService, alertService, alerts } from '../services/alertService';
-import type { AlertType } from '../hooks/useAlerts';
 
 describe('AlertService', () => {
   let service: AlertService;

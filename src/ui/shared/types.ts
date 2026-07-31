@@ -10,9 +10,9 @@ export interface StoryConfig {
     clips: string;
     'clip-separation': number;
   };
-  'llm-xml-generator': any[];
-  'dialog-effects': any[];
-  'story-audio-post-process': any;
+  'llm-xml-generator': Record<string, unknown>[];
+  'dialog-effects': Record<string, unknown>[];
+  'story-audio-post-process': unknown;
   characters: CharacterConfig[];
 }
 
@@ -34,7 +34,7 @@ export interface DialogElement {
   sectionId?: string;
   character: string;
   text: string;
-  attributes: Record<string, any>;
+  attributes: Record<string, string | number | boolean>;
 }
 
 export interface Chapter {

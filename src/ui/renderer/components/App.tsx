@@ -5,7 +5,7 @@ import { StoryConfig } from '../../shared/types';
 // Mocked IPC for the renderer MVP
 const mockIpc = {
   validateConfig: async () => ({ success: true }),
-  validateChapterXml: async (path: string) => ({ success: true })
+  validateChapterXml: async () => ({ success: true })
 };
 
 const App: React.FC = () => {
@@ -43,7 +43,7 @@ const App: React.FC = () => {
 
   return (
     <div className="flexitts-app">
-      <ChapterWindow config={config} />
+      <ChapterWindow />
     </div>
   );
 };

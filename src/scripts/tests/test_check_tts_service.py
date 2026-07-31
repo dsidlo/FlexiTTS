@@ -5,7 +5,7 @@ import sys
 import os
 import json
 from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock, AsyncMock
+from unittest.mock import Mock, patch, MagicMock
 
 # Ensure src/scripts is in path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -134,7 +134,7 @@ class TestCheckTTSServiceDetailed:
         
         # Mock the RemoteTTSProvider
         mock_provider = Mock()
-        mock_provider.health_check = AsyncMock(return_value={
+        mock_provider.health_check = Mock(return_value={
             "status": "healthy",
             "ready": True,
             "model": "test_model",

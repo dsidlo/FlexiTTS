@@ -128,9 +128,6 @@ def main():
     xml_dir = xml_cfg if xml_cfg.is_absolute() else (story_dir / xml_cfg).resolve()
     logger.info(f"resolved resources story_dir={story_dir} chapters_dir={chapters_dir} xml_dir={xml_dir}")
 
-    # Re-parse with config-aware paths
-    args = parser.parse_args()
-
     chapter_files = []
     input_file = None
 

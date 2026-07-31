@@ -4,7 +4,7 @@ import { useAudio } from '../hooks/useAudio';
 import { PythonBridgeService } from '../services/pythonBridge';
 
 // Safe mock helper function
-const safeMock = <T extends (...args: any[]) => any>(fn: T | undefined): Mock<T> => (fn ?? vi.fn()) as Mock<T>;
+const safeMock = <T extends (...args: unknown[]) => unknown>(fn: T | undefined): Mock<T> => (fn ?? vi.fn()) as Mock<T>;
 
 // Mock the PythonBridgeService
 vi.mock('../services/pythonBridge', () => ({

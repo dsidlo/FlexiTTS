@@ -1,26 +1,25 @@
 import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import * as path from 'path';
-import { spawn, ChildProcess } from 'child_process';
+import { spawn, ChildProcess, exec } from 'child_process';
 import * as fs from 'fs';
 import * as jsyaml from 'js-yaml';
-import { pathToFileURL } from 'url';
 
 // Simple file logger - writes to /tmp/FlexiTTS.log only (no console output)
 const LOG_FILE = '/tmp/FlexiTTS.log';
-function writeLog(level: string, ...args: any[]) {
+function writeLog(level: string, ...args: unknown[]) {
   const timestamp = new Date().toISOString();
   const message = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
   const line = `[${timestamp}] ${level}: ${message}\n`;
   try {
     fs.appendFileSync(LOG_FILE, line);
-  } catch (e) {
+  } catch {
     // If we can't write to log file, silently fail
   }
 }
 const log = {
-  info: (...args: any[]) => writeLog('INFO', ...args),
-  error: (...args: any[]) => writeLog('ERROR', ...args),
-  warn: (...args: any[]) => writeLog('WARN', ...args)
+  info: (...args: unknown[]) => writeLog('INFO', ...args),
+  error: (...args: unknown[]) => writeLog('ERROR', ...args),
+  warn: (...args: unknown[]) => writeLog('WARN', ...args)
 };
 
 // Store active processes so they can be killed
@@ -29,8 +28,7 @@ const activeProcesses: Map<string, ChildProcess> = new Map();
 // Store TTS service process for cleanup
 let ttsServiceProcess: ChildProcess | null = null;
 
-// Track if we're shutting down to prevent new operations
-let isShuttingDown = false;
+// Track if shutdown is in progress/completed to prevent duplicate cleanup
 let shutdownInProgress = false;
 let shutdownCompleted = false;
 
@@ -54,7 +52,7 @@ function isPathWithinParent(childPath: string, parentPath: string): boolean {
     // If relative path starts with '..', child is outside parent
     // If path.isAbsolute(relative), there's an error or inconsistency
     return !relative.startsWith('..') && !path.isAbsolute(relative);
-  } catch (e) {
+  } catch {
     return false;
   }
 }
@@ -127,12 +125,12 @@ function killAllActiveProcesses() {
         setTimeout(() => {
           try {
             process.kill(proc.pid!, 'SIGKILL');
-          } catch (e) {
+          } catch {
             // Already dead
           }
         }, 2000);
       }
-    } catch (e) {
+    } catch {
       log.error(`[Cleanup] Failed to kill ${id}:`, e);
     }
   });
@@ -146,12 +144,12 @@ function killAllActiveProcesses() {
         if (ttsServiceProcess?.pid && !ttsServiceProcess.killed) {
           try {
             process.kill(ttsServiceProcess.pid, 'SIGKILL');
-          } catch (e) {
+          } catch {
             // Already dead
           }
         }
       }, 2000);
-    } catch (e) {
+    } catch {
       log.info('[Cleanup] Failed to kill TTS warmup process:', e);
     }
   }
@@ -168,7 +166,7 @@ function getTtsServicePid(): number | null {
     const raw = fs.readFileSync(pidFile, 'utf-8').trim();
     const pid = Number.parseInt(raw, 10);
     return Number.isFinite(pid) ? pid : null;
-  } catch (e) {
+  } catch {
     log.warn('[App] Failed to read TTS PID file', e);
     return null;
   }
@@ -178,7 +176,7 @@ function isProcessRunning(pid: number): boolean {
   try {
     process.kill(pid, 0);
     return true;
-  } catch (e) {
+  } catch {
     return false;
   }
 }
@@ -195,7 +193,7 @@ async function waitForTtsServiceExit(timeoutMs: number): Promise<boolean> {
       log.info(`[App] TTS service process ${pid} is no longer running`);
       try {
         fs.unlinkSync('/tmp/FlexiTTS_tts_service.pid');
-      } catch (e) {
+      } catch {
         // ignore
       }
       return true;
@@ -206,7 +204,6 @@ async function waitForTtsServiceExit(timeoutMs: number): Promise<boolean> {
 }
 
 function runStopTtsService(force: boolean): Promise<boolean> {
-  const { exec } = require('child_process');
   const cmd = force
     ? 'uv run python src/scripts/stop_tts_service.py --force --silent'
     : 'uv run python src/scripts/stop_tts_service.py --silent';
@@ -217,7 +214,7 @@ function runStopTtsService(force: boolean): Promise<boolean> {
     exec(cmd, {
       cwd: projectRoot,
       timeout: 10000
-    }, (err: any, stdout: string, stderr: string) => {
+    }, (err: Error | null, stdout: string, stderr: string) => {
       if (stdout?.trim()) log.info('[App] TTS stop stdout', stdout.trim());
       if (stderr?.trim()) log.warn('[App] TTS stop stderr', stderr.trim());
       if (err) {
@@ -282,13 +279,12 @@ async function performShutdownAndQuit() {
   }
 
   shutdownInProgress = true;
-  isShuttingDown = true;
   log.info('[App] performShutdownAndQuit: starting cleanup');
 
   try {
     killAllActiveProcesses();
     await ensureTtsServiceStoppedOrWarn();
-  } catch (e) {
+  } catch {
     log.error('[App] Error during TTS shutdown sequence', e);
     try {
       await dialog.showMessageBox({
@@ -307,7 +303,7 @@ async function performShutdownAndQuit() {
 
   try {
     killDevServerProcesses();
-  } catch (e) {
+  } catch {
     log.warn('[App] Failed to kill dev server processes', e);
   }
 
@@ -319,12 +315,10 @@ async function performShutdownAndQuit() {
 
 // Kill dev server processes (vite, npm, concurrently) when app exits
 function killDevServerProcesses() {
-  const { exec } = require('child_process');
-  
   log.info('[Cleanup] Killing dev server processes...');
   
   // Kill vite dev server on port 5173
-  exec('pkill -f "vite --port 5173" 2>/dev/null || true', (err: any) => {
+  exec('pkill -f "vite --port 5173" 2>/dev/null || true', (err: Error | null) => {
     if (!err) log.info('[Cleanup] Vite dev server killed');
   });
   
@@ -344,22 +338,23 @@ function killDevServerProcesses() {
         try {
           process.kill(ppid, 'SIGTERM');
           log.info(`[Cleanup] Sent SIGTERM to parent ${ppid}`);
-        } catch (e) {
+        } catch {
           // Parent may already be dead
         }
       }, 500);
     }
-  } catch (e) {
+  } catch {
     log.info('[Cleanup] Could not kill parent process:', e);
   }
 }
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 try {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   if (require('electron-squirrel-startup')) {
     app.quit();
   }
-} catch (e) {
+} catch {
   // Ignore missing electron-squirrel-startup in dev mode
 }
 
@@ -394,13 +389,12 @@ app.commandLine.appendSwitch('ignore-certificate-errors');
 process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = 'true';
 
 function killExistingTtsWsServerProcesses(): Promise<void> {
-  const { exec } = require('child_process');
   const scriptMatch = `${projectRoot}/src/scripts/tts_ws_server.py`;
 
   log.info(`[TTS Warmup] Checking for existing TTS server processes: ${scriptMatch}`);
 
   return new Promise((resolve) => {
-    exec(`pkill -f "${scriptMatch}" 2>/dev/null || true`, (err: any, stdout: string, stderr: string) => {
+    exec(`pkill -f "${scriptMatch}" 2>/dev/null || true`, (err: Error | null, stdout: string, stderr: string) => {
       if (err) {
         log.warn('[TTS Warmup] pkill returned error while stopping existing TTS server', { err: String(err), stdout, stderr });
       } else {
@@ -423,9 +417,7 @@ async function warmupTTSService() {
       stdio: 'pipe'
     });
     
-    let output = '';
-    ttsServiceProcess.stdout?.on('data', (data) => {
-      output += data.toString();
+    ttsServiceProcess.stdout?.on('data', (data: Buffer) => {
       log.info(`[TTS Warmup] ${data.toString().trim()}`);
     });
     
@@ -570,7 +562,7 @@ async function executePythonScript(scriptPath: string, args: string[]): Promise<
           resolve({ stdout: output, stderr: errorOutput, code });
         }
       });
-    } catch (e: any) {
+    } catch (e: Error) {
       reject(new Error(`Security validation failed: ${e.message}`));
     }
   });
@@ -578,12 +570,8 @@ async function executePythonScript(scriptPath: string, args: string[]): Promise<
 
 // IPC handler - wrapper around executePythonScript
 ipcMain.handle('run-python-script', async (event, scriptPath: string, args: string[]) => {
-  try {
-    const result = await executePythonScript(scriptPath, args);
-    return result.stdout;
-  } catch (e: any) {
-    throw e;
-  }
+  const result = await executePythonScript(scriptPath, args);
+  return result.stdout;
 });
 
 ipcMain.handle('kill-process', async (event, matchString: string) => {
@@ -623,7 +611,7 @@ ipcMain.handle('read-file', async (event, filePath: string) => {
     if (fs.existsSync(configPath)) {
       try {
         const configContent = fs.readFileSync(configPath, 'utf-8');
-        const config = jsyaml.load(configContent) as any;
+        const config = jsyaml.load(configContent) as Record<string, unknown>;
         storiesDir = config?.FlexiTTS?.['stories-dir'];
         if (storiesDir) {
           storiesDir = expandTilde(storiesDir);
@@ -666,7 +654,7 @@ ipcMain.handle('read-file', async (event, filePath: string) => {
     const content = fs.readFileSync(fullPath, 'utf-8');
     log.info(`[IPC][RESOURCE-ACCESS] Successfully read file`, { filePath, fullPath, resourceType, length: content.length });
     return content;
-  } catch (err: any) {
+  } catch (err: Error) {
     log.error(`[IPC][RESOURCE-ACCESS] Error reading file: ${err.message}`, { filePath });
     throw new Error(`Failed to read file ${filePath}: ${err.message}`);
   }
@@ -688,7 +676,7 @@ ipcMain.handle('write-file', async (event, filePath: string, content: string) =>
     if (fs.existsSync(configPath)) {
       try {
         const configContent = fs.readFileSync(configPath, 'utf-8');
-        const config = jsyaml.load(configContent) as any;
+        const config = jsyaml.load(configContent) as Record<string, unknown>;
         storiesDir = config?.FlexiTTS?.['stories-dir'];
         if (storiesDir) {
           storiesDir = expandTilde(storiesDir);
@@ -741,7 +729,7 @@ ipcMain.handle('write-file', async (event, filePath: string, content: string) =>
       log.info(`[IPC][RESOURCE-ACCESS] Successfully wrote file`, { filePath, fullPath, resourceType, contentLength: content.length });
     }
     return true;
-  } catch (err: any) {
+  } catch (err: Error) {
     log.error(`[IPC][RESOURCE-ACCESS] Failed to write file: ${err.message}`, { filePath });
     throw new Error(`Failed to write file ${filePath}: ${err.message}`);
   }
@@ -758,7 +746,7 @@ ipcMain.handle('read-audio-file', async (event, filePath: string) => {
     if (fs.existsSync(configPath)) {
       try {
         const configContent = fs.readFileSync(configPath, 'utf-8');
-        const config = jsyaml.load(configContent) as any;
+        const config = jsyaml.load(configContent) as Record<string, unknown>;
         storiesDir = config?.FlexiTTS?.['stories-dir'];
         if (storiesDir) {
           storiesDir = expandTilde(storiesDir);
@@ -795,7 +783,7 @@ ipcMain.handle('read-audio-file', async (event, filePath: string) => {
     const base64 = data.toString('base64');
     log.info(`[IPC][RESOURCE-ACCESS] Successfully read audio file`, { filePath, fullPath, length: data.length });
     return `data:audio/wav;base64,${base64}`;
-  } catch (err: any) {
+  } catch (err: Error) {
     log.error(`[IPC][RESOURCE-ACCESS] Failed to read audio file: ${err.message}`, { filePath });
     throw new Error(`Failed to read audio file ${filePath}: ${err.message}`);
   }
@@ -836,7 +824,7 @@ function ensureGlobalConfigDir(): string {
   return flexittsDir;
 }
 
-function getStoriesDirFromConfig(config: any): string {
+function getStoriesDirFromConfig(config: Record<string, unknown>): string {
   const homeDir = process.env.HOME || process.env.USERPROFILE || '';
   const dataDir = process.env.XDG_DATA_HOME || path.join(homeDir, '.local', 'share');
   const defaultStoriesDir = path.join(dataDir, 'FlexiTTS', 'stories');
@@ -849,12 +837,12 @@ function getStoriesDirFromConfig(config: any): string {
   return defaultStoriesDir;
 }
 
-function getStoryDirPrefix(config: any): string {
+function getStoryDirPrefix(config: Record<string, unknown>): string {
   return config?.FlexiTTS?.['story-dir-prefix'] || 'Story-';
 }
 
 // Standalone function to load global config (used during app initialization)
-async function loadGlobalConfig(): Promise<any> {
+async function loadGlobalConfig(): Promise<Record<string, unknown>> {
   const configPath = getGlobalConfigPath();
   log.info(`[loadGlobalConfig] Checking config path: ${configPath}`);
   try {
@@ -887,7 +875,7 @@ ipcMain.handle('load-global-config', async () => {
   return loadGlobalConfig();
 });
 
-ipcMain.handle('save-global-config', async (event, configData: any) => {
+ipcMain.handle('save-global-config', async (event, configData: unknown) => {
   try {
     const configPath = getGlobalConfigPath();
     ensureGlobalConfigDir();
@@ -904,7 +892,7 @@ ipcMain.handle('list-stories', async () => {
   try {
     // Load global config directly
     const configPath = getGlobalConfigPath();
-    let config: any = null;
+    let config: Record<string, unknown> | null = null;
     
     try {
       if (fs.existsSync(configPath)) {
@@ -989,7 +977,7 @@ ipcMain.handle('load-story-config', async (event, storyDir: string) => {
     const content = fs.readFileSync(configPath, 'utf-8');
     log.info(`[IPC][RESOURCE-ACCESS] Successfully loaded story config`, { storyDir, configPath, storiesDir, contentLength: content.length });
     return jsyaml.load(content);
-  } catch (err: any) {
+  } catch (err: Error) {
     log.error(`[IPC][RESOURCE-ACCESS] Failed to load story config: ${storyDir}: ${err.message}`);
     throw new Error(`Failed to load story config from ${storyDir}: ${err.message}`);
   }
@@ -1287,7 +1275,7 @@ ipcMain.handle('play-sound-file', async (event, filePath: string) => {
         log.error(`Failed to play audio: ${err.message}`);
         reject(err);
       });
-    } catch (err: any) {
+    } catch (err: Error) {
       reject(new Error(`Failed to play sound: ${err.message}`));
     }
   });

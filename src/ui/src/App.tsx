@@ -391,7 +391,7 @@ function App() {
       try {
         await runXmlGenerationPipeline(stem, 1, storyDir);
         await loadChapter(xmlPath, loadedConfig, storyDir);
-      } catch (err) {
+      } catch {
         await PythonBridgeService.showErrorDialog('Generation Failed', `Failed to generate XML for ${stem}`);
         resetMarkdown();
       } finally {
@@ -680,6 +680,39 @@ function App() {
                 });
               }
 
+              // Get available emotions for current dialog's character
+              const getAvailableEmotions = (characterName: string): string[] => {
+                const charConfig = config?.characters?.find(c => c.name === characterName);
+                if (!charConfig) return [];
+                
+                const emotions: string[] = [];
+                
+                // Check custom-voice emotions
+                if (charConfig['custom-voice']?.emotions) {
+                  charConfig['custom-voice'].emotions.forEach((em: { emotion?: string; name?: string }) => {
+                    const emotionName = em.emotion || em.name;
+                    if (emotionName) emotions.push(emotionName);
+                  });
+                }
+                
+                // Check cloned-emotion configurations
+                if (charConfig['cloned-emotion']) {
+                  charConfig['cloned-emotion'].forEach((em: { emotion?: string }) => {
+                    if (em.emotion) emotions.push(em.emotion);
+                  });
+                }
+                
+                // Check top-level emotions array
+                if (charConfig.emotions) {
+                  charConfig.emotions.forEach((em: { emotion?: string; name?: string }) => {
+                    const emotionName = em.emotion || em.name;
+                    if (emotionName) emotions.push(emotionName);
+                  });
+                }
+                
+                return emotions;
+              };
+
               return (
                 <DialogBar
                   key={`${dialog.sectionId || '1'}-${dialog.dlgseq}-${dialog._index}`}
@@ -695,6 +728,7 @@ function App() {
                   onUpdateDialog={handleUpdateDialog}
                   onRefreshClips={refreshClips}
                   availableCharacters={config?.characters?.map(c => c.name) || []}
+                  availableEmotions={getAvailableEmotions(dialog.character)}
                 />
               );
             })}

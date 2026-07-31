@@ -9,10 +9,23 @@ export interface StoryConfig {
     clips: string;
     'clip-separation': number;
   };
-  'llm-xml-generator': any[];
-  'dialog-effects': any[];
-  'story-audio-post-process': any;
+  'llm-xml-generator': Record<string, unknown>[];
+  'dialog-effects': Record<string, unknown>[];
+  'story-audio-post-process': unknown;
   characters: CharacterConfig[];
+}
+
+export interface EmotionConfig {
+  emotion?: string;
+  name?: string;
+  instruct?: string;
+  'sox-effects'?: string[];
+}
+
+export interface ClonedEmotionConfig {
+  emotion: string;
+  'voice-sample': string;
+  'sox-effects'?: string[];
 }
 
 export interface CharacterConfig {
@@ -23,12 +36,15 @@ export interface CharacterConfig {
     language: string;
     speaker: string;
     instruct: string;
+    emotions?: EmotionConfig[];
   };
   'dialog-effects'?: string[];
+  emotions?: EmotionConfig[];
+  'cloned-emotion'?: ClonedEmotionConfig[];
 }
 
 export interface DialogValidationIssue {
-  code: 'missing-character' | 'invalid-custom-voice' | 'invalid-voice-sample' | 'invalid-dialog-effects';
+  code: 'missing-character' | 'invalid-custom-voice' | 'invalid-voice-sample' | 'invalid-dialog-effects' | 'invalid-emotion';
   message: string;
 }
 
@@ -40,7 +56,7 @@ export interface DialogElement {
   text: string;
   validationIssues?: DialogValidationIssue[];
   // Other XML attributes (e.g. emotion, tone, pace)
-  attributes: Record<string, any>;
+  attributes: Record<string, string | number | boolean>;
 }
 
 export interface Chapter {
@@ -102,12 +118,12 @@ export interface ChapterRenderState {
   status?: string;
   chapterState?: {
     reason?: string;
-    [key: string]: any;
+    [key: string]: unknown;
   };
-  summary?: any;
-  metadata?: any;
+  summary?: unknown;
+  metadata?: unknown;
   // Explicit properties from get_comprehensive_render_state()
   stale_dialogs?: string[];
   timestamp_stale?: string[];
-  [key: string]: any;  // Allow any additional properties from Python comprehensive function
+  [key: string]: unknown;  // Allow additional properties from Python comprehensive function
 }

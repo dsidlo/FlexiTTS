@@ -1,17 +1,15 @@
 import React, { useState } from 'react';
-import { DialogSection, StoryConfig } from '../../shared/types';
+import { DialogSection } from '../../shared/types';
 
 interface DialogBarProps {
   dialog: DialogSection;
-  config: StoryConfig;
 }
 
-const DialogBar: React.FC<DialogBarProps> = ({ dialog, config }) => {
+const DialogBar: React.FC<DialogBarProps> = ({ dialog }) => {
   const [expanded, setExpanded] = useState(false);
   const [content, setContent] = useState(dialog.content);
 
   // Generate color based on character or default grey for narrator
-  const isNarrator = dialog.characterName.toLowerCase() === 'narrator';
   const getCharacterColor = (name: string) => {
     if (name.toLowerCase() === 'narrator') return '#e0e0e0'; // Grey
     // Simple hash to generate a hex color from the character name string

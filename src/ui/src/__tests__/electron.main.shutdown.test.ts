@@ -94,7 +94,7 @@ describe('electron shutdown TTS handling', () => {
     browserWindowGetAllWindows.mockReturnValue([]);
     showMessageBox.mockResolvedValue({ response: 0 });
 
-    execMock.mockImplementation((cmd: string, opts: any, cb: any) => {
+    execMock.mockImplementation((cmd: string, opts: unknown, cb: (err: Error | null, stdout: string, stderr: string) => void) => {
       cb?.(null, '', '');
       return {};
     });
@@ -116,7 +116,7 @@ describe('electron shutdown TTS handling', () => {
       if (signal === 0 && pid === 4321) {
         throw new Error('not running');
       }
-      return true as any;
+      return true;
     });
 
     await importMainModule();
@@ -140,9 +140,9 @@ describe('electron shutdown TTS handling', () => {
 
     const killSpy = vi.spyOn(process, 'kill').mockImplementation((pid: number, signal?: NodeJS.Signals | 0) => {
       if (signal === 0 && pid === 9999) {
-        return true as any;
+        return true;
       }
-      return true as any;
+      return true;
     });
 
     await importMainModule();

@@ -122,7 +122,6 @@ export const useChapter = (storyDirectory?: string): UseChapterReturn => {
   }, [chapter?.fileName, storyDirectory]);
 
   const refreshClips = useCallback(async (
-    _fullRefresh: boolean = false,
     chapterOverride: Chapter | null = null
   ) => {
     // Use the provided chapterOverride if available, otherwise fall back to current chapter state
@@ -314,7 +313,7 @@ export const useChapter = (storyDirectory?: string): UseChapterReturn => {
       // Check render state after loading chapter to update UI staleness indicators
       // Pass parsedChapter explicitly to avoid stale closure issues
       // Note: Never refresh hashes here - hashes only update after actual rendering
-      await refreshClips(false, parsedChapter);
+      await refreshClips(parsedChapter);
       await checkRenderState(parsedChapter, false);
 
       debugLog.info(id, '[RESOURCE-ACCESS] Chapter loaded successfully', { filePath });
@@ -470,7 +469,7 @@ export const useChapter = (storyDirectory?: string): UseChapterReturn => {
 
       // Check staleness after dialog updates - do NOT refresh hashes, just check current state
       // Hashes should only be updated after actual rendering completes
-      await refreshClips(false, updatedChapter);
+      await refreshClips(updatedChapter);
       await checkRenderState(updatedChapter, false);
     } catch (error) {
       debugLog.exception('useChapter:handleUpdateDialog', 'validateChapterDialogs failed', error, {

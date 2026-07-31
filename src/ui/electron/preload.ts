@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
 // Import types from shared/types.ts
-import type { FlexiTTSConfig, StoryInfo } from '../shared/types';
+import type { FlexiTTSConfig } from '../shared/types';
 
 contextBridge.exposeInMainWorld('api', {
   runPythonScript: (scriptPath: string, args: string[]) => ipcRenderer.invoke('run-python-script', scriptPath, args),

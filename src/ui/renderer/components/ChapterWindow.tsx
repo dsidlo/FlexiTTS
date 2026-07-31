@@ -1,14 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { StoryConfig, ChapterData, StoryInfo } from '../../shared/types';
+import { ChapterData, StoryInfo } from '../../shared/types';
 import { PythonBridgeService } from '../../src/services/pythonBridge';
 import DialogBar from './DialogBar';
 
-interface ChapterWindowProps {
-  config: StoryConfig;
-}
-
-const ChapterWindow: React.FC<ChapterWindowProps> = ({ config }) => {
-  const [chapter, setChapter] = useState<ChapterData>({
+const ChapterWindow: React.FC = () => {
+  const [chapter] = useState<ChapterData>({
     fileName: 'chapter-1.xml',
     chapterName: 'The Awakening',
     dialogs: [
@@ -20,7 +16,6 @@ const ChapterWindow: React.FC<ChapterWindowProps> = ({ config }) => {
   // Story selection state
   const [stories, setStories] = useState<StoryInfo[]>([]);
   const [selectedStory, setSelectedStory] = useState<StoryInfo | null>(null);
-  const [currentConfig, setCurrentConfig] = useState<StoryConfig>(config);
   const [loadingStories, setLoadingStories] = useState(false);
   const [storyError, setStoryError] = useState<string | null>(null);
 
@@ -154,7 +149,6 @@ const ChapterWindow: React.FC<ChapterWindowProps> = ({ config }) => {
               characterName: dialog.character,
               content: dialog.text
             }} 
-            config={currentConfig} 
           />
         ))}
       </main>

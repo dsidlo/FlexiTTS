@@ -5,7 +5,7 @@ description = "Add your description here"
 requires-python = ">=3.13"
 dependencies = [
     "huggingface-hub>=0.34.0",
-    "litellm>=1.81.1",
+    "litellm==1.82.6",
     "lxml>=6.0.2",
     "qwen-tts",
     "streamlit==1.38.0",

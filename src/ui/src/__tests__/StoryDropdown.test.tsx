@@ -50,7 +50,7 @@ describe('StoryDropdown', () => {
       // Temporarily remove listStories from api
       const originalListStories = window.api?.listStories;
       if (window.api) {
-        delete (window.api as any).listStories;
+        delete (window.api as Partial<Window['api']>).listStories;
       }
       
       await act(async () => {
@@ -67,7 +67,7 @@ describe('StoryDropdown', () => {
       
       // Restore
       if (window.api) {
-        (window.api as any).listStories = originalListStories;
+        (window.api as Partial<Window['api']>).listStories = originalListStories;
       }
     });
   });

@@ -1,6 +1,6 @@
 # FlexiTTS AI Development Prompts
 
-## Configuration Refactoring
+## [Done] Configuration Refactoring
 
 /dytopo
 - story-config.yml is no-longer the main configuration file.
@@ -37,7 +37,7 @@ Given these changes, update App UI code and python scripts to reflect the config
   - (New Features)
     - When Character is assigned to a dialog either through the population of the Character-Dialog UI given the chapter's .xml file, or when chosen or modified via the dialog-bar character dropdown... If the character does not exists, or if something is missing or off in the characters voice configuration, a '!' character appears in front of the character name, which when clicked or hovered on, a dialog indicating the voice configuration issue(s) are described.
 
-## Render Chapter Callout on Changes...
+## [Done]  Render Chapter Callout on Changes...
  1. Fast checks: keep everything in-memory up front—read .chapter_rendered once, map dialog IDs to their recorded hashes/timestamps, and compare against a lightweight snapshot (e.g., the memoized dialog hashes  
  you already compute when the chapter loads). Avoid re-reading large WAVs unless a mismatch is already detected; hash the XML/dialog text only when the editor flags them dirty. That keeps the “needs rerender?”  
  check to just string comparisons and timestamp lookups.
@@ -52,18 +52,8 @@ Given these changes, update App UI code and python scripts to reflect the config
  With these adjustments, the UI does constant-time checks (hash comparisons), “Render Chapter” only spends time on dialogs that truly need work, and any stale clip is proactively removed so the next render      
  can’t skip it.
 
-## Additional MVP Features needed.
 
-### Create New Story
-
-### Create New Chapter
-
-### Rename Story
-
-### Rename Chapter
-
-
- ### Re-Render Status Issues
+ ### [Done] Re-Render Status Issues
 
  What scripts and exists that update the state of .chapter_rendered.json?
  Based on my analysis, here are the only scripts that update .chapter_rendered.json:
@@ -73,25 +63,19 @@ Given these changes, update App UI code and python scripts to reflect the config
 
  This is the only script that writes to .chapter_rendered.json. It has two functions that call save_render_state():
 
- ┌──────────────────────────────────────┬──────┬────────────────────────────┬─────────────────────────────────────────────┐
- │ Function                             │ Line │ When Called                │ What It Does                                │
- ├──────────────────────────────────────┼──────┼────────────────────────────┼─────────────────────────────────────────────┤
- │ check_render_state()                 │ 362  │ Every time UI checks state │ Computes hashes, detects stale, saves state │
- ├──────────────────────────────────────┼──────┼────────────────────────────┼─────────────────────────────────────────────┤
- │ update_render_state_with_new_clips() │ 435  │ Never called (dead code)   │ Would update after render, but not used     │
- └──────────────────────────────────────┴──────┴────────────────────────────┴─────────────────────────────────────────────┘
+| Function                             | Line | When Called                | What It Does                                  |
+|--------------------------------------|------|----------------------------|-----------------------------------------------|
+| check_render_state()                 | 362  | Every time UI checks state | Computes hashes, detects stale, saves state |
+| update_render_state_with_new_clips() | 435  | Never called (dead code)   | Would update after render, but not used     |
 
  ### 2. TypeScript Callers (Trigger the Python script)
 
  These TypeScript files execute chapter_render_state.py as a subprocess, which then updates .chapter_rendered.json:
 
- ┌─────────────────────────────────────────┬───────────────────────────┬───────────────────────────────────┐
- │ File                                    │ Function                  │ When Called                       │
- ├─────────────────────────────────────────┼───────────────────────────┼───────────────────────────────────┤
- │ src/ui/src/services/pythonBridge.ts:616 │ checkChapterRenderState() │ UI checks if chapter needs render │
- ├─────────────────────────────────────────┼───────────────────────────┼───────────────────────────────────┤
- │ src/ui/electron/main.ts:1195            │ IPC handler               │ Electron main process handler     │
- └─────────────────────────────────────────┴───────────────────────────┴───────────────────────────────────┘
+| File                                    | Function                  | When Called                       |
+|-----------------------------------------|---------------------------|-----------------------------------|
+| src/ui/src/services/pythonBridge.ts:616 | checkChapterRenderState() | UI checks if chapter needs render |
+| src/ui/electron/main.ts:1195            | IPC handler               | Electron main process handler     |
 
  ### Entry Point Flow
 
@@ -109,6 +93,124 @@ Given these changes, update App UI code and python scripts to reflect the config
        │                                                                                  
        ▼                                                                                  
    Python: save_render_state()  (line 362)  ◄─── WRITES .chapter_rendered.json        
- ```                                                        
+ ```           
 
+## Character UI Design
 
+### Current Character Voice Structure
+
+```yaml
+  - name: Narrator-cv
+    # This version of the narrator voice uses Qwen3-TTS voice customization.
+    # It customizes one of Qwen3-TTS's 9 internal voices using sox post-processing
+    # to make it deeper and rougher.
+    custom-voice:
+      language: English
+      speaker: ryan
+      instruct: "Deep manly voice. Speech is moderately fast, slightly hushed."
+    sox-effects:
+      - treble -5 5000 0.7 compand 0.3,1 6:-70,-60,-20 -4 -90 0.1 gain -3
+  - name: Hendrix
+    custom-voice:
+      language: English
+      speaker: ryan
+      instruct: "Deep manly voice with a rough texture. Speech is calm and calculating, moderately fast."
+    sox-effects:
+      - overdrive 15 30 gain -8
+  - name: Yamato
+    custom-voice:
+      language: English
+      speaker: ryan
+      instruct: "An mature man. Speech is gruff and abrupt with a hit of frustration."
+    sox-effects:
+      - pitch -250 equalizer 1800 +4 1.8 equalizer 3200 +3 2.2 bass +2 120 gain -n -1.5
+  - name: Ayana
+    voice-sample: Ayana-voice.wav
+```
+
+### New Character Voice Structure
+
+For custom voices, the structure is as follows:
+Emotions are added to the dialog dropdown.
+- The idea is that the available emotions are used to control the voice's emotional tone and style dynamically during dialog playback. And these available as emotions-dropdown are available in the Chapter-Dialog UI Dialog-Bar.
+
+```yaml
+  - name: Narrator-cv
+    qwen3-tts-custom-voice:
+      language: English
+      speaker: ryan
+      instruct: "Deep manly voice. Speech is moderately fast, slightly hushed."
+    sox-effects:
+      - treble -5 5000 0.7 compand 0.3,1 6:-70,-60,-20 -4 -90 0.1 gain -3
+    emotions:
+      - name: Neutral
+        instruct: "Calm Focused Deep Voice"
+  - name: Hendrix
+    qwen3-tts-custom-voice:
+      language: English
+      speaker: ryan
+      sox-effects:
+        - overdrive 15 30 gain -8
+      emotions:
+        - emotion: Default
+          instruct: "Deep manly voice with a rough texture. Speech is calm and calculating, moderately fast."
+        - emotion: Excited
+          instruct: "Excited and enthusiastic, Fast and energetic speech"
+        - emotion: Calm
+          instruct: "Calm Focused Deep Voice"
+        - emotion: Sad
+          instruct: "Lowered slow voice, deeply sad"
+          sox-effects:
+            # This would override the default sox effects
+            - overdrive 15 30 gain -4
+        - emotion: Angry
+          instruct: "Gritted teeth, aggressive tone"
+        - emotion: Happy
+          instruct: "Light Happy, Cordial"
+    sox-effects:
+      - overdrive 15 30 gain -8
+  - name: Ayana
+    sox-effects:
+      - overdrive 15 30 gain -8
+    quen3-tts-voice-design:
+      - emotion: Normal
+        voice-sample: Ayana-voice.wav
+      - emotion: Sand
+        voice-sample: Ayana-voice-sad.wav
+        sox-effects:
+          # This is an override of the default sox effects
+          - overdrive 15 30 gain -4
+      - emotion: Pain
+        voice-sample: Ayana-voice-pain.wav
+        dialog-effects:
+          - cave
+
+```
+
+#### Character Voice UI
+
+- Create a toplevel Icon button that opens the Character-Voice UI Dialog (to the left of the Character-Dialog UI)
+- The Character-Voice UI dialog shows the list if Character-Bars
+
+##### Character uses Voice references (qwen3-tts-voice-design)
+
+- When the Character-Bar is clicked, it expands to list the emotions.
+- Each emotion is based on a voice sample.
+- The emotion bar has the properties...
+  - emotion-name (The emotions main value)
+  - voice-sample: The wave file to clone (voice reference)
+  - sox-effects: The sox effects (post-processing) pipe-line
+
+##### Character uses Custom Voice with Cloned-Voice (quen-tts-voice-design)
+
+- When the Character-Bar is clicked, it expands to list the emotions.
+- The Character is associated to 1 of 9 possible quen2-tts built-in voices.
+- Each emotion is based on a voice "instruct" prompt.
+
+## TODO...
+
+- Add Create Chapter
+- Move Chapter
+- Rather than 
+- Create Dialog
+- Move Dialog

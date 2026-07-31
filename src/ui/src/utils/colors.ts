@@ -1,4 +1,4 @@
-export const getColorForCharacter = (characterName: string, _index: number): string => {
+export const getColorForCharacter = (characterName: string): string => {
   if (characterName.toLowerCase() === 'narrator') {
     return '#808080'; // Grey for narrator
   }

@@ -1,10 +1,5 @@
-import type { DialogElement, StoryConfig } from '../models/types';
+import type { DialogElement, StoryConfig, DialogValidationIssue } from '../models/types';
 import { PythonBridgeService } from '../services/pythonBridge';
-
-export interface DialogValidationIssue {
-  code: 'missing-character' | 'invalid-custom-voice' | 'invalid-voice-sample' | 'invalid-dialog-effects';
-  message: string;
-}
 
 export type DialogValidationMap = Record<string, DialogValidationIssue[]>;
 
@@ -46,7 +41,7 @@ export async function validateChapterDialogs(chapterDialogs: DialogElement[], co
   );
   const namedDialogEffects = new Set(
     (config['dialog-effects'] || [])
-      .map((effect: any) => String(effect?.name || '').trim())
+      .map((effect: Record<string, unknown>) => String(effect?.name || '').trim())
       .filter(Boolean)
       .map((name: string) => name.toLowerCase())
   );
@@ -102,6 +97,48 @@ export async function validateChapterDialogs(chapterDialogs: DialogElement[], co
           code: 'invalid-dialog-effects',
           message: `Character '${dialog.character}' dialog-effects entries ${quotedEffects} are not defined in story-config.yml dialog-effects.`,
         });
+      }
+
+      // Validate emotion if present in dialog attributes
+      const dialogEmotion = dialog.attributes?.emotion;
+      if (dialogEmotion) {
+        const configuredEmotions: string[] = [];
+        
+        // Collect emotions from custom-voice
+        if (charConfig['custom-voice']?.emotions) {
+          charConfig['custom-voice'].emotions.forEach((em: Record<string, unknown>) => {
+            const emotionName = em.emotion || em.name;
+            if (emotionName) configuredEmotions.push(emotionName.toLowerCase());
+          });
+        }
+        
+        // Collect emotions from cloned-emotion
+        if (charConfig['cloned-emotion']) {
+          charConfig['cloned-emotion'].forEach((em: Record<string, unknown>) => {
+            if (em.emotion) configuredEmotions.push(em.emotion.toLowerCase());
+          });
+        }
+        
+        // Collect emotions from top-level emotions array
+        if (charConfig.emotions) {
+          charConfig.emotions.forEach((em: Record<string, unknown>) => {
+            const emotionName = em.emotion || em.name;
+            if (emotionName) configuredEmotions.push(emotionName.toLowerCase());
+          });
+        }
+        
+        // If character has configured emotions, validate that dialog emotion is in the list
+        if (configuredEmotions.length > 0 && !configuredEmotions.includes(dialogEmotion.toLowerCase())) {
+          console.log('[dialogValidation] dialog:invalid-emotion', {
+            character: dialog.character,
+            dialogEmotion,
+            configuredEmotions,
+          });
+          issues.push({
+            code: 'invalid-emotion',
+            message: `Character '${dialog.character}' does not have emotion '${dialogEmotion}' configured. Available: ${configuredEmotions.join(', ')}.`,
+          });
+        }
       }
 
       if (charConfig['custom-voice']) {

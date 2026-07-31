@@ -18,8 +18,8 @@ const createMockAudio = () => ({
 global.Audio = vi.fn().mockImplementation(createMockAudio) as unknown as typeof Audio;
 
 describe('useAudioPlayer', () => {
-  let mockAudio: any;
-  let eventListeners: Map<string, Function[]>;
+  let mockAudio: ReturnType<typeof createMockAudio>;
+  let eventListeners: Map<string, Array<(event?: unknown) => void>>;
 
   beforeEach(() => {
     eventListeners = new Map();
@@ -30,7 +30,7 @@ describe('useAudioPlayer', () => {
       duration: 100,
       play: vi.fn().mockResolvedValue(undefined),
       pause: vi.fn(),
-      addEventListener: vi.fn((event: string, handler: Function) => {
+      addEventListener: vi.fn((event: string, handler: (event?: unknown) => void) => {
         if (!eventListeners.has(event)) {
           eventListeners.set(event, []);
         }

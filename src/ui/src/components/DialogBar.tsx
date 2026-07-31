@@ -16,13 +16,14 @@ interface DialogBarProps {
   isStaleClip?: boolean;
   isTimestampStale?: boolean;  // New: specifically for timestamp out of sync
   availableCharacters?: string[];
+  availableEmotions?: string[]; // Emotions available for current character
   onSaveRequest?: () => Promise<void>;
   onUpdateDialog: (dlgseq: string, sectionId: string, updatedDialog: DialogElement) => Promise<void>;
   onRefreshClips?: () => void;
 }
 
 export const DialogBar: React.FC<DialogBarProps> = ({
-  dialog, displayId, chapterFileName, storyDirectory, isFilteredOut, hasAudioClip, isStaleClip = false, isTimestampStale = false, availableCharacters = [],
+  dialog, displayId, chapterFileName, storyDirectory, isFilteredOut, hasAudioClip, isStaleClip = false, isTimestampStale = false, availableCharacters = [], availableEmotions = [],
   onSaveRequest, onUpdateDialog, onRefreshClips
 }) => {
   const validationIssues = dialog.validationIssues || [];
@@ -35,6 +36,15 @@ export const DialogBar: React.FC<DialogBarProps> = ({
   const [attrEditValue, setAttrEditValue] = useState<string>('');
   const [isGeneratingAudio, setIsGeneratingAudio] = useState(false);
   const [isEditingCharacter, setIsEditingCharacter] = useState(false);
+  const [isEditingEmotion, setIsEditingEmotion] = useState(false);
+  
+  // Get current emotion from attributes
+  const currentEmotion = dialog.attributes?.emotion || 'Neutral';
+  const currentEmotionLower = currentEmotion.toLowerCase();
+  const availableEmotionsLower = availableEmotions.map(e => e.toLowerCase());
+  // Check for emotion issues from validation or from availableEmotions mismatch (case-insensitive)
+  const emotionValidationIssue = validationIssues.find(issue => issue.code === 'invalid-emotion');
+  const hasEmotionIssues = emotionValidationIssue !== undefined || (availableEmotions.length > 0 && !availableEmotionsLower.includes(currentEmotionLower));
   
   // Local state for text editing to prevent cursor jumping
   // We use local state during editing and only sync to parent on blur
@@ -55,7 +65,7 @@ export const DialogBar: React.FC<DialogBarProps> = ({
   // Client-side audio player hook
   const { isPlaying: isPlayingAudio, play: playAudio, stop: stopAudio } = useAudioPlayer();
 
-  const bgColor = getColorForCharacter(dialog.character, parseInt(dialog.dlgseq) || 0);
+  const bgColor = getColorForCharacter(dialog.character);
 
   // Log button state for debugging timestamp/color logic
   if (isTimestampStale || isStaleClip) {
@@ -99,6 +109,8 @@ export const DialogBar: React.FC<DialogBarProps> = ({
         return 'Voice Sample Invalid';
       case 'invalid-dialog-effects':
         return 'Dialog Effects Invalid';
+      case 'invalid-emotion':
+        return 'Emotion Invalid';
       default:
         return 'Validation Issue';
     }
@@ -111,6 +123,14 @@ export const DialogBar: React.FC<DialogBarProps> = ({
       attributes: { ...dialog.attributes, character: newCharacter, dlgseq: dialog.dlgseq, section_seq: dialog.sectionId || '0' }
     });
     setIsEditingCharacter(false);
+  };
+
+  const handleEmotionChange = async (newEmotion: string) => {
+    await onUpdateDialog(dialog.dlgseq, dialog.sectionId || '0', {
+      ...dialog,
+      attributes: { ...dialog.attributes, emotion: newEmotion, dlgseq: dialog.dlgseq, section_seq: dialog.sectionId || '0' }
+    });
+    setIsEditingEmotion(false);
   };
 
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -491,6 +511,66 @@ export const DialogBar: React.FC<DialogBarProps> = ({
             >
               {dialog.character}
             </span>
+          )}
+
+          {/* Emotion Dropdown */}
+          {availableEmotions.length > 0 && (
+            <div style={{ marginLeft: '12px', display: 'flex', alignItems: 'center' }}>
+              <span style={{ marginRight: '6px', fontSize: '0.85em', opacity: 0.9 }}>Emotion:</span>
+              {isEditingEmotion ? (
+                <select
+                  value={currentEmotion}
+                  onChange={(e) => {
+                    e.stopPropagation();
+                    handleEmotionChange(e.target.value);
+                  }}
+                  onBlur={() => setIsEditingEmotion(false)}
+                  onClick={(e) => e.stopPropagation()}
+                  autoFocus
+                  style={{
+                    background: 'rgba(255,255,255,0.9)',
+                    color: '#000',
+                    border: hasEmotionIssues ? '2px solid #ff9800' : '1px solid #ccc',
+                    borderRadius: '4px',
+                    padding: '2px 8px',
+                    fontSize: '0.85em',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {availableEmotions.map(emotion => (
+                    <option key={emotion} value={emotion}>
+                      {emotion}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <span
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsEditingEmotion(true);
+                  }}
+                  title={hasEmotionIssues ? "Unconfigured Emotion - Click to change" : "Click to change emotion"}
+                  style={{
+                    cursor: 'pointer',
+                    padding: '2px 6px',
+                    borderRadius: '4px',
+                    backgroundColor: hasEmotionIssues ? 'rgba(255,152,0,0.3)' : 'rgba(255,255,255,0.1)',
+                    border: hasEmotionIssues ? '2px solid #ff9800' : '1px dashed transparent',
+                    display: 'inline-block',
+                    fontWeight: hasEmotionIssues ? 'bold' : 'normal',
+                    color: hasEmotionIssues ? '#ffb74d' : 'inherit'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.border = '1px dashed rgba(255,255,255,0.8)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.border = hasEmotionIssues ? '2px solid #ff9800' : '1px dashed transparent';
+                  }}
+                >
+                  {currentEmotion}
+                </span>
+              )}
+            </div>
           )}
         </div>
         <div className="dialog-attributes-summary" onClick={(e) => e.stopPropagation()}>

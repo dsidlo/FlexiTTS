@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { PythonBridgeService } from '../services/pythonBridge';
 import { debugLog } from '../utils/debugLogger';
 
@@ -93,10 +93,12 @@ export const useMarkdown = (storyDirectory?: string): UseMarkdownReturn => {
   const lastSavedMarkdownRef = useRef(lastSavedMarkdown);
   const hasUnsavedMarkdownChangesRef = useRef(hasUnsavedMarkdownChanges);
   
-  // Keep refs in sync
-  markdownRef.current = markdownContent;
-  lastSavedMarkdownRef.current = lastSavedMarkdown;
-  hasUnsavedMarkdownChangesRef.current = hasUnsavedMarkdownChanges;
+  // Keep refs in sync via effect to avoid updating refs during render
+  useEffect(() => {
+    markdownRef.current = markdownContent;
+    lastSavedMarkdownRef.current = lastSavedMarkdown;
+    hasUnsavedMarkdownChangesRef.current = hasUnsavedMarkdownChanges;
+  }, [markdownContent, lastSavedMarkdown, hasUnsavedMarkdownChanges]);
 
   /**
    * Update markdown content and track unsaved changes
@@ -106,7 +108,7 @@ export const useMarkdown = (storyDirectory?: string): UseMarkdownReturn => {
     setMarkdownContentState(content);
     const hasChanges = content !== lastSavedMarkdownRef.current;
     setHasUnsavedMarkdownChanges(hasChanges);
-  }, [lastSavedMarkdown]);
+  }, []);
 
   /**
    * Format markdown content to wrap at 80 characters without breaking words

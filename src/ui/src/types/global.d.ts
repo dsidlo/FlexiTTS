@@ -14,7 +14,7 @@ export interface TtsAlert {
     section?: string;
     dialog?: string;
     character?: string;
-    [key: string]: any;
+    [key: string]: unknown;
   };
 }
 
@@ -40,8 +40,8 @@ declare global {
       killProcess: (matchString: string) => Promise<boolean>;
       listChapterFiles: () => Promise<string[]>;
       // FlexiTTS Global Config and Story Management
-      loadGlobalConfig: () => Promise<any>;
-      saveGlobalConfig: (configData: any) => Promise<boolean>;
+      loadGlobalConfig: () => Promise<unknown>;
+      saveGlobalConfig: (configData: unknown) => Promise<boolean>;
       listStories: () => Promise<StoryInfo[]>;
       setCurrentStory: (storyDirectory: string) => Promise<boolean>;
       getCurrentStory: () => Promise<string>;

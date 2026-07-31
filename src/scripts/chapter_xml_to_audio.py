@@ -619,10 +619,36 @@ def main():
                     cv = char_cfg["custom-voice"]
                     lang = cv.get("language", "English")
                     base_instruct = cv.get("instruct", "")
-                    instruct = f"{base_instruct}. Speak in a {utt.emotion} tone.".strip(". ")
+                    
+                    # Check for emotion-specific instruction
+                    emotions = cv.get("emotions", [])
+                    emotion_instruct = None
+                    for em in emotions:
+                        em_name = em.get("emotion", em.get("name", ""))
+                        if em_name.lower() == utt.emotion.lower():
+                            emotion_instruct = em.get("instruct")
+                            break
+                    
+                    if emotion_instruct:
+                        instruct = emotion_instruct
+                    elif base_instruct:
+                        instruct = f"{base_instruct}. Speak in a {utt.emotion} tone."
+                    else:
+                        instruct = f"Speak in a {utt.emotion} tone."
                 else:
                     lang = "English"
-                    instruct = f"Speak in a {utt.emotion} tone."
+                    # Check for cloned-emotion voice-sample based characters
+                    cloned_emotions = char_cfg.get("cloned-emotion", [])
+                    emotion_config = None
+                    for em in cloned_emotions:
+                        if em.get("emotion", "").lower() == utt.emotion.lower():
+                            emotion_config = em
+                            break
+                    
+                    if emotion_config:
+                        instruct = emotion_config.get("instruct", f"Speak in a {utt.emotion} tone.")
+                    else:
+                        instruct = f"Speak in a {utt.emotion} tone."
                 log_debug("main:utterance_voice_mode", speaker=utt.speaker, is_custom=is_custom, language=lang, instruct=instruct)
 
                 print(f"[RESOURCE-ACCESS] Generating audio clip", file=sys.stderr)
@@ -828,7 +854,32 @@ def main():
                 if "dialog-effects" in char_cfg:
                     for name in char_cfg["dialog-effects"] if isinstance(char_cfg["dialog-effects"], list) else [char_cfg["dialog-effects"]]:
                         final_effects.extend(dialog_effects_cfg.get(name, []))
-                final_effects.extend(char_cfg.get("sox-effects", []))
+                
+                # Check for emotion-specific sox-effects (overrides character-level effects)
+                emotion_sox_effects = None
+                is_custom = "custom-voice" in char_cfg
+                if is_custom:
+                    cv = char_cfg["custom-voice"]
+                    emotions = cv.get("emotions", [])
+                    for em in emotions:
+                        em_name = em.get("emotion", em.get("name", ""))
+                        if em_name.lower() == utt.emotion.lower() and "sox-effects" in em:
+                            emotion_sox_effects = em["sox-effects"]
+                            break
+                else:
+                    cloned_emotions = char_cfg.get("cloned-emotion", [])
+                    for em in cloned_emotions:
+                        if em.get("emotion", "").lower() == utt.emotion.lower() and "sox-effects" in em:
+                            emotion_sox_effects = em["sox-effects"]
+                            break
+                
+                # Use emotion-specific effects if defined, otherwise use character-level effects
+                if emotion_sox_effects is not None:
+                    final_effects.extend(emotion_sox_effects)
+                    log_debug("main:apply_emotion_effects", out_path=str(out_path), emotion=utt.emotion, effects=emotion_sox_effects)
+                else:
+                    final_effects.extend(char_cfg.get("sox-effects", []))
+                
                 if final_effects and not args.dry_run:
                     log_debug("main:apply_character_effects", out_path=str(out_path), effects=final_effects)
                     apply_sox_effects(out_path, final_effects)

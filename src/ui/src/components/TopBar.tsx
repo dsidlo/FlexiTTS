@@ -2,7 +2,7 @@ import React, { useMemo, useState, useEffect } from 'react';
 import { PythonBridgeService } from '../services/pythonBridge';
 import { debugLog } from '../utils/debugLogger';
 import { StoryDropdown } from './StoryDropdown';
-import type { AlertHistoryItem, Chapter, StoryConfig, StoryInfo } from '../models/types';
+import type { AlertHistoryItem, Chapter, StoryConfig, StoryInfo, ChapterRenderState } from '../models/types';
 
 interface TopBarProps {
   config: StoryConfig | null;
@@ -25,7 +25,7 @@ interface TopBarProps {
   currentStory?: StoryInfo | null;
   onStorySelect?: (story: StoryInfo | null) => void;
   // Render state from centralized hook (preferred source of truth)
-  renderState?: any;
+  renderState?: ChapterRenderState;
 }
 
 export const TopBar: React.FC<TopBarProps> = ({
@@ -93,18 +93,6 @@ export const TopBar: React.FC<TopBarProps> = ({
     }
   }, [renderState]);
 
-  if (!chapter) {
-    return (
-      <div className="top-bar">
-        <span>No chapter loaded.</span>
-      </div>
-    );
-  }
-
-  const uniqueCharacters = Array.from(new Set(chapter.dialogs.map((d) => d.character)));
-  const characterCount = uniqueCharacters.length;
-  const dialogCount = chapter.dialogs.length;
-
   const alertBadgeCount = alertHistory.length;
   const recentAlertHistory = useMemo(() => [...alertHistory].reverse(), [alertHistory]);
 
@@ -122,6 +110,18 @@ export const TopBar: React.FC<TopBarProps> = ({
   }, [alertHistory]);
 
   const alertBadgeTextColor = alertBadgeColor === '#ffeb3b' ? '#222' : 'white';
+
+  if (!chapter) {
+    return (
+      <div className="top-bar">
+        <span>No chapter loaded.</span>
+      </div>
+    );
+  }
+
+  const uniqueCharacters = Array.from(new Set(chapter.dialogs.map((d) => d.character)));
+  const characterCount = uniqueCharacters.length;
+  const dialogCount = chapter.dialogs.length;
 
   const getAlertColor = (type: AlertHistoryItem['type']) => {
     switch (type) {
