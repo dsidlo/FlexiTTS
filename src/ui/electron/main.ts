@@ -4,6 +4,18 @@ import { spawn, ChildProcess, exec } from 'child_process';
 import * as fs from 'fs';
 import * as jsyaml from 'js-yaml';
 
+// Type for parsed global FlexiTTS config
+interface FlexiTTSConfig {
+  'stories-dir'?: string;
+  'story-dir-prefix'?: string;
+  'current-story'?: string;
+}
+
+interface GlobalConfig {
+  FlexiTTS?: FlexiTTSConfig;
+  [key: string]: unknown;
+}
+
 // Simple file logger - writes to /tmp/FlexiTTS.log only (no console output)
 const LOG_FILE = '/tmp/FlexiTTS.log';
 function writeLog(level: string, ...args: unknown[]) {
@@ -130,7 +142,7 @@ function killAllActiveProcesses() {
           }
         }, 2000);
       }
-    } catch {
+    } catch (e) {
       log.error(`[Cleanup] Failed to kill ${id}:`, e);
     }
   });
@@ -149,7 +161,7 @@ function killAllActiveProcesses() {
           }
         }
       }, 2000);
-    } catch {
+    } catch (e) {
       log.info('[Cleanup] Failed to kill TTS warmup process:', e);
     }
   }
@@ -166,7 +178,7 @@ function getTtsServicePid(): number | null {
     const raw = fs.readFileSync(pidFile, 'utf-8').trim();
     const pid = Number.parseInt(raw, 10);
     return Number.isFinite(pid) ? pid : null;
-  } catch {
+  } catch (e) {
     log.warn('[App] Failed to read TTS PID file', e);
     return null;
   }
@@ -284,7 +296,7 @@ async function performShutdownAndQuit() {
   try {
     killAllActiveProcesses();
     await ensureTtsServiceStoppedOrWarn();
-  } catch {
+  } catch (e) {
     log.error('[App] Error during TTS shutdown sequence', e);
     try {
       await dialog.showMessageBox({
@@ -303,7 +315,7 @@ async function performShutdownAndQuit() {
 
   try {
     killDevServerProcesses();
-  } catch {
+  } catch (e) {
     log.warn('[App] Failed to kill dev server processes', e);
   }
 
@@ -343,7 +355,7 @@ function killDevServerProcesses() {
         }
       }, 500);
     }
-  } catch {
+  } catch (e) {
     log.info('[Cleanup] Could not kill parent process:', e);
   }
 }
@@ -562,8 +574,9 @@ async function executePythonScript(scriptPath: string, args: string[]): Promise<
           resolve({ stdout: output, stderr: errorOutput, code });
         }
       });
-    } catch (e: Error) {
-      reject(new Error(`Security validation failed: ${e.message}`));
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      reject(new Error(`Security validation failed: ${message}`));
     }
   });
 }
@@ -611,7 +624,7 @@ ipcMain.handle('read-file', async (event, filePath: string) => {
     if (fs.existsSync(configPath)) {
       try {
         const configContent = fs.readFileSync(configPath, 'utf-8');
-        const config = jsyaml.load(configContent) as Record<string, unknown>;
+        const config = jsyaml.load(configContent) as GlobalConfig;
         storiesDir = config?.FlexiTTS?.['stories-dir'];
         if (storiesDir) {
           storiesDir = expandTilde(storiesDir);
@@ -654,9 +667,10 @@ ipcMain.handle('read-file', async (event, filePath: string) => {
     const content = fs.readFileSync(fullPath, 'utf-8');
     log.info(`[IPC][RESOURCE-ACCESS] Successfully read file`, { filePath, fullPath, resourceType, length: content.length });
     return content;
-  } catch (err: Error) {
-    log.error(`[IPC][RESOURCE-ACCESS] Error reading file: ${err.message}`, { filePath });
-    throw new Error(`Failed to read file ${filePath}: ${err.message}`);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    log.error(`[IPC][RESOURCE-ACCESS] Error reading file: ${message}`, { filePath });
+    throw new Error(`Failed to read file ${filePath}: ${message}`);
   }
 });
 
@@ -676,7 +690,7 @@ ipcMain.handle('write-file', async (event, filePath: string, content: string) =>
     if (fs.existsSync(configPath)) {
       try {
         const configContent = fs.readFileSync(configPath, 'utf-8');
-        const config = jsyaml.load(configContent) as Record<string, unknown>;
+        const config = jsyaml.load(configContent) as GlobalConfig;
         storiesDir = config?.FlexiTTS?.['stories-dir'];
         if (storiesDir) {
           storiesDir = expandTilde(storiesDir);
@@ -729,9 +743,10 @@ ipcMain.handle('write-file', async (event, filePath: string, content: string) =>
       log.info(`[IPC][RESOURCE-ACCESS] Successfully wrote file`, { filePath, fullPath, resourceType, contentLength: content.length });
     }
     return true;
-  } catch (err: Error) {
-    log.error(`[IPC][RESOURCE-ACCESS] Failed to write file: ${err.message}`, { filePath });
-    throw new Error(`Failed to write file ${filePath}: ${err.message}`);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    log.error(`[IPC][RESOURCE-ACCESS] Failed to write file: ${message}`, { filePath });
+    throw new Error(`Failed to write file ${filePath}: ${message}`);
   }
 });
 
@@ -746,7 +761,7 @@ ipcMain.handle('read-audio-file', async (event, filePath: string) => {
     if (fs.existsSync(configPath)) {
       try {
         const configContent = fs.readFileSync(configPath, 'utf-8');
-        const config = jsyaml.load(configContent) as Record<string, unknown>;
+        const config = jsyaml.load(configContent) as GlobalConfig;
         storiesDir = config?.FlexiTTS?.['stories-dir'];
         if (storiesDir) {
           storiesDir = expandTilde(storiesDir);
@@ -783,9 +798,10 @@ ipcMain.handle('read-audio-file', async (event, filePath: string) => {
     const base64 = data.toString('base64');
     log.info(`[IPC][RESOURCE-ACCESS] Successfully read audio file`, { filePath, fullPath, length: data.length });
     return `data:audio/wav;base64,${base64}`;
-  } catch (err: Error) {
-    log.error(`[IPC][RESOURCE-ACCESS] Failed to read audio file: ${err.message}`, { filePath });
-    throw new Error(`Failed to read audio file ${filePath}: ${err.message}`);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    log.error(`[IPC][RESOURCE-ACCESS] Failed to read audio file: ${message}`, { filePath });
+    throw new Error(`Failed to read audio file ${filePath}: ${message}`);
   }
 });
 
@@ -824,7 +840,7 @@ function ensureGlobalConfigDir(): string {
   return flexittsDir;
 }
 
-function getStoriesDirFromConfig(config: Record<string, unknown>): string {
+function getStoriesDirFromConfig(config: GlobalConfig | null): string {
   const homeDir = process.env.HOME || process.env.USERPROFILE || '';
   const dataDir = process.env.XDG_DATA_HOME || path.join(homeDir, '.local', 'share');
   const defaultStoriesDir = path.join(dataDir, 'FlexiTTS', 'stories');
@@ -837,19 +853,19 @@ function getStoriesDirFromConfig(config: Record<string, unknown>): string {
   return defaultStoriesDir;
 }
 
-function getStoryDirPrefix(config: Record<string, unknown>): string {
+function getStoryDirPrefix(config: GlobalConfig | null): string {
   return config?.FlexiTTS?.['story-dir-prefix'] || 'Story-';
 }
 
 // Standalone function to load global config (used during app initialization)
-async function loadGlobalConfig(): Promise<Record<string, unknown>> {
+async function loadGlobalConfig(): Promise<GlobalConfig> {
   const configPath = getGlobalConfigPath();
   log.info(`[loadGlobalConfig] Checking config path: ${configPath}`);
   try {
     if (fs.existsSync(configPath)) {
       log.info(`[loadGlobalConfig] Config file exists, reading...`);
       const content = fs.readFileSync(configPath, 'utf-8');
-      const parsed = jsyaml.load(content);
+      const parsed = jsyaml.load(content) as GlobalConfig;
       log.info(`[loadGlobalConfig] Successfully loaded config:`, parsed);
       return parsed;
     } else {
@@ -892,12 +908,12 @@ ipcMain.handle('list-stories', async () => {
   try {
     // Load global config directly
     const configPath = getGlobalConfigPath();
-    let config: Record<string, unknown> | null = null;
+    let config: GlobalConfig | null = null;
     
     try {
       if (fs.existsSync(configPath)) {
         const content = fs.readFileSync(configPath, 'utf-8');
-        config = jsyaml.load(content);
+        config = jsyaml.load(content) as GlobalConfig;
       }
     } catch (err) {
       log.error(`Failed to load config for list-stories: ${err}`);
@@ -977,9 +993,10 @@ ipcMain.handle('load-story-config', async (event, storyDir: string) => {
     const content = fs.readFileSync(configPath, 'utf-8');
     log.info(`[IPC][RESOURCE-ACCESS] Successfully loaded story config`, { storyDir, configPath, storiesDir, contentLength: content.length });
     return jsyaml.load(content);
-  } catch (err: Error) {
-    log.error(`[IPC][RESOURCE-ACCESS] Failed to load story config: ${storyDir}: ${err.message}`);
-    throw new Error(`Failed to load story config from ${storyDir}: ${err.message}`);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    log.error(`[IPC][RESOURCE-ACCESS] Failed to load story config: ${storyDir}: ${message}`);
+    throw new Error(`Failed to load story config from ${storyDir}: ${message}`);
   }
 });
 
@@ -1275,8 +1292,9 @@ ipcMain.handle('play-sound-file', async (event, filePath: string) => {
         log.error(`Failed to play audio: ${err.message}`);
         reject(err);
       });
-    } catch (err: Error) {
-      reject(new Error(`Failed to play sound: ${err.message}`));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      reject(new Error(`Failed to play sound: ${message}`));
     }
   });
 });
