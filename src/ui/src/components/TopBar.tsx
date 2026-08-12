@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState } from 'react';
 import { PythonBridgeService } from '../services/pythonBridge';
 import { debugLog } from '../utils/debugLogger';
 import { StoryDropdown } from './StoryDropdown';
@@ -14,7 +14,7 @@ interface TopBarProps {
   onChapterSelect: (filePath: string) => void;
   onCharacterSelect: (character: string) => void;
   onSave?: () => Promise<void> | void;
-  onRenderComplete?: () => void;
+  onRenderComplete?: () => Promise<void> | void;
   hasUnsavedChanges?: boolean;
   editorMode?: boolean;
   onToggleEditor?: () => void;
@@ -39,60 +39,28 @@ export const TopBar: React.FC<TopBarProps> = ({
   const [isRendering, setIsRendering] = useState(false);
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
   const [showAlertHistory, setShowAlertHistory] = useState(false);
-  const [needsRender, setNeedsRender] = useState(false);
-  const [staleCount, setStaleCount] = useState(0);
-  const [xmlChanged, setXmlChanged] = useState(false);
-  const [hasTimestampStale, setHasTimestampStale] = useState(false);
-  
+
   // Track which chapter is currently being rendered to prevent duplicate renders
   const currentRenderChapterRef = React.useRef<string | null>(null);
 
-  // Check render state when chapter changes
-  useEffect(() => {
-    if (!chapter || !filePath) return;
-    // Skip render state check if we're currently rendering this chapter
-    const chapterName = filePath.split('/').pop()?.replace('.md', '.xml') || '';
-    if (currentRenderChapterRef.current === chapterName) {
-      debugLog.info('TopBar:useEffect', 'Skipping render state check while rendering in progress', { chapterName });
-      return;
-    }
-    void checkRenderState();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chapter, filePath, currentStory]);
+  // Derive render status directly from the centralized renderState prop.
+  // This removes the duplicate local state that could drift out of sync.
+  const needsRender = renderState?.needs_render ?? renderState?.needsRender ?? false;
+  const staleCount = renderState?.stale_count ?? renderState?.staleCount ?? 0;
+  const xmlChanged = renderState?.xml_changed ?? renderState?.xmlChanged ?? false;
+  const hasTimestampStale =
+    renderState?.has_timestamp_stale ??
+    renderState?.hasTimestampStale ??
+    false;
 
-  // Sync with centralized renderState from useChapter hook (preferred source of truth)
-  // This ensures TopBar reflects the actual computed state from get_comprehensive_render_state()
-  useEffect(() => {
-    if (renderState) {
-      const needsRenderValue = renderState.needs_render !== undefined
-        ? renderState.needs_render
-        : (renderState.needsRender !== undefined ? renderState.needsRender : false);
+  const chapterReason = renderState?.chapter?.reason ?? renderState?.chapterReason ?? 'good';
 
-      const staleCountValue = renderState.stale_count !== undefined
-        ? renderState.stale_count
-        : (renderState.staleCount !== undefined ? renderState.staleCount : 0);
-
-      const xmlChangedValue = renderState.xml_changed !== undefined
-        ? renderState.xml_changed
-        : (renderState.xmlChanged !== undefined ? renderState.xmlChanged : false);
-
-      const hasTimestampStaleValue = renderState.has_timestamp_stale !== undefined
-        ? renderState.has_timestamp_stale
-        : (renderState.hasTimestampStale !== undefined ? renderState.hasTimestampStale : false);
-
-      setNeedsRender(needsRenderValue);
-      setStaleCount(staleCountValue);
-      setXmlChanged(xmlChangedValue);
-      setHasTimestampStale(hasTimestampStaleValue);
-
-      debugLog.info('TopBar:renderStateSync', 'Synced with centralized render state', {
-        needsRender: needsRenderValue,
-        staleCount: staleCountValue,
-        hasTimestampStale: hasTimestampStaleValue,
-        chapterReason: renderState.chapter?.reason || renderState.chapterReason
-      });
-    }
-  }, [renderState]);
+  debugLog.info('TopBar:renderState', 'Derived render state from centralized prop', {
+    needsRender,
+    staleCount,
+    hasTimestampStale,
+    chapterReason
+  });
 
   const alertBadgeCount = alertHistory.length;
   const recentAlertHistory = useMemo(() => [...alertHistory].reverse(), [alertHistory]);
@@ -154,41 +122,9 @@ export const TopBar: React.FC<TopBarProps> = ({
     }
   };
 
-  const checkRenderState = async (refreshDialogHashes: boolean = false) => {
-    const chapterName = filePath.split('/').pop()?.replace('.md', '.xml') || 'Unknown.xml';
-    const storyDir = currentStory?.directory_name || 'Story-Default';
-
-    try {
-      const renderState = await PythonBridgeService.checkChapterRenderState(chapterName, storyDir, refreshDialogHashes);
-      setNeedsRender(renderState?.needs_render || false);
-      setStaleCount(renderState?.stale_count || 0);
-      setXmlChanged(renderState?.xml_changed || false);
-      // Support both camelCase and snake_case from Python JSON
-      setHasTimestampStale(
-        renderState?.has_timestamp_stale ||
-        renderState?.hasTimestampStale ||
-        false
-      );
-      debugLog.info('TopBar:checkRenderState', 'Render state checked', {
-        chapterName,
-        needsRender: renderState?.needs_render,
-        staleCount: renderState?.stale_count,
-        xmlChanged: renderState?.xml_changed,
-        hasTimestampStale: renderState?.has_timestamp_stale || renderState?.hasTimestampStale,
-        timestampStaleCount: (renderState?.timestamp_stale_dialogs || renderState?.timestampStaleDialogs || []).length,
-        xmlHash: renderState?.xml_hash?.substring(0, 8),
-        refreshDialogHashes
-      });
-    } catch (err) {
-      debugLog.warn('TopBar:checkRenderState', 'Failed to check render state', err);
-      setNeedsRender(false);
-      setStaleCount(0);
-    }
-  };
-
   const handleRenderChapter = async () => {
     const chapterName = filePath.split('/').pop()?.replace('.md', '.xml') || 'Unknown.xml';
-    
+
     // Prevent concurrent renders of the same chapter
     if (isRendering) {
       // Cancel operation
@@ -197,7 +133,7 @@ export const TopBar: React.FC<TopBarProps> = ({
       currentRenderChapterRef.current = null;
       return;
     }
-    
+
     // Check if we're already rendering this specific chapter
     if (currentRenderChapterRef.current === chapterName) {
       debugLog.warn('TopBar:handleRenderChapter', 'Render already in progress for this chapter, skipping', { chapterName });
@@ -206,7 +142,7 @@ export const TopBar: React.FC<TopBarProps> = ({
 
     setIsRendering(true);
     currentRenderChapterRef.current = chapterName;
-    
+
     try {
       if (hasUnsavedChanges && onSave) {
         console.log(`[TopBar] Auto-saving unsaved changes before rendering...`);
@@ -222,21 +158,21 @@ export const TopBar: React.FC<TopBarProps> = ({
 
         // Get the list of dialogs that need rendering from renderState
         // These are dialogs with content changes (hash mismatch) or missing clips
-        const dialogsToRender = renderState?.dialogs?.needs_render || 
-                                renderState?.needsRenderDialogs || 
-                                renderState?.stale_dialogs || 
-                                renderState?.staleDialogs || 
+        const dialogsToRender = renderState?.dialogs?.needs_render ||
+                                renderState?.needsRenderDialogs ||
+                                renderState?.stale_dialogs ||
+                                renderState?.staleDialogs ||
                                 [];
-        
+
         // Filter to only content-stale dialogs (not just timestamp-stale)
         // Timestamp-stale dialogs don't need re-rendering, just timestamp update
-        const timestampStaleDialogs = renderState?.dialogs?.timestamp_stale || 
-                                     renderState?.timestampStaleDialogs || 
+        const timestampStaleDialogs = renderState?.dialogs?.timestamp_stale ||
+                                     renderState?.timestampStaleDialogs ||
                                      [];
-        
+
         // Only render dialogs that are content-stale or missing
         const contentStaleDialogs = dialogsToRender.filter((id: string) => !timestampStaleDialogs.includes(id));
-        
+
         debugLog.info('TopBar:handleRenderChapter', 'Starting selective render', {
           totalStale: dialogsToRender.length,
           contentStale: contentStaleDialogs.length,
@@ -248,7 +184,7 @@ export const TopBar: React.FC<TopBarProps> = ({
         for (const dialogId of contentStaleDialogs) {
           // Parse dialogId format: "section_dlgseq" e.g., "002_003"
           const [sectionNum, dlgseqNum] = dialogId.split('_');
-          
+
           debugLog.info('TopBar:handleRenderChapter', 'Rendering individual dialog', {
             dialogId,
             sectionNum,
@@ -269,7 +205,7 @@ export const TopBar: React.FC<TopBarProps> = ({
         debugLog.info('TopBar:handleRenderChapter', 'Stitching chapter audio with --create-missing-clips', {
           chapterName
         });
-        
+
         await window.api.runPythonScript('src/scripts/chapter_xml_to_audio.py', [
           `${storyDir}/story-xml/${chapterName}`,
           `--create-missing-clips`,
@@ -281,38 +217,11 @@ export const TopBar: React.FC<TopBarProps> = ({
         await PythonBridgeService.updateChapterXmlHash(chapterName, renderStoryDir);
         debugLog.info('TopBar:handleRenderChapter', 'Updated render state with file timestamps');
 
-        // Step 4: Refresh the render state to update UI
-        const updatedState = await PythonBridgeService.checkChapterRenderState(chapterName, renderStoryDir, true);
-
-        const needsRenderValue = updatedState?.needs_render !== undefined
-          ? updatedState.needs_render
-          : (updatedState?.needsRender !== undefined ? updatedState.needsRender : false);
-
-        const staleCountValue = updatedState?.stale_count !== undefined
-          ? updatedState.stale_count
-          : (updatedState?.staleCount !== undefined ? updatedState.staleCount : 0);
-
-        const hasTimestampStaleValue = updatedState?.has_timestamp_stale !== undefined
-          ? updatedState.has_timestamp_stale
-          : (updatedState?.hasTimestampStale !== undefined ? updatedState.hasTimestampStale : false);
-
-        setNeedsRender(needsRenderValue);
-        setStaleCount(staleCountValue);
-        setXmlChanged(false);
-        setHasTimestampStale(hasTimestampStaleValue);
-
-        debugLog.info('TopBar:handleRenderChapter', 'Chapter render complete', {
-          needsRender: needsRenderValue,
-          staleCount: staleCountValue,
-          hasTimestampStale: hasTimestampStaleValue,
-          chapterReason: updatedState?.chapter?.reason || updatedState?.chapterReason || 'good'
-        });
-
-        // Notify parent to refresh state
+        // Step 4: Notify parent to refresh centralized render state from disk.
+        // The parent will re-run checkRenderState and pass the updated renderState
+        // prop back down, which TopBar will then render directly.
         if (onRenderComplete) {
-          setTimeout(() => {
-            onRenderComplete();
-          }, 500);
+          await onRenderComplete();
         }
       } else {
         console.warn("API not available for rendering");
@@ -328,7 +237,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   const handlePlayChapter = async () => {
     const chapterName = filePath.split('/').pop()?.replace('.md', '.xml') || 'Unknown.xml';
     const logId = 'TopBar:handlePlayChapter';
-    
+
     if (isPlayingAudio) {
       // Cancel operation
       await PythonBridgeService.cancelAudio(chapterName);
@@ -361,16 +270,16 @@ export const TopBar: React.FC<TopBarProps> = ({
       {/* Story Selection Dropdown */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
         <strong>Current Story:</strong>
-        <StoryDropdown 
-          onStorySelect={onStorySelect || (() => {})} 
+        <StoryDropdown
+          onStorySelect={onStorySelect || (() => {})}
           selectedStory={currentStory}
         />
       </div>
-      
+
       <div className="chapter-name" style={{ display: 'flex', alignItems: 'center' }}>
         <strong>Chapter Name:</strong>{' '}
-        <select 
-          value={filePath} 
+        <select
+          value={filePath}
           onChange={(e) => onChapterSelect(e.target.value)}
           style={{ marginLeft: '8px', maxWidth: '200px' }}
         >
@@ -384,7 +293,7 @@ export const TopBar: React.FC<TopBarProps> = ({
           })}
         </select>
         {!editorMode && (
-          <button 
+          <button
             onClick={onToggleEditor}
             style={{
               marginLeft: '12px',
@@ -403,10 +312,10 @@ export const TopBar: React.FC<TopBarProps> = ({
           </button>
         )}
       </div>
-      
+
       <div className="characters">
         <strong>Characters:</strong> [{characterCount}]
-        <select 
+        <select
           style={{ marginLeft: '8px' }}
           value={selectedCharacter}
           onChange={(e) => onCharacterSelect(e.target.value)}
@@ -415,9 +324,9 @@ export const TopBar: React.FC<TopBarProps> = ({
           {uniqueCharacters.map((char) => {
              const isUnknown = config ? !config.characters.some(c => c.name === char) : false;
              return (
-              <option 
-                key={char} 
-                value={char} 
+              <option
+                key={char}
+                value={char}
                 style={isUnknown ? { color: '#ffb74d', fontWeight: 'bold' } : {}}
               >
                 {char} {isUnknown ? '(New)' : ''}
@@ -430,7 +339,7 @@ export const TopBar: React.FC<TopBarProps> = ({
       <div className="dialogs">
         <strong>Dialogs:</strong> [{dialogCount}]
       </div>
-      
+
       <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px', alignItems: 'center', position: 'relative' }}>
         <button
           onClick={() => setShowAlertHistory((prev) => !prev)}
@@ -596,7 +505,7 @@ export const TopBar: React.FC<TopBarProps> = ({
         >
           {isRendering ? (
             <>
-              <span className="spinner-icon" style={{ 
+              <span className="spinner-icon" style={{
                 display: 'inline-block',
                 width: '0.8em',
                 height: '0.8em',
@@ -619,9 +528,9 @@ export const TopBar: React.FC<TopBarProps> = ({
         </button>
 
         {hasChapterAudio && !isRendering && (
-          <button 
-            onClick={handlePlayChapter} 
-            style={{ 
+          <button
+            onClick={handlePlayChapter}
+            style={{
               padding: '4px 16px',
               backgroundColor: isPlayingAudio ? '#f44336' : '#2196F3',
               color: 'white',
@@ -649,10 +558,10 @@ export const TopBar: React.FC<TopBarProps> = ({
           </button>
         )}
 
-        <button 
-          onClick={handleSave} 
+        <button
+          onClick={handleSave}
           disabled={isSaving || !hasUnsavedChanges}
-          style={{ 
+          style={{
             padding: '4px 16px',
             backgroundColor: hasUnsavedChanges ? '#ff9800' : 'transparent',
             color: hasUnsavedChanges ? 'white' : '#888',
