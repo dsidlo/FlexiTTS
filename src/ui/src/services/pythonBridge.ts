@@ -506,16 +506,10 @@ export const PythonBridgeService = {
 
         if (wavName) {
             debugLog.info(id, 'Found WAV filename', { wavName, chapterStem: chapterName.replace('.xml', '') });
-            
-            // Generation is done - refresh render state so dialog button turns green
-            if (onGenerationComplete) {
-                debugLog.info(id, 'Calling onGenerationComplete callback');
-                onGenerationComplete();
-            }
 
-            // Explicitly refresh render state AND update timestamp after selective render
-            // This ensures the re-rendered dialog turns from blue to green, and chapter button
-            // turns yellow if other dialogs are stale (per requirements)
+            // Explicitly refresh render state AND update timestamp after selective render.
+            // This must happen BEFORE notifying the UI via onGenerationComplete, otherwise
+            // the UI reads stale state and the dialog button never turns green.
             try {
                 const stem = chapterName.replace('.xml', '').replace('.md', '');
                 const storyDir = await PythonBridgeService.getCurrentStory();
@@ -530,13 +524,12 @@ export const PythonBridgeService = {
                     note: 'Individual dialog render now updates timestamp (per updated requirements)'
                 });
 
-                // Update the specific dialog's timestamp to current time
-                const now = Date.now();
+                // Omit the timestamp so Python uses the actual clip file mtime,
+                // avoiding a race where Date.now() differs from the file mtime.
                 await PythonBridgeService.updateDialogTimestamp(
                     stem,
                     dialogId,
-                    storyDir || 'Story-Default',
-                    now
+                    storyDir || 'Story-Default'
                 );
 
                 // Then do a comprehensive state check to update UI
@@ -548,6 +541,13 @@ export const PythonBridgeService = {
                     dialogId: `${sectionNum}_${dlgseqNum}`,
                     wavName
                 });
+            }
+
+            // Generation is done - notify parent to refresh clips/render state from disk.
+            // This is intentionally done AFTER the timestamp update so the UI reads fresh state.
+            if (onGenerationComplete) {
+                debugLog.info(id, 'Calling onGenerationComplete callback');
+                onGenerationComplete();
             }
             
             // Reconstruct the full path
