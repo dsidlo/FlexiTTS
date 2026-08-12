@@ -480,8 +480,35 @@ export const useChapter = (storyDirectory?: string): UseChapterReturn => {
       setXmlContent(newXml);
       const hasChanges = newXml !== lastSavedXmlRef.current;
       
-      // Set unsaved changes status based on whether content changed
-      setHasUnsavedChangesValue(hasChanges);
+      // Auto-save dialog edits to disk so that the render-state checker reads
+      // the latest text and correctly flags stale dialogs. Without this, edits
+      // only live in React state while chapter_render_state.py reads the old
+      // XML file and reports everything as in-sync.
+      const xmlPath = updatedChapter.fileName;
+      if (xmlPath && hasChanges) {
+        try {
+          if (typeof window !== 'undefined' && window.api && window.api.writeFile) {
+            await PythonBridgeService.writeChapterFile(xmlPath, newXml);
+            setLastSavedXmlValue(newXml);
+            setHasUnsavedChangesValue(false);
+            debugLog.info('useChapter:handleUpdateDialog', 'Auto-saved chapter XML after dialog edit', {
+              xmlPath,
+              dlgseq,
+              sectionId,
+            });
+          } else {
+            setHasUnsavedChangesValue(hasChanges);
+          }
+        } catch (writeErr) {
+          debugLog.warn('useChapter:handleUpdateDialog', 'Failed to auto-save chapter XML after dialog edit', {
+            xmlPath,
+            error: writeErr,
+          });
+          setHasUnsavedChangesValue(hasChanges);
+        }
+      } else {
+        setHasUnsavedChangesValue(hasChanges);
+      }
 
       // Check staleness after dialog updates - do NOT refresh hashes, just check current state
       // Hashes should only be updated after actual rendering completes
@@ -496,7 +523,16 @@ export const useChapter = (storyDirectory?: string): UseChapterReturn => {
       });
       // Keep optimistic state to avoid UI freeze
     }
-  }, [chapter, config, storyDirectory, lastSavedXmlRef, refreshClips, checkRenderState, setHasUnsavedChangesValue]);
+  }, [
+    chapter,
+    config,
+    storyDirectory,
+    lastSavedXmlRef,
+    refreshClips,
+    checkRenderState,
+    setHasUnsavedChangesValue,
+    setLastSavedXmlValue,
+  ]);
 
   return {
     config,

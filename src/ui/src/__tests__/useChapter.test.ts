@@ -236,7 +236,10 @@ describe('useChapter', () => {
       });
 
       expect(result.current.chapter?.dialogs[0].text).toBe('Updated text');
-      expect(result.current.hasUnsavedChanges).toBe(true);
+      // Dialog edits now auto-save to disk, so changes are persisted and
+      // unsaved-changes should be false (the XML on disk matches in-memory state).
+      expect(result.current.hasUnsavedChanges).toBe(false);
+      expect(vi.mocked(PythonBridgeService.writeChapterFile)).toHaveBeenCalled();
     });
 
     it('should match dialog by _index when available', async () => {
@@ -347,7 +350,9 @@ describe('useChapter', () => {
         });
       });
 
-      expect(result.current.hasUnsavedChangesRef.current).toBe(true);
+      // Dialog edits now auto-save to disk, so the in-memory state matches disk
+      // and the unsaved-changes ref is cleared.
+      expect(result.current.hasUnsavedChangesRef.current).toBe(false);
     });
 
     it('should allow direct ref value updates', () => {
