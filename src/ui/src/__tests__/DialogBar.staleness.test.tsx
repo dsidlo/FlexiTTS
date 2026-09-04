@@ -161,4 +161,37 @@ describe('DialogBar staleness indicator (client-side MD5)', () => {
     // Local text syncs to the new prop; hash now matches.
     expect(getRenderButton(container).style.background).toContain(GREEN);
   });
+
+  it('treats a dialog with a renderHash but a lagging clips listing as rendered (not grey)', () => {
+    // Freshly rendered, but hasAudioClip=false because listChapterClips hasn't
+    // refreshed yet. The in-memory renderHash is authoritative -> green, not grey.
+    const text = 'Just rendered';
+    const base: DialogElement = {
+      _index: 0,
+      dlgseq: '3',
+      sectionId: '1',
+      character: 'Alice',
+      text,
+      attributes: { dlgseq: '3', section_seq: '1', character: 'Alice' },
+    };
+    const renderHash = computeDialogHash(base, 'dialog');
+    const dialog: DialogElement = {
+      ...base,
+      renderHash,
+      attributes: { ...base.attributes, render_hash: renderHash },
+    };
+    const { container } = render(
+      <DialogBar
+        dialog={dialog}
+        hasAudioClip={false}
+        isStaleClip={false}
+        isTimestampStale={false}
+        availableCharacters={['Alice']}
+        onUpdateDialog={vi.fn()}
+      />
+    );
+    const bg = getRenderButton(container).style.background;
+    expect(bg).toContain(GREEN);
+    expect(bg).not.toContain('136'); // not the grey #888
+  });
 });

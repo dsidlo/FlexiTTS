@@ -114,22 +114,38 @@ export const DialogBar: React.FC<DialogBarProps> = ({
 
   const isContentStaleNow = isStaleClip || isTextStale;
 
+  // A dialog counts as "has been rendered" if a render signature exists in
+  // memory (render_hash / dialog.renderHash) or a clip was discovered on disk.
+  // The in-memory signature is authoritative after a render because the merged
+  // hash can arrive before the clips listing refreshes; keying color only off
+  // hasAudioClip would show a freshly rendered dialog as grey (never rendered).
+  const hasRenderSignature = !!storedRenderHash;
+  const hasRendered = hasAudioClip || hasRenderSignature;
+
+  // Precedence: timestamp (blue) > edited text (yellow) > backend content stale
+  // (orange) > in-sync (green) > never rendered (grey).
+  const buttonColor = !hasRendered
+    ? '#888'
+    : isTimestampStale
+      ? '#2196F3'
+      : isTextStale
+        ? '#ffc107'
+        : isStaleClip
+          ? '#ff9800'
+          : '#4CAF50';
+
   // Log button state for debugging timestamp/color logic
   if (isTimestampStale || isContentStaleNow) {
     debugLog.info('DialogBar:render', 'Dialog button state', {
       dialogId: displayId || dialog.dlgseq,
       character: dialog.character,
       hasAudioClip,
+      hasRenderSignature,
+      hasRendered,
       isStaleClip,
       isTextStale,
       isTimestampStale,
-      color: isTimestampStale
-        ? 'blue (#2196F3)'
-        : isTextStale
-          ? 'yellow (#ffc107)'
-          : isStaleClip
-            ? 'orange (#ff9800)'
-            : 'green (#4CAF50)'
+      color: buttonColor
     });
   }
 
@@ -389,15 +405,7 @@ export const DialogBar: React.FC<DialogBarProps> = ({
               }
             }}
             style={{
-              background: !hasAudioClip
-                ? '#888'
-                : isTimestampStale
-                  ? '#2196F3'  // Blue: timestamp out of sync (per requirements)
-                  : isTextStale
-                    ? '#ffc107'  // Yellow: text edited, needs re-render (client-side)
-                    : isStaleClip
-                      ? '#ff9800'  // Orange: content/hash stale (backend)
-                      : '#4CAF50', // Green: in sync
+              background: buttonColor,
               border: '2px solid rgba(255,255,255,0.2)',
               borderRadius: '50%',
               width: '24px',
@@ -410,7 +418,7 @@ export const DialogBar: React.FC<DialogBarProps> = ({
               alignItems: 'center',
               justifyContent: 'center',
               opacity: isGeneratingAudio ? 0.8 : 1.0,
-              boxShadow: hasAudioClip && !isContentStaleNow
+              boxShadow: hasRendered && !isContentStaleNow && !isTimestampStale
                 ? '0px 0px 5px rgba(76,175,80,0.8)'
                 : isTextStale
                   ? '0px 0px 5px rgba(255,193,7,0.8)'
@@ -418,7 +426,7 @@ export const DialogBar: React.FC<DialogBarProps> = ({
             }}
             title={isGeneratingAudio
               ? "Stop Generating Audio..."
-              : !hasAudioClip
+              : !hasRendered
                 ? "No clip - Render Audio"
                 : isTimestampStale
                   ? "Timestamp out of sync - Re-render to update timestamp"
@@ -426,7 +434,7 @@ export const DialogBar: React.FC<DialogBarProps> = ({
                     ? "Text edited - Re-render"
                     : isStaleClip
                       ? "Clip stale - Re-render"
-                      : "Has clip - Re-render Audio"
+                      : "In sync - Re-render Audio"
             }
           >
             {isGeneratingAudio ? (
@@ -450,7 +458,9 @@ export const DialogBar: React.FC<DialogBarProps> = ({
             )}
           </button>
 
-          {/* Play Button */}
+          {/* Play Button: only offer playback when a clip file actually exists on
+              disk (hasAudioClip). A render signature alone doesn't mean there's
+              playable audio yet. */}
           {hasAudioClip && (
             <button
               onClick={async (e) => {
