@@ -706,6 +706,14 @@ def get_comprehensive_render_state(
         if stored_state.rendered_at == 0 and not getattr(state, "_is_initialized", False):
             logger.debug(f"get_comprehensive_render_state: first-time dialog with clip {dialog_id} -> good")
             good_dialogs.append(dialog_id)
+        elif stored_state.rendered_at > 0 and file_mtime <= stored_state.rendered_at + 1000:
+            # The dialog was explicitly stamped (rendered_at) at or after its clip's
+            # mtime: it has been accepted as part of the rendered set. This is the
+            # selective re-render case -- the clip is newer than the (not-yet-
+            # re-stitched) chapter audio, but the dialog itself is in sync and must
+            # NOT be flagged timestamp-stale.
+            logger.debug(f"get_comprehensive_render_state: dialog {dialog_id} accepted (rendered_at={stored_state.rendered_at} >= file_mtime={file_mtime})")
+            good_dialogs.append(dialog_id)
         else:
             # Check if dialog clip is newer than CHAPTER rendered_at (for blue button)
             # This is the key requirement: dialog should be blue if dialog_clip_time > chapter_rendered_at
@@ -742,13 +750,30 @@ def get_comprehensive_render_state(
         # First time seeing clips - use chapter audio timestamp
         state.chapter_rendered_at = chapter_audio_mtime if chapter_audio_mtime > 0 else chapter_newest_clip_time
         chapter_reason = "initialized"
-    elif chapter_newest_clip_time > state.chapter_rendered_at + 1000:  # 1 second tolerance
-        chapter_stale = True
-        chapter_reason = "newer_clips"
-        logger.info(
-            f"Chapter {chapter_stem} needs render: clips newer ({chapter_newest_clip_time}) "
-            f"than chapter_rendered_at ({state.chapter_rendered_at})"
-        )
+    elif chapter_newest_clip_time > state.chapter_rendered_at + 1000:
+        # Only flag "newer_clips" when at least one NEWER clip is unstamped. A
+        # dialog that was selectively re-rendered and stamped (rendered_at >= its
+        # clip mtime) is legitimately newer than the not-yet-re-stitched chapter
+        # audio and must not mark the whole chapter stale.
+        def _unstamped_newer_clip() -> bool:
+            chapter_clip_dir = clips_dir / chapter_stem
+            for d, s in state.dialogs.items():
+                if s.rendered_at == 0:
+                    continue  # missing/never rendered; handled by missing logic
+                # Find the clip newest among all matching this dialog
+                newest = 0
+                for f in chapter_clip_dir.glob(f"*{d}*.wav"):
+                    newest = max(newest, int(f.stat().st_mtime * 1000))
+                if newest > 0 and newest > state.chapter_rendered_at + 1000 and newest > s.rendered_at + 1000:
+                    return True
+            return False
+        if _unstamped_newer_clip():
+            chapter_stale = True
+            chapter_reason = "newer_clips"
+            logger.info(
+                f"Chapter {chapter_stem} needs render: unstamped clips newer "
+                f"than chapter_rendered_at ({state.chapter_rendered_at})"
+            )
 
     # Overall status
     needs_render = len(missing_dialogs) > 0 or len(needs_render_dialogs) > 0 or chapter_stale
