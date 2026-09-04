@@ -180,6 +180,10 @@ def normalize_dialog_text(element_or_utt: Any) -> str:
         # Ensure consistent attrs dict
         if "character" not in attrs:
             attrs["character"] = speaker
+        # Render bookkeeping lives in the XML now; it must not feed back into the
+        # content signature or writing it would invalidate the very hash it records.
+        for _k in ("render_hash", "rendered_at", "section_seq"):
+            attrs.pop(_k, None)
     else:
         # Utterance dataclass from chapter_xml_to_audio
         text = getattr(element_or_utt, "text", "")
@@ -309,23 +313,23 @@ def discover_existing_clips(clips_dir: Path, chapter_stem: str) -> Dict[str, Dic
     return clip_map
 
 
-def parse_xml_dialogs(xml_path: Path) -> Dict[str, str]:
+def parse_dialog_states_from_xml(xml_path: Path) -> Dict[str, Dict[str, Any]]:
     """
-    Parse XML and compute MD5 hashes for each dialog.
-    Returns: {dialog_id: md5_hash}
+    Parse XML, computing the current content hash of every dialog and reading any
+    render bookkeeping (render_hash / rendered_at) stored directly on the element.
+
+    Returns:
+        {dialog_id: {"hash": <current content md5>,
+                     "stored_hash": <render_hash attr or "">,
+                     "rendered_at": <rendered_at attr (ms) or 0>}}
     """
+    result: Dict[str, Dict[str, Any]] = {}
     if not xml_path.exists():
         logger.error(f"XML file not found: {xml_path}")
-        return {}
+        return result
 
     tree = ET.parse(xml_path)
     root = tree.getroot()
-
-    # Extract chapter number from filename
-    match = __import__("re").search(r"(\d+)", xml_path.name)
-    match.group(1) if match else "000"
-
-    dialogs = {}
 
     def process_nodes(nodes, section_num: str):
         for node in nodes:
@@ -333,8 +337,15 @@ def parse_xml_dialogs(xml_path: Path) -> Dict[str, str]:
                 legacy_id = node.attrib.get("id")
                 dlgseq = node.attrib.get("dlgseq") or legacy_id or "000"
                 dialog_id = normalize_dialog_id(section_num, dlgseq)
-                # Use single canonical hash function
-                dialogs[dialog_id] = compute_dialog_hash(node)
+                try:
+                    rendered_at = int(node.attrib.get("rendered_at", "0") or 0)
+                except ValueError:
+                    rendered_at = 0
+                result[dialog_id] = {
+                    "hash": compute_dialog_hash(node),
+                    "stored_hash": node.attrib.get("render_hash", ""),
+                    "rendered_at": rendered_at,
+                }
 
     sections = root.findall("section")
     if sections:
@@ -344,7 +355,132 @@ def parse_xml_dialogs(xml_path: Path) -> Dict[str, str]:
     else:
         process_nodes(root, "000")
 
-    return dialogs
+    return result
+
+
+def parse_xml_dialogs(xml_path: Path) -> Dict[str, str]:
+    """
+    Parse XML and compute MD5 hashes for each dialog.
+    Returns: {dialog_id: md5_hash}
+    """
+    states = parse_dialog_states_from_xml(xml_path)
+    return {dialog_id: s["hash"] for dialog_id, s in states.items()}
+
+
+def write_render_signatures_to_xml(xml_path: Path, updates: Dict[str, Dict[str, Any]]) -> None:
+    """
+    Persist render bookkeeping (render_hash / rendered_at) directly onto the
+    matching <dialog>/<narration> elements in the chapter XML. This makes the XML
+    the single source of truth for content signatures, replacing the sidecar
+    .chapter_rendered.json.
+
+    The file is edited *surgically*: we locate the specific dialog's start tag via
+    regex and only add/replace its render_hash/rendered_at attributes. We
+    deliberately avoid reserializing the whole document with ElementTree, because
+    ElementTree normalizes attribute order and whitespace, which would change the
+    on-disk attribute ordering and thus the content hash of OTHER dialogs each
+    time a single dialog is updated.
+    """
+    import re
+
+    if not xml_path.exists():
+        logger.error(f"write_render_signatures_to_xml: XML not found: {xml_path}")
+        return
+
+    # Determine each target dialog's identifying attributes (tag + dlgseq/id) via
+    # ElementTree, so we match the precise elements ET sees.
+    tree = ET.parse(xml_path)
+    root = tree.getroot()
+    targets: Dict[str, Dict[str, Any]] = {}
+
+    def collect(nodes, section_num: str):
+        for node in nodes:
+            if node.tag in ("dialog", "narration"):
+                legacy_id = node.attrib.get("id")
+                dlgseq = node.attrib.get("dlgseq") or legacy_id or "000"
+                dialog_id = normalize_dialog_id(section_num, dlgseq)
+                if dialog_id in updates:
+                    targets[dialog_id] = {
+                        "tag": node.tag,
+                        "dlgseq": dlgseq,
+                        "use_id": "id" in node.attrib and "dlgseq" not in node.attrib,
+                    }
+
+    sections = root.findall("section")
+    if sections:
+        for section in sections:
+            section_num = section.attrib.get("seq", "000").zfill(3)
+            collect(section, section_num)
+    else:
+        collect(root, "000")
+
+    if not targets:
+        return
+
+    text = xml_path.read_text(encoding="utf-8")
+
+    # Walk dialog/narration start tags in document order once, matching each to a
+    # target by tag + exact dlgseq/id attribute value. Because we scan in order and
+    # match on the exact attribute string, we unambiguously locate the correct tag
+    # even when multiple sections reuse the same dlgseq numbering.
+    tag_re = re.compile(r"<(dialog|narration)\b[^>]*>")
+    attr_re = re.compile(r'(\S+?)="([^"]*)"')
+
+    # Build a mutable map from (tag, dlgseq) -> list of dialog_ids needing updates,
+    # in the order ET will encounter them (document order == ET iteration order).
+    pending: Dict[Any, list] = {}
+    for dialog_id, info in targets.items():
+        key = (info["tag"], str(info["dlgseq"]))
+        pending.setdefault(key, []).append(dialog_id)
+
+    out = []
+    last = 0
+    for m in tag_re.finditer(text):
+        tag_text = m.group(0)
+        tag_name = m.group(1)
+        attrs = dict(attr_re.findall(tag_text))
+        dlgseq = attrs.get("dlgseq") or attrs.get("id") or ""
+        key = (tag_name, dlgseq)
+
+        out.append(text[last:m.start()])
+
+        if key in pending and pending[key]:
+            dialog_id = pending[key].pop(0)
+            u = updates[dialog_id]
+            hash_val = u.get("hash")
+            rendered_at = u.get("rendered_at")
+            inner = tag_text[:-1] if tag_text.endswith(">") else tag_text
+            inner = re.sub(r'\s+render_hash="[^"]*"', "", inner)
+            inner = re.sub(r'\s+rendered_at="[^"]*"', "", inner)
+            if hash_val:
+                inner += f' render_hash="{hash_val}"'
+            if rendered_at is not None:
+                inner += f' rendered_at="{int(rendered_at or 0)}"'
+            out.append(inner + ">")
+        else:
+            out.append(tag_text)
+
+        last = m.end()
+
+    # Warn about any targets we never matched.
+    for key, ids in pending.items():
+        for dialog_id in ids:
+            logger.warning(f"write_render_signatures_to_xml: no matching tag for {dialog_id} {key}")
+
+    out.append(text[last:])
+    new_text = "".join(out)
+
+    temp_path = xml_path.with_suffix(xml_path.suffix + ".tmp")
+    try:
+        temp_path.write_text(new_text, encoding="utf-8")
+        temp_path.replace(xml_path)
+        logger.info(
+            f"write_render_signatures_to_xml: wrote {len(targets)} signature(s) to {xml_path.name}"
+        )
+    except Exception as e:
+        logger.error(f"write_render_signatures_to_xml: failed to replace {xml_path}: {e}")
+        if temp_path.exists():
+            temp_path.unlink()
 
 
 def is_timestamp_stale(
@@ -421,97 +557,99 @@ def get_comprehensive_render_state(
         f"refresh={refresh_dialog_hashes}, xml={xml_path.name}"
     )
 
-    # Load or create signature cache
+    # Load legacy signature cache (only used as a one-time backfill for XMLs that
+    # predate storing render hashes inline). We no longer treat it as authoritative.
     state = load_render_state(clips_dir, chapter_stem)
     state.story = story_name
     state.chapter = chapter_stem[:3].lstrip("0") or "001"
     state.xml_path = str(xml_path)
     state.clips_dir = str(clips_dir / chapter_stem)
 
-    # Parse current XML (primary observation)
-    current_dialogs = parse_xml_dialogs(xml_path)
+    # Parse current XML: current content hash + any render bookkeeping stored inline.
+    dialog_states = parse_dialog_states_from_xml(xml_path)
+    current_dialogs = {d: s["hash"] for d, s in dialog_states.items()}
     current_xml_hash = compute_file_md5(xml_path)
 
     now = int(time.time() * 1000)
 
-    # Handle first-time initialization with proper timestamps
-    if not state.dialogs or len(state.dialogs) == 0:
-        logger.info(f"get_comprehensive_render_state: first-time initialization for {chapter_stem}")
+    # Discover existing clips (used both for first-time timestamps and analysis).
+    existing_clips = discover_existing_clips(clips_dir, chapter_stem)
 
-        # Discover existing clips to set proper timestamps
-        existing_clips = discover_existing_clips(clips_dir, chapter_stem)
-        logger.info(f"Found {len(existing_clips)} existing clips for initialization")
+    # One-time backfill: if a dialog has no inline render_hash but the legacy
+    # sidecar has a signature, seed the in-memory state from the sidecar and write
+    # it into the XML so subsequent reads are self-contained.
+    sidecar_updates: Dict[str, Dict[str, Any]] = {}
+    for dialog_id, s in dialog_states.items():
+        if not s["stored_hash"] and dialog_id in state.dialogs:
+            legacy = state.dialogs[dialog_id]
+            s["stored_hash"] = legacy.hash
+            if s["rendered_at"] == 0:
+                s["rendered_at"] = legacy.rendered_at
+            sidecar_updates[dialog_id] = {"hash": legacy.hash, "rendered_at": s["rendered_at"]}
+    if sidecar_updates:
+        logger.info(f"Backfilling {len(sidecar_updates)} render signatures from sidecar into XML")
+        write_render_signatures_to_xml(xml_path, sidecar_updates)
 
-        for dialog_id, current_hash in current_dialogs.items():
+    # First-time initialization of inline signatures. This runs ONLY when there is
+    # no signature source at all (no inline render_hash, no legacy sidecar). Any
+    # dialog that already has a clip but no stored hash is assumed in-sync with the
+    # current content (legacy behavior) so it shows green rather than falsely stale.
+    # Gating on "no signature anywhere" prevents incorrectly re-seeding an edited
+    # dialog's hash (which would mask real edits as in-sync).
+    any_signature = bool(state.dialogs) or any(s["stored_hash"] for s in dialog_states.values())
+    updates: Dict[str, Dict[str, Any]] = {}
+    if not any_signature:
+        for dialog_id, s in dialog_states.items():
             if dialog_id in existing_clips:
-                # Use actual file timestamp if clip exists
-                clip_info = existing_clips[dialog_id]
-                rendered_at = clip_info.get("rendered_at", now)
-                logger.debug(f"First-time: dialog {dialog_id} has existing clip, rendered_at={rendered_at}")
-            else:
-                # No clip exists yet
-                rendered_at = 0
-                logger.debug(f"First-time: dialog {dialog_id} has no clip")
+                # Assume the discovered clip corresponds to the current content.
+                rendered_at = existing_clips[dialog_id].get("rendered_at", now)
+                s["stored_hash"] = s["hash"]
+                s["rendered_at"] = rendered_at
+                updates[dialog_id] = {"hash": s["hash"], "rendered_at": rendered_at}
+            # Dialogs with no clip simply get no signature; they are missing.
+        if updates:
+            logger.info(f"First-time inline signature init for {len(updates)} dialogs")
+            write_render_signatures_to_xml(xml_path, updates)
 
-            state.dialogs[dialog_id] = DialogRenderState(
-                dialog_id=dialog_id,
-                hash=current_hash,
-                rendered_at=rendered_at,
-            )
-
-        # Set chapter-level timestamp based on most recent clip
-        if existing_clips:
-            # Use chapter audio file timestamp as definitive source (per requirements)
-            chapter_audio_mtime = get_chapter_audio_timestamp(clips_dir, chapter_stem)
-            if chapter_audio_mtime > 0:
-                state.chapter_rendered_at = chapter_audio_mtime
-                logger.info(f"Set chapter_rendered_at to chapter audio file timestamp: {chapter_audio_mtime}")
-            else:
-                max_timestamp = max(
-                    (clip.get("rendered_at", 0) for clip in existing_clips.values()),
-                    default=now
-                )
-                state.chapter_rendered_at = max_timestamp
-                logger.info(f"Set chapter_rendered_at to max dialog clip timestamp: {max_timestamp} (no chapter audio file found)")
-        else:
-            state.chapter_rendered_at = 0
-
-        state.xml_hash = current_xml_hash
-        state._is_initialized = True  # Mark that we've done first-time initialization
-        logger.info(f"Initialized {len(current_dialogs)} dialogs with proper timestamps")
+    # chapter_rendered_at derives from the chapter audio file (definitive source),
+    # falling back to the newest clip timestamp.
+    chapter_audio_mtime = get_chapter_audio_timestamp(clips_dir, chapter_stem)
+    if chapter_audio_mtime > 0:
+        state.chapter_rendered_at = chapter_audio_mtime
+    elif existing_clips:
+        state.chapter_rendered_at = max(
+            (c.get("rendered_at", 0) for c in existing_clips.values()), default=now
+        )
 
     if refresh_dialog_hashes:
-        # Full render - update ALL signatures and timestamps
+        # Full render: refresh ALL signatures and timestamps, written into XML.
         logger.info(f"get_comprehensive_render_state: refreshing all signatures for {chapter_stem}")
-
-        for dialog_id, current_hash in current_dialogs.items():
-            # Find the actual clip file and use its real timestamp
+        refresh_updates: Dict[str, Dict[str, Any]] = {}
+        for dialog_id, s in dialog_states.items():
             clip_path = None
             for pattern in [f"chapter_{dialog_id}_*.wav", f"chapter_{dialog_id}.wav", f"{dialog_id}.wav"]:
                 potential_paths = list((clips_dir / chapter_stem).glob(pattern))
                 if potential_paths:
                     clip_path = potential_paths[0]
                     break
-
             rendered_at = int(clip_path.stat().st_mtime * 1000) if clip_path and clip_path.exists() else now
-
-            state.dialogs[dialog_id] = DialogRenderState(
-                dialog_id=dialog_id,
-                hash=current_hash,
-                rendered_at=rendered_at,
-            )
-
-        state.xml_hash = current_xml_hash
-        # chapter_rendered_at should reflect the actual chapter audio file timestamp
-        # This will be set below after we check the chapter audio file
-        chapter_audio_mtime = get_chapter_audio_timestamp(clips_dir, chapter_stem)
+            s["stored_hash"] = s["hash"]
+            s["rendered_at"] = rendered_at
+            refresh_updates[dialog_id] = {"hash": s["hash"], "rendered_at": rendered_at}
+        write_render_signatures_to_xml(xml_path, refresh_updates)
         if chapter_audio_mtime > 0:
             state.chapter_rendered_at = chapter_audio_mtime
-            logger.info(f"Updated all {len(current_dialogs)} dialog signatures, chapter_rendered_at={state.chapter_rendered_at} (from chapter audio file)")
         else:
-            # No chapter audio file yet, use current time
             state.chapter_rendered_at = now
-            logger.info(f"Updated all {len(current_dialogs)} dialog signatures, chapter_rendered_at={state.chapter_rendered_at} (no chapter audio file yet)")
+
+    # Observation loop uses the inline signatures. Build a `state.dialogs`-compatible
+    # view so the existing analysis below is unchanged.
+    state.dialogs = {
+        d: DialogRenderState(dialog_id=d, hash=s["stored_hash"] or "", rendered_at=s["rendered_at"])
+        for d, s in dialog_states.items()
+    }
+    state._is_initialized = bool(updates)  # treat freshly-initialized clip dialogs as good
+    state.xml_hash = current_xml_hash
 
     # Now perform comprehensive observation and analysis
     missing_dialogs = []
@@ -657,26 +795,15 @@ def get_comprehensive_render_state(
         "hasTimestampStale": len(timestamp_stale_dialogs) > 0,
         "timestamp_stale_dialogs": timestamp_stale_dialogs,
         "timestampStaleDialogs": timestamp_stale_dialogs,
+        # Per-dialog signatures + timestamps, so the UI can merge the freshly
+        # rendered hashes into its in-memory model and flip buttons to green
+        # without re-reading the XML from disk.
+        "dialog_hashes": {d: s["hash"] for d, s in dialog_states.items()},
+        "rendered_at": {d: s["rendered_at"] for d, s in dialog_states.items()},
     }
 
-    # Save updated signatures if needed
-    # Save if: full refresh, or this is first-time initialization (no prior state file or no xml_hash)
-    state_file_exists = (clips_dir / chapter_stem / ".chapter_rendered.json").exists()
-    has_xml_hash = bool(getattr(state, "xml_hash", None))
-    should_save = refresh_dialog_hashes or not state_file_exists or not has_xml_hash
-
-    logger.info(f"get_comprehensive_render_state: save decision - refresh={refresh_dialog_hashes}, state_file_exists={state_file_exists}, has_xml_hash={has_xml_hash}, should_save={should_save}")
-
-    # Note: We do NOT store computed fields (has_timestamp_stale, timestamp_stale_dialogs,
-    # stale_dialogs, stale_count) on the state object because they are DERIVED AT RUNTIME
-    # from observation. The .chapter_rendered.json is a signature cache only.
-    # See requirement doc: docs/implementation/2026-03-11-chapter-render-state-tracking.md
-
-    if should_save:
-        logger.info(f"get_comprehensive_render_state: saving state with {len(state.dialogs)} dialogs")
-        save_render_state(state, clips_dir, chapter_stem)
-    else:
-        logger.debug(f"get_comprehensive_render_state: skipping state save (no changes, has {len(state.dialogs)} dialogs)")
+    # Signatures are stored inline in the XML; no sidecar persistence is needed.
+    # (render_hash / rendered_at were written above only when they changed.)
 
     logger.info(
         f"get_comprehensive_render_state: COMPLETE - status={status}, "
@@ -757,6 +884,7 @@ def update_render_state_with_new_clips(
     # Update timestamps for the specific dialogs that were just rendered
     now = int(time.time() * 1000)
     updated_dialog_ids = []
+    xml_updates: Dict[str, Dict[str, Any]] = {}
 
     for utt, clip_path, _ in generated_clips:
         dialog_id = normalize_dialog_id(utt.section_num, utt.dlgseq)
@@ -766,37 +894,33 @@ def update_render_state_with_new_clips(
         hash_val = compute_dialog_hash(utt)
 
         # Get the actual clip file mtime for the timestamp
-        clip_path = Path(path_str) if path_str else None
-        if clip_path and clip_path.exists():
-            file_mtime = int(clip_path.stat().st_mtime * 1000)
+        # BUGFIX: previously referenced an undefined `path_str`, raising NameError.
+        cp = Path(clip_path) if clip_path else None
+        if cp is not None and cp.exists():
+            file_mtime = int(cp.stat().st_mtime * 1000)
         else:
             file_mtime = now
 
-        # Update the signature cache
-        if dialog_id in state.dialogs:
-            state.dialogs[dialog_id] = DialogRenderState(
-                dialog_id=dialog_id,
-                hash=hash_val,
-                rendered_at=file_mtime,
-            )
-            logger.debug(f"Updated timestamp for re-rendered dialog {dialog_id} to file mtime {file_mtime}")
-        else:
-            state.dialogs[dialog_id] = DialogRenderState(
-                dialog_id=dialog_id,
-                hash=hash_val,
-                rendered_at=file_mtime,
-            )
-            logger.debug(f"Added new dialog {dialog_id} to signature cache with file mtime {file_mtime}")
+        # Update the in-memory signature cache
+        state.dialogs[dialog_id] = DialogRenderState(
+            dialog_id=dialog_id,
+            hash=hash_val,
+            rendered_at=file_mtime,
+        )
+        xml_updates[dialog_id] = {"hash": hash_val, "rendered_at": file_mtime}
+        logger.debug(f"Updated render state for dialog {dialog_id} (rendered_at={file_mtime})")
 
     # chapter_rendered_at should reflect the actual chapter audio file timestamp
     chapter_audio_mtime = get_chapter_audio_timestamp(clips_dir, chapter_stem)
     if chapter_audio_mtime > 0:
         state.chapter_rendered_at = chapter_audio_mtime
-    else:
-        # No chapter audio file yet, don't set chapter_rendered_at
-        # It will be set when the chapter audio file is created
-        logger.debug(f"No chapter audio file yet, leaving chapter_rendered_at as {state.chapter_rendered_at}")
-    save_render_state(state, clips_dir, chapter_stem)
+
+    # Persist the updated signatures inline into the chapter XML (source of truth).
+    xml_path_for_updates = Path(getattr(state, "xml_path", f"{chapter_stem}.xml"))
+    try:
+        write_render_signatures_to_xml(xml_path_for_updates, xml_updates)
+    except Exception as e:
+        logger.warning(f"Failed to write render signatures to XML: {e}")
 
     # Use the single authoritative function to get updated state
     story_name = getattr(state, "story", "Unknown")
@@ -839,118 +963,87 @@ def update_dialog_timestamp(
     """
     logger.info(f"update_dialog_timestamp: updating {dialog_id} in {chapter_stem}")
 
-    # Get current comprehensive state first
-    comprehensive = get_comprehensive_render_state(
+    # Determine the clip mtime from the actual file (avoids races with callers
+    # passing Date.now()); fall back to the provided timestamp or now.
+    chapter_clip_dir = clips_dir / chapter_stem
+    clip_path = None
+    for pattern in [
+        f"chapter_*_{dialog_id}_*.wav",
+        f"chapter_{dialog_id}_*.wav",
+        f"{dialog_id}.wav",
+    ]:
+        potential_paths = list(chapter_clip_dir.glob(pattern))
+        if potential_paths:
+            clip_path = potential_paths[0]
+            break
+
+    if clip_path and clip_path.exists():
+        ts = int(clip_path.stat().st_mtime * 1000)
+    elif new_timestamp is not None:
+        ts = int(new_timestamp)
+    else:
+        ts = int(time.time() * 1000)
+
+    # Persist the current content hash + timestamp inline in the XML so the dialog
+    # reflects the fresh render (turns green) and future edits compare against it.
+    try:
+        states = parse_dialog_states_from_xml(xml_path)
+        if dialog_id in states:
+            write_render_signatures_to_xml(
+                xml_path, {dialog_id: {"hash": states[dialog_id]["hash"], "rendered_at": ts}}
+            )
+            logger.info(
+                f"update_dialog_timestamp: wrote render_hash + rendered_at={ts} for {dialog_id} into XML"
+            )
+        else:
+            logger.warning(f"update_dialog_timestamp: dialog {dialog_id} not found in XML")
+    except Exception as e:
+        logger.warning(f"update_dialog_timestamp: failed to write XML signature: {e}")
+
+    # Do NOT update chapter_rendered_at here: bumping it for a single dialog render
+    # would make OTHER dialogs appear timestamp-stale (they'd be older than the
+    # chapter). chapter_rendered_at is owned by full chapter renders only.
+    return get_comprehensive_render_state(
         xml_path, clips_dir, chapter_stem, story_name, refresh_dialog_hashes=False
     )
-
-    # If a specific timestamp is provided, update it in the signature cache
-    if new_timestamp is not None:
-        state = load_render_state(clips_dir, chapter_stem)
-        if dialog_id in state.dialogs:
-            state.dialogs[dialog_id].rendered_at = new_timestamp
-            # Note: Do NOT update chapter_rendered_at for individual dialog renders.
-            # Updating it would make OTHER dialogs appear timestamp stale since they
-            # have older timestamps. Only update dialog-specific timestamp.
-            save_render_state(state, clips_dir, chapter_stem)
-            logger.info(f"Updated timestamp for {dialog_id} to {new_timestamp} (chapter_rendered_at unchanged: {state.chapter_rendered_at})")
-            # Recompute comprehensive state with updated timestamp
-            comprehensive = get_comprehensive_render_state(
-                xml_path, clips_dir, chapter_stem, story_name, refresh_dialog_hashes=False
-            )
-        else:
-            logger.warning(f"Dialog {dialog_id} not found in render state")
-    else:
-        # If no timestamp provided, find the actual file and use its mtime
-        # This avoids race conditions between file write and timestamp recording
-        state = load_render_state(clips_dir, chapter_stem)
-        chapter_clip_dir = clips_dir / chapter_stem
-        clip_path = None
-        for pattern in [f"chapter_*_{dialog_id}_*.wav", f"chapter_{dialog_id}_*.wav", f"{dialog_id}.wav"]:
-            potential_paths = list(chapter_clip_dir.glob(pattern))
-            if potential_paths:
-                clip_path = potential_paths[0]
-                break
-
-        if clip_path and clip_path.exists():
-            now = int(clip_path.stat().st_mtime * 1000)
-            state.dialogs[dialog_id].rendered_at = now
-            # Note: Do NOT update chapter_rendered_at for individual dialog renders.
-            # Updating it would make OTHER dialogs appear timestamp stale since they
-            # have older timestamps. Only update dialog-specific timestamp.
-            save_render_state(state, clips_dir, chapter_stem)
-            logger.info(f"Updated timestamp for {dialog_id} to file mtime {now} (chapter_rendered_at unchanged: {state.chapter_rendered_at})")
-            comprehensive = get_comprehensive_render_state(
-                xml_path, clips_dir, chapter_stem, story_name, refresh_dialog_hashes=False
-            )
-        else:
-            # Fallback to current time
-            now = int(time.time() * 1000)
-            if dialog_id in state.dialogs:
-                state.dialogs[dialog_id].rendered_at = now
-                # Note: Do NOT update chapter_rendered_at for individual dialog renders.
-                # Updating it would make OTHER dialogs appear timestamp stale.
-                save_render_state(state, clips_dir, chapter_stem)
-                logger.info(f"Updated timestamp for {dialog_id} to current time {now} (chapter_rendered_at unchanged: {state.chapter_rendered_at})")
-                comprehensive = get_comprehensive_render_state(
-                    xml_path, clips_dir, chapter_stem, story_name, refresh_dialog_hashes=False
-                )
-
-    return comprehensive
 
 
 def update_xml_hash_after_render(
     xml_path: Path, clips_dir: Path, chapter_stem: str, story_name: str
 ) -> ChapterRenderState:
     """
-    Update the Chapter XML hash in .chapter_rendered.json ONLY after successful
-    "Render Chapter" completion. This fulfills the requirement that the XML hash
-    should only be updated after the full chapter render process succeeds.
+    After a successful full "Render Chapter", refresh all dialog signatures so the
+    stored hashes match the current XML. Signatures are stored inline in the XML
+    (render_hash / rendered_at). chapter_rendered_at comes from the chapter audio
+    file timestamp.
 
-    Args:
-        xml_path: Path to the chapter XML file
-        clips_dir: Base clips directory
-        chapter_stem: Chapter stem name
-        story_name: Story display name
-
-    Returns:
-        Updated ChapterRenderState with new xml_hash
+    Returns the comprehensive result for the UI.
     """
-    state = load_render_state(clips_dir, chapter_stem)
-
-    # Set basic info
-    state.story = story_name
-    state.chapter = chapter_stem[:3].lstrip("0") or "001"
-    state.xml_path = str(xml_path)
-    state.clips_dir = str(clips_dir / chapter_stem)
-
-    # Update the stored XML hash to current value
-    state.xml_hash = compute_file_md5(xml_path)
-    state.xml_changed = False
-    state.current_xml_hash = state.xml_hash
-
-    # Save the updated state with new hash
-    save_render_state(state, clips_dir, chapter_stem)
-
-    logger.info(f"Updated Chapter XML hash after successful render for {chapter_stem}")
-
-    # Return comprehensive state for UI compatibility
-    comprehensive = get_comprehensive_render_state(
+    logger.info(f"update_xml_hash_after_render: refreshing render signatures for {chapter_stem}")
+    return get_comprehensive_render_state(
         xml_path, clips_dir, chapter_stem, story_name, refresh_dialog_hashes=True
     )
-    return comprehensive
 
 
 def refresh_all_dialog_hashes_after_render(
     xml_path: Path, clips_dir: Path, chapter_stem: str, story_name: str
 ) -> ChapterRenderState:
     """
-    After a full chapter render, recalculate and update ALL dialog MD5 signatures
-    in the render state. This ensures the stored hashes match the current XML.
-
-    This addresses the gap where individual dialog hashes were not being updated
-    after full chapter renders.
+    After a full chapter render, recalculate and update ALL dialog MD5 signatures,
+    stored inline in the XML (render_hash / rendered_at). This ensures the stored
+    hashes match the current XML so all rendered dialogs read as in-sync.
     """
+    logger.info(f"refresh_all_dialog_hashes_after_render: refreshing signatures for {chapter_stem}")
+    return get_comprehensive_render_state(
+        xml_path, clips_dir, chapter_stem, story_name, refresh_dialog_hashes=True
+    )
+
+
+def _unused_refresh_all_dialog_hashes_after_render_legacy(
+    xml_path: Path, clips_dir: Path, chapter_stem: str, story_name: str
+) -> ChapterRenderState:
+    """Legacy implementation retained for reference. Superseded by the inline-XML
+    signature storage above. (Not used.)"""
     state = load_render_state(clips_dir, chapter_stem)
 
     # Set basic info

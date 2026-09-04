@@ -958,24 +958,25 @@ def main():
                         print(f"[RESOURCE-ACCESS] Post-effects applied", file=sys.stderr)
                         print(f"  audio_path: {final_path}", file=sys.stderr)
 
-                    # Update render state with newly generated clips (if render state module available)
-                    # This ensures timestamps and clip mappings are properly maintained
+                    # Update render state with newly generated clips (if render state module available).
+                    # Signatures are stored inline in the chapter XML (render_hash/rendered_at),
+                    # which is the single source of truth (replacing .chapter_rendered.json).
                     try:
-                        from chapter_render_state import update_render_state_with_new_clips, load_render_state, get_state_file_path
-                        # Use actual story directory name (with hyphens) not the transformed title
+                        from chapter_render_state import update_render_state_with_new_clips, ChapterRenderState
                         clips_base_path = Path("Stories") / story_dir.name / "story-audio" / "clips"
-                        state_path = get_state_file_path(clips_base_path, xml_path.stem)
-                        if state_path.exists():
-                            state = load_render_state(clips_base_path, xml_path.stem)
-                            updated_state = update_render_state_with_new_clips(
-                                state, all_generated_clips,
-                                clips_base_path,
-                                xml_path.stem,
-                                is_full_render=True
-                            )
-                            logger.info(f"Updated render state with {len(all_generated_clips)} clips")
-                        else:
-                            logger.debug(f"No existing render state file at {state_path}, skipping update")
+                        state = ChapterRenderState(
+                            story=story_name,
+                            chapter=xml_path.stem[:3].lstrip("0") or "001",
+                            xml_path=str(xml_path),
+                            clips_dir=str(clips_base_path / xml_path.stem),
+                        )
+                        update_render_state_with_new_clips(
+                            state, all_generated_clips,
+                            clips_base_path,
+                            xml_path.stem,
+                            is_full_render=True
+                        )
+                        logger.info(f"Updated render state with {len(all_generated_clips)} clips (inline XML signatures)")
                     except ImportError:
                         logger.debug("chapter_render_state module not available, skipping render state update")
                     except Exception as e:

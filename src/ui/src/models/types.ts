@@ -55,6 +55,14 @@ export interface DialogElement {
   character: string;
   text: string;
   validationIssues?: DialogValidationIssue[];
+  /**
+   * MD5 signature of this dialog's content captured at the last successful
+   * render. Lives in the XML as the `render_hash` attribute and is mirrored
+   * into the in-memory model for instant client-side staleness checks.
+   */
+  renderHash?: string;
+  /** Unix timestamp (ms) when this dialog's clip was last rendered. */
+  renderedAt?: number;
   // Other XML attributes (e.g. emotion, tone, pace)
   attributes: Record<string, string | number | boolean>;
 }

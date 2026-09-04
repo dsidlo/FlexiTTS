@@ -35,6 +35,12 @@ export interface UseChapterReturn {
   handleChapterSelect: (filePath: string, loadedConfig?: StoryConfig) => Promise<void>;
   handleUpdateDialog: (dlgseq: string, sectionId: string, updatedDialog: DialogElement) => Promise<void>;
   getIsStaleClip: (sectionId: string, dlgseq: string) => boolean;
+  /**
+   * Merge freshly rendered dialog signatures (from the render pipeline) into the
+   * in-memory chapter so buttons update to green immediately, without waiting
+   * for another disk read. Keys are dialog ids ("SSS_DDD").
+   */
+  applyRenderResults: (rendered: Record<string, { hash: string; renderedAt?: number }>) => void;
   refreshClips: (fullRefresh?: boolean, chapterOverride?: Chapter | null) => Promise<void>;
   checkRenderState: (chapterOverride?: Chapter | null, refreshDialogHashes?: boolean) => Promise<void>;
   setCurrentChapterFile: React.Dispatch<React.SetStateAction<string>>;
@@ -205,6 +211,32 @@ export const useChapter = (storyDirectory?: string): UseChapterReturn => {
   }, [renderState]);
 
   /**
+   * Merge freshly rendered dialog signatures into the in-memory chapter.
+   * Lets the UI flip render buttons to green as soon as the render pipeline
+   * reports the new hashes, before any subsequent disk read.
+   */
+  const applyRenderResults = useCallback((rendered: Record<string, { hash: string; renderedAt?: number }>) => {
+    if (!chapter) return;
+    const updatedDialogs = chapter.dialogs.map((d) => {
+      const sectionId = (d.sectionId || '1').padStart(3, '0');
+      const dialogId = `${sectionId}_${String(d.dlgseq).padStart(3, '0')}`;
+      const info = rendered[dialogId];
+      if (!info) return d;
+      return {
+        ...d,
+        renderHash: info.hash,
+        renderedAt: info.renderedAt ?? d.renderedAt,
+        attributes: {
+          ...d.attributes,
+          render_hash: info.hash,
+          ...(info.renderedAt !== undefined ? { rendered_at: info.renderedAt } : {}),
+        },
+      };
+    });
+    setChapter({ ...chapter, dialogs: updatedDialogs });
+  }, [chapter]);
+
+  /**
    * Parse XML string into Chapter object
    */
   const parseChapterXML = useCallback((xmlString: string, filePath: string): Chapter => {
@@ -242,13 +274,20 @@ export const useChapter = (storyDirectory?: string): UseChapterReturn => {
       
       const rawText = node.textContent || '';
       const text = rawText.replace(/\s+/g, ' ').trim();
-      
+
+      const renderedAtRaw = attributes.rendered_at;
+      const renderedAt = renderedAtRaw !== undefined && renderedAtRaw !== ''
+        ? Number(renderedAtRaw)
+        : undefined;
+
       return {
         _index: index,
         dlgseq: attributes.dlgseq || attributes.id || `${index + 1}`,
         sectionId: attributes.section_seq || '0',
         character: attributes.character || (node.tagName.toLowerCase() === 'narration' ? 'Narrator' : 'Unknown'),
         text: text,
+        renderHash: attributes.render_hash || undefined,
+        renderedAt: renderedAt !== undefined && Number.isFinite(renderedAt) ? renderedAt : undefined,
         attributes: {
           ...attributes,
           dlgseq: attributes.dlgseq || attributes.id || `${index + 1}`,
@@ -560,6 +599,7 @@ export const useChapter = (storyDirectory?: string): UseChapterReturn => {
     loadChapter,
     handleChapterSelect,
     handleUpdateDialog,
+    applyRenderResults,
     getIsStaleClip,
     refreshClips,
     checkRenderState,

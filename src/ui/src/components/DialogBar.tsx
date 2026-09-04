@@ -3,6 +3,8 @@ import type { DialogElement, DialogValidationIssue } from '../models/types';
 import { getColorForCharacter } from '../utils/colors';
 import { useAudioPlayer } from '../hooks/useAudioPlayer';
 import { debugLog } from '../utils/debugLogger';
+import { md5 } from '../utils/md5';
+import { normalizeDialogText } from '../utils/dialogHash';
 
 import { PythonBridgeService } from '../services/pythonBridge';
 
@@ -52,6 +54,48 @@ export const DialogBar: React.FC<DialogBarProps> = ({
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
   const cursorPositionRef = React.useRef<number>(0);
 
+  // Content staleness is computed client-side against the render signature
+  // stored on the dialog (renderHash / render_hash attr). This lets the render
+  // button flip yellow mid-edit and snap back to green on undo, without any
+  // disk or Python round-trip. A short debounce avoids recomputing per key.
+  const isNarration =
+    dialog.character === 'Narrator' || !dialog.attributes?.character;
+  const dialogTag: 'dialog' | 'narration' = isNarration ? 'narration' : 'dialog';
+  const storedRenderHash =
+    dialog.renderHash ||
+    (typeof dialog.attributes?.render_hash === 'string' ? dialog.attributes.render_hash : undefined);
+
+  const isContentDirty = React.useCallback(
+    (text: string): boolean => {
+      if (!storedRenderHash) return false; // never rendered -> not stale, just absent
+      const normalized = normalizeDialogText(
+        { ...dialog, text },
+        dialogTag
+      );
+      return md5(normalized) !== storedRenderHash;
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [dialog, dialogTag, storedRenderHash]
+  );
+
+  const [isTextStale, setIsTextStale] = useState<boolean>(() => isContentDirty(localText));
+
+  // Keep stale flag in sync when the underlying render signature changes
+  // (e.g. after a render updates dialog.renderHash) or the text prop changes.
+  React.useEffect(() => {
+    setIsTextStale(isContentDirty(localText));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storedRenderHash, dialog.text]);
+
+  // Debounced recompute while the user types.
+  React.useEffect(() => {
+    const handle = setTimeout(() => {
+      setIsTextStale(isContentDirty(localText));
+    }, 300);
+    return () => clearTimeout(handle);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [localText]);
+
   // Sync local text when dialog prop changes (e.g., from external updates)
   // but preserve cursor position if we're currently editing
   React.useEffect(() => {
@@ -68,15 +112,24 @@ export const DialogBar: React.FC<DialogBarProps> = ({
 
   const bgColor = getColorForCharacter(dialog.character);
 
+  const isContentStaleNow = isStaleClip || isTextStale;
+
   // Log button state for debugging timestamp/color logic
-  if (isTimestampStale || isStaleClip) {
+  if (isTimestampStale || isContentStaleNow) {
     debugLog.info('DialogBar:render', 'Dialog button state', {
       dialogId: displayId || dialog.dlgseq,
       character: dialog.character,
       hasAudioClip,
       isStaleClip,
+      isTextStale,
       isTimestampStale,
-      color: isTimestampStale ? 'blue (#2196F3)' : (isStaleClip ? 'orange (#ff9800)' : 'green (#4CAF50)')
+      color: isTimestampStale
+        ? 'blue (#2196F3)'
+        : isTextStale
+          ? 'yellow (#ffc107)'
+          : isStaleClip
+            ? 'orange (#ff9800)'
+            : 'green (#4CAF50)'
     });
   }
 
@@ -144,6 +197,9 @@ export const DialogBar: React.FC<DialogBarProps> = ({
   };
 
   const handleTextBlur = async () => {
+    // Immediate (non-debounced) staleness recompute so the button never lags by
+    // the 300ms window when the user tabs/clicks away.
+    setIsTextStale(isContentDirty(localText));
     // Only sync to parent if text actually changed
     if (localText !== (dialog.text || '')) {
       await onUpdateDialog(dialog.dlgseq, dialog.sectionId || '0', {
@@ -337,9 +393,11 @@ export const DialogBar: React.FC<DialogBarProps> = ({
                 ? '#888'
                 : isTimestampStale
                   ? '#2196F3'  // Blue: timestamp out of sync (per requirements)
-                  : isStaleClip
-                    ? '#ff9800'  // Orange: content/hash stale
-                    : '#4CAF50', // Green: in sync
+                  : isTextStale
+                    ? '#ffc107'  // Yellow: text edited, needs re-render (client-side)
+                    : isStaleClip
+                      ? '#ff9800'  // Orange: content/hash stale (backend)
+                      : '#4CAF50', // Green: in sync
               border: '2px solid rgba(255,255,255,0.2)',
               borderRadius: '50%',
               width: '24px',
@@ -352,7 +410,11 @@ export const DialogBar: React.FC<DialogBarProps> = ({
               alignItems: 'center',
               justifyContent: 'center',
               opacity: isGeneratingAudio ? 0.8 : 1.0,
-              boxShadow: hasAudioClip && !isStaleClip ? '0px 0px 5px rgba(76,175,80,0.8)' : (isStaleClip ? '0px 0px 5px rgba(255,152,0,0.8)' : 'none')
+              boxShadow: hasAudioClip && !isContentStaleNow
+                ? '0px 0px 5px rgba(76,175,80,0.8)'
+                : isTextStale
+                  ? '0px 0px 5px rgba(255,193,7,0.8)'
+                  : (isStaleClip ? '0px 0px 5px rgba(255,152,0,0.8)' : 'none')
             }}
             title={isGeneratingAudio
               ? "Stop Generating Audio..."
@@ -360,9 +422,11 @@ export const DialogBar: React.FC<DialogBarProps> = ({
                 ? "No clip - Render Audio"
                 : isTimestampStale
                   ? "Timestamp out of sync - Re-render to update timestamp"
-                  : isStaleClip
-                    ? "Clip stale - Re-render"
-                    : "Has clip - Re-render Audio"
+                  : isTextStale
+                    ? "Text edited - Re-render"
+                    : isStaleClip
+                      ? "Clip stale - Re-render"
+                      : "Has clip - Re-render Audio"
             }
           >
             {isGeneratingAudio ? (

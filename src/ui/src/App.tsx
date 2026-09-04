@@ -49,8 +49,14 @@ function App() {
     isGeneratingStructure, setIsGeneratingStructure, generateAttempt, setGenerateAttempt,
     xmlContentRef, hasUnsavedChangesRef,
     setLastSavedXmlValue, setHasUnsavedChangesValue,
-    loadChapter, handleUpdateDialog, getIsStaleClip, checkRenderState, renderState,
+    loadChapter, handleUpdateDialog, getIsStaleClip, checkRenderState, renderState, applyRenderResults,
   } = useChapter(currentStory?.directory_name);
+
+  // Track the latest renderState so the post-render clip refresh can merge the
+  // freshly computed dialog hashes/timestamps into the in-memory chapter and
+  // flip render buttons to green without a separate disk read.
+  const renderStateRef = useRef<any>(null);
+  renderStateRef.current = renderState;
 
   // Markdown state from hook
   const {
@@ -543,7 +549,21 @@ function App() {
     if (checkRenderState) {
       await checkRenderState(null, fullRefresh); // Pass null for chapterOverride to use current chapter
     }
-  }, [currentChapterFile, setAvailableClips, setHasChapterAudio, checkRenderState]);
+
+    // Merge the freshly computed dialog hashes/timestamps into the in-memory
+    // chapter so edited dialogs flip back to green immediately after a render,
+    // without needing another XML disk read.
+    const state = renderStateRef.current;
+    const hashes = state?.dialog_hashes as Record<string, string> | undefined;
+    if (hashes && applyRenderResults) {
+      const renderedAt = (state?.rendered_at as Record<string, number> | undefined) || {};
+      const merged: Record<string, { hash: string; renderedAt?: number }> = {};
+      for (const [dialogId, hash] of Object.entries(hashes)) {
+        merged[dialogId] = { hash, renderedAt: renderedAt[dialogId] };
+      }
+      applyRenderResults(merged);
+    }
+  }, [currentChapterFile, setAvailableClips, setHasChapterAudio, checkRenderState, applyRenderResults]);
 
   useEffect(() => {
     const metadata = latestTtsAlertRef.current;
