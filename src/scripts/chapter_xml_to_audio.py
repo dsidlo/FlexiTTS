@@ -963,7 +963,10 @@ def main():
                     # which is the single source of truth (replacing .chapter_rendered.json).
                     try:
                         from chapter_render_state import update_render_state_with_new_clips, ChapterRenderState
-                        clips_base_path = Path("Stories") / story_dir.name / "story-audio" / "clips"
+                        # Use the resolved clips directory (config-aware), not a
+                        # hardcoded Stories/... path, so signatures are written to
+                        # the correct chapter XML regardless of layout.
+                        clips_base_path = clips_dir
                         state = ChapterRenderState(
                             story=story_name,
                             chapter=xml_path.stem[:3].lstrip("0") or "001",
