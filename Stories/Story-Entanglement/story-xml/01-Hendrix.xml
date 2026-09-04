@@ -1,14 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <story>
   <section seq="1">
-	<narration dlgseq="1" emotion="atmospheric">
+	<narration dlgseq="1" emotion="atmospheric" render_hash="ac347cc7d2b70ff32fe66df92d6b5e41" rendered_at="1788555974247">
 	  The neon glow of Chicago's skyline bled into the night sky, a digital aurora
 	  that flickered in the ripples of Lake Michigan. Hendrix walked along the
 	  concrete waterfront of Lake Shore Drive Beach, his boots crunching on the
 	  gravelly path. The air was thick with the scent of algae and motor oil, a
 	  pungent reminder of the city's ceaseless churn.
 	</narration>
-	<narration dlgseq="2" emotion="wary">
+	<narration dlgseq="2" emotion="wary" render_hash="26148a5d35ee54e5af937df873dfa9d2" rendered_at="1773965865280">
 	  He wore a black trench coat, its smart fabric programmed to blend with the
 	  shadows. His eyes, augmented with low-light optics, scanned the horizon.
 	  Somewhere in that labyrinth of steel and silicon, high-tech Yakuza assassins
@@ -18,39 +18,39 @@
 	</narration>
   </section>
   <section seq="2">
-	<narration dlgseq="1" emotion="urgent">
+	<narration dlgseq="1" emotion="urgent" render_hash="8c489b98fde65270cd5a64e4d74e5018" rendered_at="1773968621449">
 	  Hendrix's neural implant buzzed, a soft vibration at the base of his skull. A
 	  message from an unknown sender. He opened it with a thought, the text overlaying
 	  his vision. "Tick-tock, Hendrix. The clock is ticking." A countdown timer
 	  appeared, digits glowing red: 48:00:00. Only Two days left...
 	</narration>
-	<narration dlgseq="2" emotion="desperate">
+	<narration dlgseq="2" emotion="desperate" render_hash="0fd7bc8d985e06d7841d7a0abcd55f2c" rendered_at="1773968621449">
 	  He clenched his fists. His life had spiraled into a cyberpunk nightmare, a
 	  tangle of corporate espionage, illicit software, and now, a debt he couldn't
 	  pay. He thought of the blockchain accounts he had tried to hack, the firewalls
 	  that were more like fortress walls. Unbreachable.
 	</narration>
-	<narration dlgseq="3" emotion="melancholic">
+	<narration dlgseq="3" emotion="melancholic" render_hash="8d248a97470156f72be6b456a9b92488" rendered_at="1773968621449">
 	  A couple walked by, laughing, their faces lit by the soft glow of their handheld
 	  screens. To them, he was just a shadow, a silhouette against the backdrop of the
 	  city's electric tapestry. They didn't see the desperation in his eyes, the
 	  weight of his predicament pulling him down like gravity pulls on a drowning
 	  man...
 	</narration>
-	<narration dlgseq="4" emotion="resolute">
+	<narration dlgseq="4" emotion="resolute" render_hash="b1cbb9a6ee961fd2642590aeddf19b5d" rendered_at="1773968621449">
 	  Hendrix reached into his pocket and pulled out a small device, no bigger than a
 	  thumb drive. It was a last resort, a piece of black-market tech that could fry
 	  an AI's neural network. Dangerous, but it might fetch a high price. Would it be
 	  enough to buy his life back?
 	</narration>
-	<narration dlgseq="5" emotion="contemplative">
+	<narration dlgseq="5" emotion="contemplative" render_hash="48c4f8529baffb690e901a92e3eb436e" rendered_at="1773968621449">
 	  The lake seemed to whisper to him, its waves lapping at the shore like the soft
 	  murmur of ghosts. He looked at the water and then back at the city, its
 	  skyscrapers towering like digital deities. Two worlds, separated by a thin line
 	  of concrete. And there he was, standing on the edge, a man caught between the
 	  abyss and the code.
 	</narration>
-	<narration dlgseq="6" emotion="determined">
+	<narration dlgseq="6" emotion="determined" render_hash="937faafc36a413f6fa98f164154dd432" rendered_at="1773968621449">
 	  As he disappeared into the maze of streets and alleyways, one thing was clear.
 	  The game was on, and he was all in!
 	</narration>
