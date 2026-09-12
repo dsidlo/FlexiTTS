@@ -530,6 +530,26 @@ class TestMain:
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
         assert "<?xml" in captured.out
+
+    def test_main_output_xsd_prefers_disk_schema(self, tmp_path, monkeypatch, capsys):
+        """--output-xsd prints the on-disk schema when present."""
+        monkeypatch.chdir(tmp_path)
+        fake_script = tmp_path / "src" / "scripts" / "chapter_validate_xml.py"
+        monkeypatch.setattr(chapter_validate_xml, "__file__", str(fake_script))
+        disk_schema = (
+            '<?xml version="1.0"?>\n'
+            '<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">'
+            '<!--disk-authoritative--></xs:schema>\n'
+        )
+        (tmp_path / chapter_validate_xml.SCHEMA_FILE_NAME).write_text(disk_schema)
+        monkeypatch.setattr(sys, 'argv', ['chapter_validate_xml.py', '--output-xsd'])
+
+        with pytest.raises(SystemExit) as exc_info:
+            chapter_validate_xml.main()
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert 'disk-authoritative' in captured.out
     
     def test_main_no_config(self, tmp_path, monkeypatch, capsys):
         """Test main exits when config is missing."""

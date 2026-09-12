@@ -406,7 +406,10 @@ def main():
 
     # If --output-xsd is provided, print the schema and exit
     if args.output_xsd:
-        print(XSD_SCHEMA)
+        # Print the authoritative schema: the on-disk schema_unified.xsd when
+        # available, otherwise the embedded fallback copy.
+        xsd_text, schema_file = load_xsd_schema()
+        print(xsd_text, end="" if xsd_text.endswith("\n") else "\n")
         sys.exit(0)
 
     # If --update-xsd is provided, we perform the update and exit
