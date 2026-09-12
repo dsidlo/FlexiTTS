@@ -2,6 +2,7 @@
 
 import pytest
 import sys
+from io import BytesIO
 from pathlib import Path
 from unittest.mock import Mock, patch, mock_open
 import chapter_seq_xml
@@ -399,6 +400,36 @@ class TestSchemaFileSourceOfTruth:
     """Tests for schema_unified.xsd as the authoritative schema source."""
 
     SCHEMA_XSD = chapter_validate_xml.XSD_SCHEMA.strip()
+
+    def test_render_bookkeeping_attributes_validate(self):
+        """Regression: render_hash/rendered_at/post-effects must be schema-legal.
+
+        Story XMLs carry per-dialog render bookkeeping inline (migrated from the
+        .chapter_rendered.json sidecar). The unified XSD previously rejected
+        these attributes and failed validation for stamped chapters like
+        01-Hendrix.xml.
+        """
+        xml = """<story>
+  <section seq="1">
+    <narration dlgseq="1" emotion="atmospheric" render_hash="ac347cc7d2b70ff32fe66df92d6b5e41" rendered_at="1788555974247">Text.</narration>
+    <dialog dlgseq="2" character="Hendrix" emotion="urgent" post-effects="reverb">Line.</dialog>
+  </section>
+</story>"""
+        parser = etree.XMLParser(remove_blank_text=True)
+        doc = etree.parse(BytesIO(xml.encode('utf-8')), parser)
+        schema = etree.XMLSchema(etree.XML(chapter_validate_xml.XSD_SCHEMA.encode('utf-8')))
+        assert schema.validate(doc), str(schema.error_log)
+
+    def test_rendered_at_rejects_non_integer(self):
+        """rendered_at must remain xs:integer in the schema."""
+        xml = """<story>
+  <section seq="1">
+    <narration dlgseq="1" rendered_at="not-a-number">Text.</narration>
+  </section>
+</story>"""
+        doc = etree.parse(BytesIO(xml.encode('utf-8')))
+        schema = etree.XMLSchema(etree.XML(chapter_validate_xml.XSD_SCHEMA.encode('utf-8')))
+        assert not schema.validate(doc)
 
     def _write_schema_file(self, directory, content=None):
         schema_file = directory / chapter_validate_xml.SCHEMA_FILE_NAME
