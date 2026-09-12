@@ -252,6 +252,11 @@ export const DialogBar: React.FC<DialogBarProps> = ({
     return Object.entries(dialog.attributes).map(([key, value]) => {
       // Don't show base attributes as badges
       if (key === 'character' || key === 'id' || key === 'dlgseq' || key === 'section_seq') return null;
+      // Render bookkeeping (render_hash / rendered_at) is internal state used
+      // by the staleness indicator; it is not meaningful to the user, so it is
+      // excluded from the badge row. It stays in attributes and remains
+      // editable through the right-click Edit Attributes menu.
+      if (key === 'render_hash' || key === 'rendered_at') return null;
 
       return (
         <span key={key} className="attribute-badge" style={{ marginRight: '8px', fontSize: '0.8em', backgroundColor: 'rgba(0,0,0,0.1)', padding: '2px 6px', borderRadius: '4px' }}>
@@ -741,20 +746,22 @@ export const DialogBar: React.FC<DialogBarProps> = ({
           }}
         >
           <div style={{ padding: '5px 10px', fontWeight: 'bold', borderBottom: '1px solid #eee', color: '#333' }}>Edit Attributes</div>
-          {Object.keys(dialog.attributes).map(key => (
-            <div
-              key={key}
-              style={{ padding: '5px 15px', cursor: 'pointer', color: '#333' }}
-              onClick={() => {
-                handleAttrClick(key, dialog.attributes[key]);
-                closeContextMenu();
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#f0f0f0')}
-              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
-            >
-              {key}
-            </div>
-          ))}
+          {Object.keys(dialog.attributes)
+            .filter(key => key !== 'render_hash' && key !== 'rendered_at') // internal render bookkeeping
+            .map(key => (
+              <div
+                key={key}
+                style={{ padding: '5px 15px', cursor: 'pointer', color: '#333' }}
+                onClick={() => {
+                  handleAttrClick(key, dialog.attributes[key]);
+                  closeContextMenu();
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#f0f0f0')}
+                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+              >
+                {key}
+              </div>
+            ))}
           {/* Allow adding new attributes */}
           <div
             style={{ padding: '5px 15px', cursor: 'pointer', fontStyle: 'italic', borderTop: '1px solid #eee', color: '#666' }}

@@ -194,4 +194,37 @@ describe('DialogBar staleness indicator (client-side MD5)', () => {
     expect(bg).toContain(GREEN);
     expect(bg).not.toContain('136'); // not the grey #888
   });
+
+  it('does not display the render_hash badge on the dialog bar', () => {
+    // render_hash is internal bookkeeping for the staleness indicator; the
+    // user should never see the MD5 value in the dialog bar.
+    const { container } = renderRenderedDialog();
+    const summary = container.querySelector('.dialog-attributes-summary');
+    expect(summary).not.toBeNull();
+    expect(summary?.textContent).not.toContain('render_hash');
+    expect(summary?.textContent).not.toMatch(/[a-f0-9]{32}/); // no MD5 anywhere
+  });
+
+  it('keeps staleness working while render_hash is hidden from the UI', () => {
+    const { container } = renderRenderedDialog();
+    // Badge hidden...
+    const summary = container.querySelector('.dialog-attributes-summary');
+    expect(summary?.textContent).not.toContain('render_hash');
+    // ...but the indicator still uses it: editing turns the button yellow.
+    const textarea = expandAndGetTextarea(container);
+    fireEvent.change(textarea, { target: { value: 'Edited while hidden' } });
+    act(() => {
+      vi.advanceTimersByTime(350);
+    });
+    expect(getRenderButton(container).style.background).toContain(YELLOW);
+  });
+
+  it('excludes render bookkeeping from the Edit Attributes menu', () => {
+    const { container } = renderRenderedDialog();
+    const header = container.querySelector('.dialog-bar-header') as HTMLElement;
+    fireEvent.contextMenu(header);
+    const menu = container.querySelector('.context-menu');
+    expect(menu).not.toBeNull();
+    expect(menu?.textContent).not.toContain('render_hash');
+  });
 });
