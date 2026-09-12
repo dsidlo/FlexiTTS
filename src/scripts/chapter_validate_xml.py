@@ -10,9 +10,53 @@ from log_utils import setup_script_logging
 
 logger = setup_script_logging('chapter_validate_xml')
 
+SCHEMA_FILE_NAME = 'schema_unified.xsd'
+
+
+def find_schema_file():
+    """Locate the standalone schema_unified.xsd file, if present.
+
+    The standalone file is the single source of truth for the unified schema;
+    the XSD_SCHEMA constant below is only a fallback for environments where the
+    file is unavailable (e.g. tests, packaged installs).
+
+    Search order: repository root (relative to this script), current working
+    directory, and the script's own directory.
+    """
+    script_dir = Path(__file__).resolve().parent
+    candidates = [
+        script_dir.parent.parent / SCHEMA_FILE_NAME,  # repo root for src/scripts layout
+        Path.cwd() / SCHEMA_FILE_NAME,
+        script_dir / SCHEMA_FILE_NAME,
+    ]
+    for candidate in candidates:
+        try:
+            if candidate.is_file():
+                return candidate
+        except OSError:
+            continue
+    return None
+
+
+def load_xsd_schema():
+    """Return the schema XSD text, preferring the standalone file on disk."""
+    schema_file = find_schema_file()
+    if schema_file is not None:
+        try:
+            text = schema_file.read_text(encoding='utf-8')
+            # Sanity check: must be parseable as an XSD before trusting it.
+            etree.XML(text.encode('utf-8'))
+            return text, schema_file
+        except (OSError, etree.XMLSyntaxError) as e:
+            logger.warning(f"Falling back to embedded XSD_SCHEMA: could not load {schema_file}: {e}")
+    return XSD_SCHEMA, None
+
+
 # Unified XSD schema for both supported XML root formats.
 # Supports both <story> and <chapter> roots, with either flat dialog/narration
 # content or section-based content.
+# NOTE: This embedded copy is a fallback only. schema_unified.xsd (repo root)
+# is the authoritative source of truth and is preferred at load time.
 XSD_SCHEMA = """<?xml version="1.0" encoding="UTF-8"?>
 <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
   <xs:complexType name="DialogType">
@@ -95,7 +139,7 @@ def _generate_unified_schema_from_xml(root):
     ensuring the schema remains consistent across regenerations.
     """
     # Strip leading/trailing whitespace to keep formatting predictable when
-    # reinserted into scripts.
+    # reinserted into scripts/files.
     return XSD_SCHEMA.strip()
 
 
@@ -116,6 +160,17 @@ def update_xsd(xml_path, script_path):
         xml_doc = etree.parse(str(xml_path), parser)
         root = xml_doc.getroot()
         new_xsd = _generate_unified_schema_from_xml(root)
+
+        # Keep the standalone schema file in sync when present (it is the
+        # authoritative copy loaded at validation time).
+        schema_file = find_schema_file()
+        if schema_file is not None:
+            try:
+                schema_file.write_text(new_xsd + "\n", encoding='utf-8')
+                print(f"Successfully updated schema file {schema_file} using {xml_path}")
+            except OSError as e:
+                print(f"Error: Could not write schema file {schema_file}: {e}")
+                return False
 
         try:
             script_content = script_path.read_text()
@@ -302,12 +357,17 @@ def validate_xml(xml_path):
             return False
 
         schema_name = 'unified'
+        schema_source = 'embedded'
         print(f"[RESOURCE-ACCESS] Using XML schema", file=sys.stderr)
         print(f"  xml_path: {xml_path}", file=sys.stderr)
         print(f"  schema: {schema_name}", file=sys.stderr)
         print(f"  root: {root_tag}", file=sys.stderr)
 
-        schema_root = etree.XML(XSD_SCHEMA.encode('utf-8'))
+        xsd_text, schema_file = load_xsd_schema()
+        if schema_file is not None:
+            schema_source = str(schema_file)
+        print(f"  schema_source: {schema_source}", file=sys.stderr)
+        schema_root = etree.XML(xsd_text.encode('utf-8'))
         schema = etree.XMLSchema(schema_root)
         
         if schema.validate(xml_doc):
