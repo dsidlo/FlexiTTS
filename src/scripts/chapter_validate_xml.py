@@ -21,6 +21,11 @@ XSD_SCHEMA = """<?xml version="1.0" encoding="UTF-8"?>
         <xs:attribute name="character" type="xs:string" use="required"/>
         <xs:attribute name="dlgseq" type="xs:integer" use="required"/>
         <xs:attribute name="emotion" type="xs:string" use="optional"/>
+        <xs:attribute name="post-effects" type="xs:string" use="optional"/>
+        <!-- Render bookkeeping written by chapter_render_state.py; content signatures
+             must not participate in content hashing (see normalize_dialog_text). -->
+        <xs:attribute name="render_hash" type="xs:string" use="optional"/>
+        <xs:attribute name="rendered_at" type="xs:integer" use="optional"/>
       </xs:extension>
     </xs:simpleContent>
   </xs:complexType>
@@ -31,6 +36,10 @@ XSD_SCHEMA = """<?xml version="1.0" encoding="UTF-8"?>
         <xs:attribute name="character" type="xs:string" use="optional"/>
         <xs:attribute name="dlgseq" type="xs:integer" use="required"/>
         <xs:attribute name="emotion" type="xs:string" use="optional"/>
+        <xs:attribute name="post-effects" type="xs:string" use="optional"/>
+        <!-- Render bookkeeping written by chapter_render_state.py -->
+        <xs:attribute name="render_hash" type="xs:string" use="optional"/>
+        <xs:attribute name="rendered_at" type="xs:integer" use="optional"/>
       </xs:extension>
     </xs:simpleContent>
   </xs:complexType>
