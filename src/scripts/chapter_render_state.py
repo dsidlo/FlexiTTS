@@ -714,9 +714,25 @@ def get_comprehensive_render_state(
             # NOT be flagged timestamp-stale.
             logger.debug(f"get_comprehensive_render_state: dialog {dialog_id} accepted (rendered_at={stored_state.rendered_at} >= file_mtime={file_mtime})")
             good_dialogs.append(dialog_id)
+        elif stored_state.rendered_at > 0:
+            # The dialog has a stamped signature and its content hash matches the
+            # current XML (checked above), so this clip is accounted for: it was
+            # rendered for exactly this content. Blue (timestamp stale) would be
+            # wrong here. Historical data can leave rendered_at older than the
+            # clip (signature write failed or was skipped), and a healthy
+            # selective re-render + re-stitch leaves the clip a few milliseconds
+            # NEWER than the chapter audio (clip writes race the final stitch).
+            # Neither means the dialog needs re-rendering; both must be green.
+            logger.debug(
+                f"get_comprehensive_render_state: dialog {dialog_id} in sync by content hash "
+                f"(rendered_at={stored_state.rendered_at}, file_mtime={file_mtime}, "
+                f"chapter={state.chapter_rendered_at}) -> good"
+            )
+            good_dialogs.append(dialog_id)
         else:
-            # Check if dialog clip is newer than CHAPTER rendered_at (for blue button)
-            # This is the key requirement: dialog should be blue if dialog_clip_time > chapter_rendered_at
+            # No stamped signature at all: the clip is unaccounted for. Check if
+            # the dialog clip is newer than the CHAPTER rendered_at (blue button):
+            # dialog should be blue if dialog_clip_time > chapter_rendered_at.
             # Exact comparison - no tolerance as timing differences should not occur in proper render flow
             is_newer_than_chapter = file_mtime > state.chapter_rendered_at
 
@@ -724,13 +740,12 @@ def get_comprehensive_render_state(
                 logger.debug(f"get_comprehensive_render_state: dialog {dialog_id} is timestamp stale vs chapter (file_mtime={file_mtime}, chapter_rendered_at={state.chapter_rendered_at})")
                 timestamp_stale_dialogs.append(dialog_id)
                 needs_render_dialogs.append(dialog_id)
-            elif stored_state.rendered_at == 0 or file_mtime > stored_state.rendered_at:
-                # Also check individual dialog staleness as fallback
-                logger.debug(f"get_comprehensive_render_state: dialog {dialog_id} has individual timestamp staleness (file_mtime={file_mtime}, stored={stored_state.rendered_at})")
+            else:
+                # Clip exists but is older than the chapter render and unstamped:
+                # treat as individually stale so it gets re-rendered.
+                logger.debug(f"get_comprehensive_render_state: dialog {dialog_id} unstamped (file_mtime={file_mtime}, chapter={state.chapter_rendered_at})")
                 timestamp_stale_dialogs.append(dialog_id)
                 needs_render_dialogs.append(dialog_id)
-            else:
-                good_dialogs.append(dialog_id)
 
     # ALWAYS use chapter audio file timestamp for chapter_rendered_at (per requirements)
     chapter_audio_mtime = get_chapter_audio_timestamp(clips_dir, chapter_stem)
