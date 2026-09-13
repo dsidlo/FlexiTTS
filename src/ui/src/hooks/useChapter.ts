@@ -103,7 +103,18 @@ export const useChapter = (storyDirectory?: string): UseChapterReturn => {
       return;
     }
     const stem = chapterToUse.fileName.split('/').pop()?.replace('.xml', '') || '';
-    const storyDir = storyDirectory || 'Story-Default';
+    // Derive the story directory from the chapter's own path
+    // (e.g. 'Story-Entanglement/story-xml/01-Hendrix.xml' -> 'Story-Entanglement').
+    // Do NOT rely on the storyDirectory prop here: at startup, handleChapterSelect
+    // runs in the same async tick as setCurrentStory, so this callback's closure
+    // can still hold the PREVIOUS (or undefined) prop value while the chapter
+    // being checked belongs to the selected story. That race checked the wrong
+    // story's clips and reported the chapter as needs_render (yellow button)
+    // on every UI start until another state refresh fixed it.
+    const derivedStoryDir = chapterToUse.fileName.includes('/')
+      ? chapterToUse.fileName.split('/')[0]
+      : undefined;
+    const storyDir = derivedStoryDir || storyDirectory || 'Story-Default';
     try {
       const state = await PythonBridgeService.checkChapterRenderState(stem, storyDir, refreshDialogHashes);
       setRenderState(state);

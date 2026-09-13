@@ -22,6 +22,7 @@ vi.mock('../services/pythonBridge', () => ({
     playSoundFile: vi.fn(),
     killProcess: vi.fn(),
     checkStoryFileExists: vi.fn(),
+    checkChapterRenderState: vi.fn(),
   },
 }));
 
@@ -155,15 +156,42 @@ describe('useChapter', () => {
   describe('loadChapter', () => {
     it('should load and parse chapter XML', async () => {
       const { result } = renderHook(() => useChapter());
-      
+
       await act(async () => {
         await result.current.loadChapter('test.xml');
       });
-      
+
       expect(result.current.chapter).not.toBeNull();
       expect(result.current.chapter?.name).toBe('Test Chapter');
       expect(result.current.chapter?.dialogs).toHaveLength(2);
       expect(PythonBridgeService.readChapterFile).toHaveBeenCalledWith('test.xml');
+    });
+
+    it('derives the render-state story dir from the chapter path, not the storyDirectory prop', async () => {
+      // Regression: at startup, handleChapterSelect runs in the same async tick
+      // as setCurrentStory, so the storyDirectory prop can still be undefined
+      // when the first render-state check fires. The check previously fell
+      // back to 'Story-Default', looked at the wrong story's clips, and showed
+      // a freshly rendered chapter as yellow until another refresh fixed it.
+      // The hook must derive the story dir from chapter.fileName instead.
+      vi.mocked(PythonBridgeService.checkChapterRenderState).mockResolvedValue({
+        needs_render: false,
+        stale_count: 0,
+        stale_dialogs: [],
+      } as any);
+
+      const { result } = renderHook(() => useChapter()); // storyDirectory prop undefined
+
+      await act(async () => {
+        await result.current.loadChapter('Story-Entanglement/story-xml/01-Hendrix.xml');
+      });
+
+      expect(PythonBridgeService.checkChapterRenderState).toHaveBeenCalledWith(
+        '01-Hendrix',
+        'Story-Entanglement',
+        false
+      );
+      expect(result.current.renderState?.needs_render).toBe(false);
     });
 
     it('should set available clips', async () => {
