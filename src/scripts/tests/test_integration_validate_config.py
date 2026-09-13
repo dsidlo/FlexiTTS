@@ -18,9 +18,13 @@ def tmp_path_with_cwd(tmp_path):
     return tmp_path
 
 
-def run_script(args, cwd=None, env=None, check=True):
-    """Helper to run script via subprocess."""
-    cmd = [sys.executable, str(SCRIPT_PATH)] + args
+def run_script(args, cwd=None, env=None, check=True, script_path=None):
+    """Helper to run script via subprocess.
+
+    script_path overrides the default script (used by --update-schema tests,
+    which must not mutate the real validate_config.py in the repo).
+    """
+    cmd = [sys.executable, str(script_path or SCRIPT_PATH)] + args
     result = subprocess.run(
         cmd,
         capture_output=True,
@@ -236,12 +240,20 @@ class TestValidateConfigUpdateSchema:
     """Test --update-schema flag."""
     
     def test_update_schema_with_valid_config(self, valid_config, tmp_path):
-        """Test --update-schema modifies the script file."""
-        # This is tricky because it modifies the script itself
-        # We should test it doesn't crash
-        result = run_script(["--update-schema", str(valid_config)], cwd=str(tmp_path))
+        """Test --update-schema modifies the script file.
+
+        Runs against a COPY of validate_config.py: the real script rewrites
+        its own embedded schema via os.path.abspath(__file__), so pointing the
+        subprocess at the repo file would clobber the hand-maintained schema
+        with a strict snapshot generated from the fixture config.
+        """
+        script_copy = tmp_path / "validate_config.py"
+        script_copy.write_text(SCRIPT_PATH.read_text(encoding="utf-8"), encoding="utf-8")
+        result = run_script(["--update-schema", str(valid_config)], cwd=str(tmp_path), script_path=script_copy)
         # The return code depends on schema modifications
         assert result.returncode == 0 or "updated" in result.stdout.lower() or "error" in result.stdout.lower() or result.returncode == 1
+        # The copy was rewritten with an inferred schema; the real script is untouched.
+        assert "SCHEMA_MARKER_START" in script_copy.read_text(encoding="utf-8")
     
     def test_update_schema_nonexistent_file(self):
         """Test --update-schema with nonexistent file."""

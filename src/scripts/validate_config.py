@@ -25,6 +25,12 @@ def get_project_version():
 def get_schema():
     # [SCHEMA_MARKER_START]
     # Define the schema based on the current story-config.yml
+    #
+    # Keys are OPTIONAL unless noted in "required". The user-facing schema is
+    # deliberately permissive: optional documentation/behavior keys such as
+    # "description", "custom-voice", "dialog-effects", "sox-effects",
+    # "tts-device", "max_voice_cache_size", "api_key", "temperature", ...
+    # must not fail validation for configs that omit them.
     return {
         "type": "object",
         "properties": {
@@ -37,20 +43,46 @@ def get_schema():
                                         "name": {
                                                 "type": "string"
                                         },
+                                        "description": {
+                                                "type": "string"
+                                        },
                                         "voice-sample": {
                                                 "type": "string"
+                                        },
+                                        "custom-voice": {
+                                                "type": "object",
+                                                "properties": {
+                                                        "language": {"type": "string"},
+                                                        "speaker": {"type": "string"},
+                                                        "instruct": {"type": "string"},
+                                                        "emotions": {
+                                                                "type": "array",
+                                                                "items": {"type": "object"}
+                                                        }
+                                                },
+                                                "additionalProperties": False
+                                        },
+                                        "cloned-emotion": {
+                                                "type": "array",
+                                                "items": {"type": "object"}
+                                        },
+                                        "sox-effects": {
+                                                "type": "array",
+                                                "items": {"type": "string"}
+                                        },
+                                        "dialog-effects": {
+                                                "type": "array",
+                                                "items": {"type": "string"}
                                         }
                                 },
                                 "additionalProperties": False,
                                 "required": [
-                                        "name",
-                                        "voice-sample"
+                                        "name"
                                 ]
                         }
                 },
                 "dialog-effects": {
                         "type": "array",
-                        "minItems": 1,
                         "items": {
                                 "type": "object",
                                 "properties": {
@@ -59,7 +91,6 @@ def get_schema():
                                         },
                                         "sox-effects": {
                                                 "type": "array",
-                                                "minItems": 1,
                                                 "items": {
                                                         "type": "string"
                                                 }
@@ -87,6 +118,9 @@ def get_schema():
                                 "logs": {
                                         "type": "string"
                                 },
+                                "max_voice_cache_size": {
+                                        "type": "integer"
+                                },
                                 "story-audio": {
                                         "type": "string"
                                 },
@@ -96,6 +130,9 @@ def get_schema():
                                 "story-xml": {
                                         "type": "string"
                                 },
+                                "tts-device": {
+                                        "type": "string"
+                                },
                                 "voices": {
                                         "type": "string"
                                 }
@@ -103,7 +140,6 @@ def get_schema():
                         "additionalProperties": False,
                         "required": [
                                 "chapters",
-                                "clip-separation",
                                 "clips",
                                 "logs",
                                 "story-audio",
@@ -114,24 +150,30 @@ def get_schema():
                 },
                 "llm-xml-generator": {
                         "type": "array",
-                        "minItems": 1,
                         "items": {
                                 "type": "object",
                                 "properties": {
                                         "api_base": {
                                                 "type": "string"
                                         },
+                                        "api_key": {
+                                                "type": "string"
+                                        },
                                         "default-llm": {
+                                                "type": "string"
+                                        },
+                                        "llm": {
                                                 "type": "string"
                                         },
                                         "model": {
                                                 "type": "string"
+                                        },
+                                        "temperature": {
+                                                "type": "number"
                                         }
                                 },
                                 "additionalProperties": False,
                                 "required": [
-                                        "api_base",
-                                        "default-llm",
                                         "model"
                                 ]
                         }
@@ -141,25 +183,18 @@ def get_schema():
                         "properties": {
                                 "sox-effects": {
                                         "type": "array",
-                                        "minItems": 1,
                                         "items": {
                                                 "type": "string"
                                         }
                                 }
                         },
-                        "additionalProperties": False,
-                        "required": [
-                                "sox-effects"
-                        ]
+                        "additionalProperties": False
                 }
         },
         "additionalProperties": False,
         "required": [
                 "characters",
-                "dialog-effects",
-                "global",
-                "llm-xml-generator",
-                "story-audio-post-process"
+                "global"
         ]
 }
     # [SCHEMA_MARKER_END]
