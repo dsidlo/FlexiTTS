@@ -98,6 +98,107 @@ version = "1.2.3"
 class TestGetSchema:
     """Test the get_schema function."""
     
+    def _make_globals(self):
+        return {
+            "chapters": "chapters",
+            "clips": "clips",
+            "logs": "logs",
+            "story-audio": "story-audio",
+            "story-dir": "story",
+            "story-xml": "story-xml",
+            "voices": "voices",
+        }
+
+    def _check(self, config):
+        """Validate an in-memory config against the embedded schema."""
+        from jsonschema import validate as jsvalidate, ValidationError
+        try:
+            jsvalidate(config, validate_config.get_schema())
+            return True
+        except ValidationError:
+            return False
+
+    def test_character_without_description_is_valid(self):
+        """Backward compat: configs without the description key still validate."""
+        config = {
+            "global": self._make_globals(),
+            "characters": [{"name": "X", "voice-sample": "x.wav"}],
+        }
+        assert self._check(config) is True
+
+    def test_character_with_description_is_valid(self):
+        """The optional description key on characters validates."""
+        config = {
+            "global": self._make_globals(),
+            "characters": [{"name": "X", "description": "A hero."}],
+        }
+        assert self._check(config) is True
+
+    def test_character_description_wrong_type_fails(self):
+        config = {
+            "global": self._make_globals(),
+            "characters": [{"name": "X", "description": 123}],
+        }
+        assert self._check(config) is False
+
+    def test_character_unknown_key_still_fails(self):
+        """additionalProperties stays enforced - typos are caught."""
+        config = {
+            "global": self._make_globals(),
+            "characters": [{"name": "X", "voice-samples": "typo.wav"}],
+        }
+        assert self._check(config) is False
+
+    def test_character_without_voice_sample_is_valid(self):
+        """Characters may use custom-voice (or nothing) instead of voice-sample."""
+        config = {
+            "global": self._make_globals(),
+            "characters": [{"name": "X", "custom-voice": {"speaker": "ryan"}}],
+        }
+        assert self._check(config) is True
+
+    def test_custom_voice_subkeys_enforced(self):
+        config = {
+            "global": self._make_globals(),
+            "characters": [{"name": "X", "custom-voice": {"speaker": "ryan", "nope": 1}}],
+        }
+        assert self._check(config) is False
+
+    def test_cloned_emotion_accepted(self):
+        """The UI supports cloned-emotion; the schema must not reject it."""
+        config = {
+            "global": self._make_globals(),
+            "characters": [{"name": "X", "cloned-emotion": [{"emotion": "happy"}]}],
+        }
+        assert self._check(config) is True
+
+    def test_global_tts_device_and_cache_size_valid(self):
+        """tts-device / max_voice_cache_size are accepted in global."""
+        config = {
+            "global": {**self._make_globals(), "tts-device": "auto", "max_voice_cache_size": 10},
+            "characters": [{"name": "X"}],
+        }
+        assert self._check(config) is True
+
+    def test_empty_characters_fails(self):
+        config = {"global": self._make_globals(), "characters": []}
+        assert self._check(config) is False
+
+    def test_story_without_description_validates(self):
+        """End-to-end: a config in the pre-description shape still validates."""
+        config_path = None
+        import tempfile
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yml', delete=False) as f:
+            import yaml as _yaml
+            _yaml.safe_dump({
+                "global": self._make_globals(),
+                "characters": [
+                    {"name": "Narrator", "voice-sample": "n.wav"},
+                    {"name": "Bob", "custom-voice": {"language": "English", "speaker": "ryan"}},
+                ],
+            }, f)
+            config_path = f.name
+        assert validate_config.validate_config(config_path) is True
     def test_get_schema_returns_dict(self):
         """Test that get_schema returns a dictionary."""
         schema = validate_config.get_schema()
