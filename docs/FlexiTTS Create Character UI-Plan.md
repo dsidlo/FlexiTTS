@@ -306,7 +306,9 @@ and entering it generates a stub for the reference that is rendered in the UI.
   - [ ] **Test**: Escape restores previous value
 - [ ] **Instances of `ReferenceField`** in the Characters UI:
   - [ ] `custom-voice.speaker` — choices = the nine documented Qwen3-TTS speakers
-  - [ ] `dialog-effects` (per character) — choices = top-level `dialog-effects[].name`
+  - [ ] `dialog-effects` (per character *and* per `cloned-emotion` emotion) — choices =
+        top-level `dialog-effects[].name`; both levels are cross-referenced by
+        `validate_config.py` (per-emotion added with the Phase 1 emotion-level rule)
   - [ ] `voice-sample` — choices = files present in `global.voices`; typing a new filename
         creates an unsatisfied reference until the file exists
 
