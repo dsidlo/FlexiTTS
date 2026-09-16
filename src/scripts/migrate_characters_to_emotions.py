@@ -154,8 +154,9 @@ def normalize_aliases_inplace(char: dict, notes: list[str]) -> dict:
     return char
 
 
-def process_file(config_path: Path, dry_run: bool = False, backup: bool = True) -> bool:
+def process_file(config_path: Path | str, dry_run: bool = False, backup: bool = True) -> bool:
     """Migrate a single story-config.yml. Returns True when the file changed."""
+    config_path = Path(config_path)
     if not config_path.exists():
         print(f"Not found: {config_path}")
         return False
