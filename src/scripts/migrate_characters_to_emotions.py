@@ -190,11 +190,47 @@ def process_file(config_path: Path | str, dry_run: bool = False, backup: bool = 
         shutil.copy2(config_path, backup_path)
         print(f"Backup written: {backup_path}")
 
-    with open(config_path, "w") as f:
-        yaml.safe_dump(new_config, f, sort_keys=False, allow_unicode=True)
+    # Comment-preserving rewrite: ruamel round-trips comments and formatting
+    # (including the user's inline documentation) which plain safe_dump drops.
+    try:
+        from ruamel.yaml import YAML
+
+        ryaml = YAML()
+        ryaml.preserve_quotes = True
+        ryaml.indent(mapping=2, sequence=4, offset=2)
+        ryaml.width = 4096
+
+        with open(config_path, "r") as f:
+            rt_data = ryaml.load(f)
+
+        # Apply the same in-place migrations to the round-trip tree. The
+        # migration mutates nested dicts/lists, which ruamel shares by
+        # reference, so the edits land in rt_data as well.
+        ryaml_notes: list[str] = []
+        characters = rt_data.get("characters")
+        if isinstance(characters, list):
+            for i, char in enumerate(characters):
+                if not isinstance(char, dict):
+                    continue
+                try:
+                    characters[i] = normalize_character_copy(char, ryaml_notes, i)
+                except ValueError as e:
+                    print(f"ERROR in {config_path}: {e}")
+                    return False
+        elif "characters" not in rt_data:
+            print(f"Skipping (no characters section): {config_path}")
+            return False
+
+        with open(config_path, "w") as f:
+            ryaml.dump(rt_data, f)
+    except ImportError:
+        # ruamel unavailable: fall back to comment-dropping PyYAML rewrite
+        with open(config_path, "w") as f:
+            yaml.safe_dump(new_config, f, sort_keys=False, allow_unicode=True)
+        print("WARNING: ruamel.yaml not available; comments in the config were not preserved.")
 
     print(f"Migrated {config_path}:")
-    for note in notes:
+    for note in notes + ryaml_notes:
         print(f"  - {note}")
 
     # Best-effort validation of the migrated config
