@@ -5,6 +5,7 @@ import json
 import sys
 import os
 import re
+from pathlib import Path
 from jsonschema import validate, ValidationError
 
 import tomllib
@@ -57,14 +58,41 @@ def get_schema():
                                                         "instruct": {"type": "string"},
                                                         "emotions": {
                                                                 "type": "array",
-                                                                "items": {"type": "object"}
+                                                                "items": {
+                                                                        "type": "object",
+                                                                        "properties": {
+                                                                                "emotion": {"type": "string"},
+                                                                                "name": {"type": "string"},
+                                                                                "instruct": {"type": "string"},
+                                                                                "sox-effects": {
+                                                                                        "type": "array",
+                                                                                        "items": {"type": "string"}
+                                                                                }
+                                                                        },
+                                                                        "additionalProperties": False
+                                                                }
                                                         }
                                                 },
                                                 "additionalProperties": False
                                         },
                                         "cloned-emotion": {
                                                 "type": "array",
-                                                "items": {"type": "object"}
+                                                "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                                "emotion": {"type": "string"},
+                                                                "voice-sample": {"type": "string"},
+                                                                "sox-effects": {
+                                                                        "type": "array",
+                                                                        "items": {"type": "string"}
+                                                                },
+                                                                "dialog-effects": {
+                                                                        "type": "array",
+                                                                        "items": {"type": "string"}
+                                                                }
+                                                        },
+                                                        "additionalProperties": False
+                                                }
                                         },
                                         "sox-effects": {
                                                 "type": "array",
@@ -465,17 +493,20 @@ def validate_config(file_path):
     schema = get_schema()
     try:
         validate(instance=data, schema=schema)
-        
+
         # Cross-reference validation for dialog-effects
         defined_effects = {eff["name"] for eff in data.get("dialog-effects", [])}
         success = True
-        
+
+        # Cross-reference validation for voice-sample files against global.voices
+        voices_dir_name = str((data.get("global") or {}).get("voices", "")).strip()
+
         for i, char in enumerate(data.get("characters", [])):
             # Check top-level dialog-effects in character
             char_effects = char.get("dialog-effects", [])
             if isinstance(char_effects, str):
                 char_effects = [char_effects]
-            
+
             for j, effect_name in enumerate(char_effects):
                 if effect_name not in defined_effects:
                     print(f"Validation error in {file_path}:")
@@ -485,6 +516,64 @@ def validate_config(file_path):
                     print(f"Location: {'.'.join(map(str, path))} (around line {line_no})")
                     print_context(lines, line_no - 1)
                     success = False
+
+            # Emotion name uniqueness per character (across all emotion lists)
+            emotion_entries = []
+            for key, entry in (("emotions", char.get("custom-voice", {}).get("emotions", [])),
+                               ("cloned-emotion", char.get("cloned-emotion", [])),
+                               ("emotions", char.get("emotions", []))):
+                if isinstance(entry, list):
+                    emotion_entries.extend((key, k, e) for k, e in enumerate(entry))
+
+            seen_emotions = {}
+            for key, k, em in emotion_entries:
+                if not isinstance(em, dict):
+                    continue
+                emotion_name = str(em.get("emotion") or em.get("name") or "").strip()
+                if not emotion_name:
+                    continue
+                norm = emotion_name.lower()
+                if norm in seen_emotions:
+                    prev_key, prev_k = seen_emotions[norm]
+                    print(f"Validation error in {file_path}:")
+                    print(f"Message: Duplicate emotion '{emotion_name}' in character '{char['name']}' (first defined in {prev_key}[{prev_k}], duplicated in {key}[{k}]).")
+                    path = ["characters", i, key, k]
+                    line_no = find_line_number(path, lines)
+                    print(f"Location: {'.'.join(map(str, path))} (around line {line_no})")
+                    print_context(lines, line_no - 1)
+                    success = False
+                else:
+                    seen_emotions[norm] = (key, k)
+
+            # cloned-emotion entries require a voice-sample value
+            for k, em in enumerate(char.get("cloned-emotion", []) or []):
+                if isinstance(em, dict) and not str(em.get("voice-sample", "")).strip():
+                    print(f"Validation error in {file_path}:")
+                    print(f"Message: cloned-emotion[{k}] of character '{char['name']}' is missing 'voice-sample'.")
+                    path = ["characters", i, "cloned-emotion", k]
+                    line_no = find_line_number(path, lines)
+                    print(f"Location: {'.'.join(map(str, path))} (around line {line_no})")
+                    print_context(lines, line_no - 1)
+                    success = False
+
+            # voice-sample file existence (relative to global.voices), when the
+            # story directory is reachable from the config location.
+            sample = str(char.get("voice-sample", "") or "").strip()
+            if sample and voices_dir_name:
+                config_dir = Path(file_path).resolve().parent
+                candidate = Path(sample)
+                if not candidate.is_absolute():
+                    voices_path = config_dir / voices_dir_name
+                    if voices_path.is_dir():
+                        resolved = (voices_path / sample).resolve()
+                        if not resolved.exists():
+                            print(f"Validation warning in {file_path}:")
+                            print(f"Message: voice-sample '{sample}' of character '{char['name']}' not found at {resolved}.")
+                            path = ["characters", i, "voice-sample"]
+                            line_no = find_line_number(path, lines)
+                            print(f"Location: {'.'.join(map(str, path))} (around line {line_no})")
+                            # Warning only: file may be provisioned later; render
+                            # preflight hard-fails on missing samples.
 
         if not success:
             return False
