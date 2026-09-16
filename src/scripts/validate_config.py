@@ -556,6 +556,23 @@ def validate_config(file_path):
                     print_context(lines, line_no - 1)
                     success = False
 
+            # Per-emotion dialog-effects references (cloned-emotion level)
+            for k, em in enumerate(char.get("cloned-emotion", []) or []):
+                if not isinstance(em, dict):
+                    continue
+                em_effects = em.get("dialog-effects", [])
+                if isinstance(em_effects, str):
+                    em_effects = [em_effects]
+                for j, effect_name in enumerate(em_effects):
+                    if effect_name not in defined_effects:
+                        print(f"Validation error in {file_path}:")
+                        print(f"Message: Named dialog-effect '{effect_name}' used by emotion '{em.get('emotion', '?')}' of character '{char['name']}' is not defined.")
+                        path = ["characters", i, "cloned-emotion", k, "dialog-effects", j]
+                        line_no = find_line_number(path, lines)
+                        print(f"Location: {'.'.join(map(str, path))} (around line {line_no})")
+                        print_context(lines, line_no - 1)
+                        success = False
+
             # voice-sample file existence (relative to global.voices), when the
             # story directory is reachable from the config location.
             sample = str(char.get("voice-sample", "") or "").strip()
