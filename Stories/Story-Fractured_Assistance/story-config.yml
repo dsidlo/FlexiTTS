@@ -49,8 +49,8 @@ dialog-effects:
       - pitch -403   echo 0.8 0.88 60 0.4 120 0.3   reverb
 story-audio-post-process:
     # The following sox effects are applied after the final full chapter audio file has been created.
-    sox-effects:
-      - normalize
+  sox-effects:
+    - normalize
 characters:
   # Supported Qwen3-TTS Custom-Voice Speakers:
   # ['aiden', 'dylan', 'eric', 'ono_anna', 'ryan', 'serena', 'sohee', 'uncle_fu', 'vivian']
@@ -76,6 +76,9 @@ characters:
       language: English
       speaker: ryan
       instruct: "Deep manly voice. Speech is moderately fast, slightly hushed."
+      emotions:
+        - emotion: Neutral
+          instruct: "Deep manly voice. Speech is moderately fast, slightly hushed."
     sox-effects:
       - treble -5 5000 0.7 compand 0.3,1 6:-70,-60,-20 -4 -90 0.1 gain -3
   - name: Hendrix
@@ -83,6 +86,9 @@ characters:
       language: English
       speaker: ryan
       instruct: "Deep manly voice with a rough texture. Speech is calm and calculating, moderately fast."
+      emotions:
+        - emotion: Neutral
+          instruct: "Deep manly voice with a rough texture. Speech is calm and calculating, moderately fast."
     sox-effects:
       - overdrive 15 30 gain -8
   - name: Yamato
@@ -90,6 +96,9 @@ characters:
       language: English
       speaker: ryan
       instruct: "An mature man. Speech is gruff and abrupt with a hit of frustration."
+      emotions:
+        - emotion: Neutral
+          instruct: "An mature man. Speech is gruff and abrupt with a hit of frustration."
     sox-effects:
       - pitch -250 equalizer 1800 +4 1.8 equalizer 3200 +3 2.2 bass +2 120 gain -n -1.5
   - name: Ayana
@@ -99,11 +108,17 @@ characters:
       language: English
       speaker: Aiden
       instruct: "Deep manly voice with a rough texture"
+      emotions:
+        - emotion: Neutral
+          instruct: "Deep manly voice with a rough texture"
   - name: Yakuza-1
     custom-voice:
       language: English
       speaker: Uncle_Fu
       instruct: "Wicked, Sneering"
+      emotions:
+        - emotion: Neutral
+          instruct: "Wicked, Sneering"
     sox-effects:
       - pitch -400   echo 0.8 0.88 60 0.4 120 0.3 reverb gain +3
   # Examples Voice Configurations
@@ -125,6 +140,9 @@ characters:
       language: English
       speaker: Aiden
       instruct: "Deep manly voice with a rough texture"
+      emotions:
+        - emotion: Neutral
+          instruct: "Deep manly voice with a rough texture"
     dialog-effects:
       - cave
   - name: Yakuza-2
@@ -132,5 +150,8 @@ characters:
       language: English
       speaker: Uncle_Fu
       instruct: "Wicked, Sneering"
+      emotions:
+        - emotion: Neutral
+          instruct: "Wicked, Sneering"
     dialog-effects:
       - cave
