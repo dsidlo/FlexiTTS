@@ -246,7 +246,42 @@ def validate_character_voice_setup(config: Dict[str, Any], utterances: List[Utte
         custom_voice = char_cfg.get("custom-voice")
         voice_sample = char_cfg.get("voice-sample")
 
+        # Collect emotion lists that may carry per-emotion sample overrides
+        emotion_lists: List[List[Any]] = []
+        if isinstance(custom_voice, dict) and isinstance(custom_voice.get("emotions"), list):
+            emotion_lists.append(custom_voice["emotions"])
+        if isinstance(char_cfg.get("cloned-emotion"), list):
+            emotion_lists.append(char_cfg["cloned-emotion"])
+
+        # Per-emotion voice-sample overrides: must be non-empty and exist.
+        # These are used by the emotion-sample clone dispatch (custom-voice
+        # characters cloning from a per-emotion recording for expressiveness).
+        for emotions in emotion_lists:
+            for em in emotions:
+                if not isinstance(em, dict):
+                    continue
+                em_name = str(em.get("emotion") or em.get("name") or "").strip()
+                em_sample = em.get("voice-sample")
+                if not em_sample:
+                    continue
+                sample_text = str(em_sample).strip()
+                if not sample_text:
+                    errors.append(
+                        f"Character '{speaker_key}' emotion '{em_name}' voice-sample is empty"
+                    )
+                    continue
+                sample_path = Path(sample_text)
+                resolved_sample = sample_path if sample_path.is_absolute() else (voices_dir / sample_text).resolve()
+                if not resolved_sample.exists():
+                    errors.append(
+                        f"Character '{speaker_key}' emotion '{em_name}' voice-sample not found: {resolved_sample}"
+                    )
+
         if custom_voice:
+            # Emotion-sample dispatch (per-emotion voice-sample on a
+            # custom-voice character) was already validated above; per-emotion
+            # samples only apply to matching emotions, everything else falls
+            # back to the built-in speaker validated here.
             custom_speaker = str(custom_voice.get("speaker", "")).strip()
             if not custom_speaker:
                 errors.append(f"Character '{speaker_key}' custom-voice speaker is missing")
@@ -415,6 +450,18 @@ def main():
                 resolved=resolved_voice_sample,
             )
             char_cfg["voice-sample"] = resolved_voice_sample
+
+        # Per-emotion sample overrides (custom-voice emotions + cloned-emotion)
+        emotion_lists = []
+        cv = char_cfg.get("custom-voice")
+        if isinstance(cv, dict) and isinstance(cv.get("emotions"), list):
+            emotion_lists.append(cv["emotions"])
+        if isinstance(char_cfg.get("cloned-emotion"), list):
+            emotion_lists.append(char_cfg["cloned-emotion"])
+        for emotions in emotion_lists:
+            for em in emotions:
+                if isinstance(em, dict) and em.get("voice-sample"):
+                    em["voice-sample"] = resolve_voice_sample_path(em["voice-sample"])
 
     # xml_path was determined earlier for auto-detect, but finalize it here
     if xml_path and not xml_path.is_absolute():
@@ -615,11 +662,12 @@ def main():
                     continue
 
                 is_custom = "custom-voice" in char_cfg
+                emotion_sample = None
                 if is_custom:
                     cv = char_cfg["custom-voice"]
                     lang = cv.get("language", "English")
                     base_instruct = cv.get("instruct", "")
-                    
+
                     # Check for emotion-specific instruction
                     emotions = cv.get("emotions", [])
                     emotion_instruct = None
@@ -627,8 +675,9 @@ def main():
                         em_name = em.get("emotion", em.get("name", ""))
                         if em_name.lower() == utt.emotion.lower():
                             emotion_instruct = em.get("instruct")
+                            emotion_sample = em.get("voice-sample")
                             break
-                    
+
                     if emotion_instruct:
                         instruct = emotion_instruct
                     elif base_instruct:
@@ -643,13 +692,37 @@ def main():
                     for em in cloned_emotions:
                         if em.get("emotion", "").lower() == utt.emotion.lower():
                             emotion_config = em
+                            emotion_sample = em.get("voice-sample")
                             break
-                    
+
                     if emotion_config:
                         instruct = emotion_config.get("instruct", f"Speak in a {utt.emotion} tone.")
                     else:
                         instruct = f"Speak in a {utt.emotion} tone."
-                log_debug("main:utterance_voice_mode", speaker=utt.speaker, is_custom=is_custom, language=lang, instruct=instruct)
+
+                # Per-emotion sample override: when the matched emotion carries
+                # voice-sample, clone from that recording instead of using the
+                # built-in speaker. This is the spec's mechanism for expressive
+                # cloned performance that instruct alone cannot produce. The
+                # model layer prefers voice_sample over custom_voice_config, but
+                # remote/local dispatch keys off custom-voice presence, so build
+                # an effective config that routes through the clone path.
+                if emotion_sample:
+                    effective_cfg = {
+                        k: v for k, v in char_cfg.items() if k != "custom-voice"
+                    }
+                    effective_cfg["voice-sample"] = emotion_sample
+                    effective_cfg["emotion-clone-source"] = utt.emotion
+                    log_debug(
+                        "main:emotion_sample_dispatch",
+                        speaker=utt.speaker,
+                        emotion=utt.emotion,
+                        sample=emotion_sample,
+                    )
+                else:
+                    effective_cfg = char_cfg
+                log_debug("main:utterance_voice_mode", speaker=utt.speaker, is_custom=is_custom, language=lang, instruct=instruct,
+                          emotion_sample=emotion_sample or None)
 
                 print(f"[RESOURCE-ACCESS] Generating audio clip", file=sys.stderr)
                 print(f"  output_path: {out_path}", file=sys.stderr)
@@ -691,7 +764,7 @@ def main():
                 # Check if provider supports this character configuration
                 if not args.dry_run and provider:
                     try:
-                        supports_character = provider.supports_character(char_cfg) if char_cfg else True
+                        supports_character = provider.supports_character(effective_cfg) if effective_cfg else True
                         log_debug("main:supports_character_checked", character=character, supports_character=supports_character)
                         if char_cfg and not supports_character:
                             print(f"    WARNING: Provider does not fully support character config for {character}", file=sys.stderr)
@@ -710,7 +783,7 @@ def main():
                             language=lang,
                             output_path=out_path,
                             instruct=instruct,
-                            char_config=char_cfg,
+                            char_config=effective_cfg,
                             story=story_name,
                             chapter=utt.chapter_num,
                             section=utt.section_num,

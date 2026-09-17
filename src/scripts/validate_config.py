@@ -574,6 +574,32 @@ def validate_config(file_path):
                         print_context(lines, line_no - 1)
                         success = False
 
+            # Per-emotion voice-sample values must be non-empty strings when
+            # present (custom-voice emotions + cloned-emotion entries). These
+            # enable the emotion-sample clone dispatch for expressiveness.
+            emotion_sample_lists = []
+            cv = char.get("custom-voice")
+            if isinstance(cv, dict) and isinstance(cv.get("emotions"), list):
+                emotion_sample_lists.append(("custom-voice", "emotions", cv["emotions"]))
+            if isinstance(char.get("cloned-emotion"), list):
+                emotion_sample_lists.append(("characters", "cloned-emotion", char["cloned-emotion"]))
+            for parent_key, list_key, emotions in emotion_sample_lists:
+                for k, em in enumerate(emotions):
+                    if not isinstance(em, dict):
+                        continue
+                    if "voice-sample" not in em:
+                        continue
+                    sample = str(em.get("voice-sample", "") or "").strip()
+                    if not sample:
+                        em_name = str(em.get("emotion") or em.get("name") or k)
+                        print(f"Validation error in {file_path}:")
+                        print(f"Message: Emotion '{em_name}' of character '{char['name']}' has an empty 'voice-sample'.")
+                        path = [parent_key if parent_key != "characters" else i, "custom-voice" if list_key == "emotions" and parent_key != "characters" else list_key, k, "voice-sample"]
+                        line_no = find_line_number(path, lines)
+                        print(f"Location: {'.'.join(map(str, path))} (around line {line_no})")
+                        print_context(lines, line_no - 1)
+                        success = False
+
             # voice-sample file existence (relative to global.voices), when the
             # story directory is reachable from the config location.
             sample = str(char.get("voice-sample", "") or "").strip()
