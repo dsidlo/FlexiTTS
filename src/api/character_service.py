@@ -145,6 +145,14 @@ class CharacterService:
         data, _ = _load_yaml(self._config_path(story_id))
         return data
 
+    # Public wrappers used by sibling services (e.g. SampleService) that
+    # operate on the same config file with their own ownership resolution.
+    def _load_yaml_public(self, path: Path):
+        return _load_yaml(path)
+
+    def _commit_yaml_public(self, path: Path, data: Any, ryaml, original_text: str) -> None:
+        self._commit(path, data, ryaml, original_text)
+
     def _commit(self, path: Path, data: Any, ryaml, original_text: str) -> None:
         """Save, validate, and roll back to original text on failure."""
         _save_yaml(path, data, ryaml)

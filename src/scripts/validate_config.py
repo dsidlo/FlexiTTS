@@ -64,6 +64,7 @@ def get_schema():
                                                                                 "emotion": {"type": "string"},
                                                                                 "name": {"type": "string"},
                                                                                 "instruct": {"type": "string"},
+                                                                                "voice-sample": {"type": "string"},
                                                                                 "sox-effects": {
                                                                                         "type": "array",
                                                                                         "items": {"type": "string"}

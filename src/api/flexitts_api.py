@@ -17,9 +17,9 @@ from typing import Dict, List, Any, Optional, Tuple
 import yaml
 
 # FastAPI imports
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from pydantic import BaseModel, Field
 
 # Add project root to path for imports
@@ -37,6 +37,13 @@ from src.api.character_service import (
     EmotionExistsError,
     ValidationError as CharacterValidationError,
     supported_languages,
+)
+from src.api.sample_service import (
+    SampleService,
+    SampleError,
+    UnsupportedFormatError,
+    CorruptAudioError,
+    FileTooLargeError,
 )
 
 
@@ -547,10 +554,14 @@ class FlexiTTSAPI:
     def _character_service(self) -> CharacterService:
         return CharacterService(self.config_manager.get_stories_directory())
 
+    def _sample_service(self) -> SampleService:
+        return SampleService(self.config_manager.get_stories_directory())
+
     def _character_error_response(self, e: CharacterError) -> HTTPException:
         status = {
             "CHARACTER_NOT_FOUND": 404,
             "EMOTION_NOT_FOUND": 404,
+            "SAMPLE_NOT_FOUND": 404,
             "CHARACTER_EXISTS": 409,
             "EMOTION_EXISTS": 409,
             "INVALID_STORY_ID": 400,
@@ -566,6 +577,10 @@ class FlexiTTSAPI:
             "LAST_EMOTION_PROTECTED": 409,
             "CHARACTER_VALIDATION_FAILED": 422,
             "CHARACTER_ERROR": 400,
+            "UNSUPPORTED_FORMAT": 415,
+            "CORRUPT_AUDIO": 422,
+            "FILE_TOO_LARGE": 413,
+            "INVALID_FILENAME": 400,
         }.get(e.code, 400)
         return HTTPException(status_code=status, detail={"code": e.code, "message": str(e)})
 
@@ -739,6 +754,108 @@ class FlexiTTSAPI:
                 entry = svc.set_default_emotion(story_id, character_id, emotion_id)
                 await self._broadcast_config_change("story", story_id)
                 return {"success": True, "emotion": entry}
+            except CharacterError as e:
+                raise self._character_error_response(e)
+            except HTTPException:
+                raise
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=str(e))
+
+        # ---------------------- Phase 3: Voice samples ---------------------- #
+
+        @self.app.post("/api/stories/{story_id}/characters/{character_id}/emotions/{emotion_id}/sample")
+        async def upload_emotion_sample(story_id: str, character_id: str, emotion_id: str,
+                                        file: UploadFile, maxBytes: Optional[int] = None):
+            """Upload a voice sample for an emotion (Phase 3.1)"""
+            try:
+                svc = self._sample_service()
+                content = await file.read()
+                result = svc.upload_sample(story_id, character_id, emotion_id,
+                                           file.filename, content, max_bytes=maxBytes)
+                await self._broadcast_config_change("story", story_id)
+                return {"success": True, "sample": result}
+            except CharacterError as e:
+                raise self._character_error_response(e)
+            except HTTPException:
+                raise
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.post("/api/stories/{story_id}/characters/{character_id}/sample")
+        async def upload_character_sample(story_id: str, character_id: str,
+                                          file: UploadFile, maxBytes: Optional[int] = None):
+            """Upload a voice sample for a character (top-level voice-sample)"""
+            try:
+                svc = self._sample_service()
+                content = await file.read()
+                result = svc.upload_sample(story_id, character_id, None,
+                                           file.filename, content, max_bytes=maxBytes)
+                await self._broadcast_config_change("story", story_id)
+                return {"success": True, "sample": result}
+            except CharacterError as e:
+                raise self._character_error_response(e)
+            except HTTPException:
+                raise
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.get("/api/stories/{story_id}/characters/{character_id}/sample")
+        async def get_character_sample_metadata(story_id: str, character_id: str):
+            """Sample metadata: file path, duration, format, size (Phase 3.3)"""
+            try:
+                svc = self._sample_service()
+                return {"success": True,
+                        "sample": svc.get_sample_metadata(story_id, character_id, None)}
+            except CharacterError as e:
+                raise self._character_error_response(e)
+            except HTTPException:
+                raise
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.get("/api/stories/{story_id}/characters/{character_id}/emotions/{emotion_id}/sample")
+        async def get_emotion_sample_metadata(story_id: str, character_id: str, emotion_id: str):
+            """Sample metadata for an emotion-owned sample (Phase 3.3)"""
+            try:
+                svc = self._sample_service()
+                return {"success": True,
+                        "sample": svc.get_sample_metadata(story_id, character_id, emotion_id)}
+            except CharacterError as e:
+                raise self._character_error_response(e)
+            except HTTPException:
+                raise
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.get("/api/stories/{story_id}/characters/{character_id}/sample/audio")
+        async def stream_character_sample(story_id: str, character_id: str):
+            """Stream the sample audio with range-request support (Phase 3.3)"""
+            try:
+                svc = self._sample_service()
+                path = svc.get_sample_file(story_id, character_id, None)
+                return FileResponse(
+                    path,
+                    media_type=SampleService.content_type_for(path),
+                    filename=path.name,
+                )
+            except CharacterError as e:
+                raise self._character_error_response(e)
+            except HTTPException:
+                raise
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.get("/api/stories/{story_id}/characters/{character_id}/emotions/{emotion_id}/sample/audio")
+        async def stream_emotion_sample(story_id: str, character_id: str, emotion_id: str):
+            """Stream an emotion's sample audio with range-request support (Phase 3.3)"""
+            try:
+                svc = self._sample_service()
+                path = svc.get_sample_file(story_id, character_id, emotion_id)
+                return FileResponse(
+                    path,
+                    media_type=SampleService.content_type_for(path),
+                    filename=path.name,
+                )
             except CharacterError as e:
                 raise self._character_error_response(e)
             except HTTPException:
