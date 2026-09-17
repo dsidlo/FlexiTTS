@@ -27,8 +27,17 @@ project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 # Import project modules
-from src.scripts.config_manager import ConfigManager
-from src.scripts.validate_config import validate_story_config
+from src.scripts.config_manager import ConfigManager, validate_story_config
+from src.api.character_service import (
+    CharacterService,
+    CharacterError,
+    CharacterNotFoundError,
+    CharacterExistsError,
+    EmotionNotFoundError,
+    EmotionExistsError,
+    ValidationError as CharacterValidationError,
+    supported_languages,
+)
 
 
 # Pydantic Models for API
@@ -37,8 +46,34 @@ class GlobalConfigRequest(BaseModel):
     createDirectories: Optional[bool] = False
     backup: Optional[bool] = False
 
+class CreateCharacterRequest(BaseModel):
+    name: str
+    language: str = "English"
+    voiceType: Optional[str] = None  # "custom" | "sample"
+    voice: Optional[Dict[str, Any]] = None
+
+class UpdateCharacterRequest(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    language: Optional[str] = None
+    soxEffects: Optional[List[str]] = None
+    dialogEffects: Optional[List[str]] = None
+    customVoice: Optional[Dict[str, Any]] = None
+
+class DeleteCharacterRequest(BaseModel):
+    dependentDialogs: Optional[int] = 0
+
+class EmotionRequest(BaseModel):
+    emotion: Optional[str] = None
+    name: Optional[str] = None
+    instruct: Optional[str] = None
+    soxEffects: Optional[List[str]] = None
+
+class ReorderEmotionsRequest(BaseModel):
+    orderedEmotions: List[str]
+
 class ValidationRequest(BaseModel):
-    type: str = Field(..., regex="^(global|story|merged)$")
+    type: str = Field(..., pattern="^(global|story|merged)$")
     config: Optional[Dict[str, Any]] = None
     storyId: Optional[str] = None
     strict: Optional[bool] = False
@@ -84,7 +119,8 @@ class FlexiTTSAPI:
     
     def setup_routes(self):
         """Register all API routes"""
-        
+        self._setup_character_routes()
+
         @self.app.get("/api/config/global")
         async def get_global_config():
             """Retrieve global FlexiTTS configuration"""
@@ -508,6 +544,208 @@ class FlexiTTSAPI:
             except WebSocketDisconnect:
                 self.websocket_connections.remove(websocket)
     
+    def _character_service(self) -> CharacterService:
+        return CharacterService(self.config_manager.get_stories_directory())
+
+    def _character_error_response(self, e: CharacterError) -> HTTPException:
+        status = {
+            "CHARACTER_NOT_FOUND": 404,
+            "EMOTION_NOT_FOUND": 404,
+            "CHARACTER_EXISTS": 409,
+            "EMOTION_EXISTS": 409,
+            "INVALID_STORY_ID": 400,
+            "NAME_REQUIRED": 400,
+            "EMOTION_NAME_REQUIRED": 400,
+            "SPEAKER_REQUIRED": 400,
+            "SAMPLE_REQUIRED": 400,
+            "INVALID_LANGUAGE": 400,
+            "INVALID_SOX_EFFECTS": 400,
+            "INVALID_DIALOG_EFFECTS": 400,
+            "INVALID_ORDER": 400,
+            "VOICE_TYPE_MISMATCH": 400,
+            "LAST_EMOTION_PROTECTED": 409,
+            "CHARACTER_VALIDATION_FAILED": 422,
+            "CHARACTER_ERROR": 400,
+        }.get(e.code, 400)
+        return HTTPException(status_code=status, detail={"code": e.code, "message": str(e)})
+
+    def _setup_character_routes(self):
+        """Phase 2.1/2.2: Character CRUD and Emotion management endpoints."""
+        # Service constructed per request so the stories dir is always current
+        # and test patches of CharacterService.__init__ take effect.
+
+        @self.app.get("/api/languages")
+        async def get_supported_languages():
+            """Languages supported by Qwen3-TTS voices"""
+            return {"success": True, "languages": supported_languages()}
+
+        @self.app.post("/api/stories/{story_id}/characters")
+        async def create_character(story_id: str, request: CreateCharacterRequest):
+            """Create a character (Phase 2.1) - unique name per project, language validated"""
+            try:
+                svc = self._character_service()
+                created = svc.create_character(story_id, request.model_dump(exclude_none=True))
+                await self._broadcast_config_change("story", story_id)
+                return {"success": True, "character": created}
+            except CharacterError as e:
+                raise self._character_error_response(e)
+            except HTTPException:
+                raise
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.get("/api/stories/{story_id}/characters")
+        async def list_characters(story_id: str):
+            """List all characters for a story"""
+            try:
+                svc = self._character_service()
+                characters = svc.list_characters(story_id)
+                return {
+                    "success": True,
+                    "storyId": story_id,
+                    "characters": characters,
+                    "totalCount": len(characters),
+                }
+            except CharacterError as e:
+                raise self._character_error_response(e)
+            except HTTPException:
+                raise
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.get("/api/stories/{story_id}/characters/{character_id}")
+        async def get_character(story_id: str, character_id: str):
+            """Retrieve one character with emotions"""
+            try:
+                svc = self._character_service()
+                return {"success": True, "character": svc.get_character(story_id, character_id)}
+            except CharacterError as e:
+                raise self._character_error_response(e)
+            except HTTPException:
+                raise
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.put("/api/stories/{story_id}/characters/{character_id}")
+        async def update_character(story_id: str, character_id: str,
+                                   request: UpdateCharacterRequest):
+            """Update character fields (name, description, sox-effects, custom-voice)"""
+            try:
+                svc = self._character_service()
+                updated = svc.update_character(story_id, character_id,
+                                               request.model_dump(exclude_none=True))
+                await self._broadcast_config_change("story", story_id)
+                return {"success": True, "character": updated}
+            except CharacterError as e:
+                raise self._character_error_response(e)
+            except HTTPException:
+                raise
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.delete("/api/stories/{story_id}/characters/{character_id}")
+        async def delete_character(story_id: str, character_id: str,
+                                   dependentDialogs: int = 0,
+                                   request: Optional[DeleteCharacterRequest] = None):
+            """Delete a character; dependent-dialog count returned for confirmation flows"""
+            try:
+                svc = self._character_service()
+                if request is None and dependentDialogs:
+                    request = DeleteCharacterRequest(dependentDialogs=dependentDialogs)
+                payload = request.model_dump() if request else {}
+                result = svc.delete_character(story_id, character_id, payload)
+                await self._broadcast_config_change("story", story_id)
+                return {"success": True, **result}
+            except CharacterError as e:
+                raise self._character_error_response(e)
+            except HTTPException:
+                raise
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=str(e))
+
+        # ---------------------- Phase 2.2: Emotions ---------------------- #
+
+        @self.app.post("/api/stories/{story_id}/characters/{character_id}/emotions")
+        async def add_emotion(story_id: str, character_id: str, request: EmotionRequest):
+            """Add an emotion (unique name per character)"""
+            try:
+                svc = self._character_service()
+                entry = svc.add_emotion(story_id, character_id,
+                                        request.model_dump(exclude_none=True))
+                await self._broadcast_config_change("story", story_id)
+                return {"success": True, "emotion": entry}
+            except CharacterError as e:
+                raise self._character_error_response(e)
+            except HTTPException:
+                raise
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.put("/api/stories/{story_id}/characters/{character_id}/emotions/reorder")
+        async def reorder_emotions(story_id: str, character_id: str,
+                                   request: ReorderEmotionsRequest):
+            """Accept an ordered list of emotion IDs"""
+            try:
+                svc = self._character_service()
+                emotions = svc.reorder_emotions(story_id, character_id, request.orderedEmotions)
+                await self._broadcast_config_change("story", story_id)
+                return {"success": True, "emotions": emotions}
+            except CharacterError as e:
+                raise self._character_error_response(e)
+            except HTTPException:
+                raise
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.put("/api/stories/{story_id}/characters/{character_id}/emotions/{emotion_id}")
+        async def update_emotion(story_id: str, character_id: str, emotion_id: str,
+                                 request: EmotionRequest):
+            """Update emotion instruct text / sox-effects / name"""
+            try:
+                svc = self._character_service()
+                entry = svc.update_emotion(story_id, character_id, emotion_id,
+                                           request.model_dump(exclude_none=True))
+                await self._broadcast_config_change("story", story_id)
+                return {"success": True, "emotion": entry}
+            except CharacterError as e:
+                raise self._character_error_response(e)
+            except HTTPException:
+                raise
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.delete("/api/stories/{story_id}/characters/{character_id}/emotions/{emotion_id}")
+        async def delete_emotion(story_id: str, character_id: str, emotion_id: str,
+                                 allowDeleteLast: bool = False):
+            """Delete an emotion; last emotion protected unless overridden"""
+            try:
+                svc = self._character_service()
+                result = svc.delete_emotion(story_id, character_id, emotion_id,
+                                            allow_delete_last=allowDeleteLast)
+                await self._broadcast_config_change("story", story_id)
+                return {"success": True, **result}
+            except CharacterError as e:
+                raise self._character_error_response(e)
+            except HTTPException:
+                raise
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.put("/api/stories/{story_id}/characters/{character_id}/emotions/{emotion_id}/default")
+        async def set_default_emotion(story_id: str, character_id: str, emotion_id: str):
+            """Set the default emotion (unsets previous default)"""
+            try:
+                svc = self._character_service()
+                entry = svc.set_default_emotion(story_id, character_id, emotion_id)
+                await self._broadcast_config_change("story", story_id)
+                return {"success": True, "emotion": entry}
+            except CharacterError as e:
+                raise self._character_error_response(e)
+            except HTTPException:
+                raise
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=str(e))
+
     def _find_story_path(self, story_id: str) -> Optional[Path]:
         """Find the path for a story by its ID"""
         try:
