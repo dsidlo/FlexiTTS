@@ -19,7 +19,7 @@ import yaml
 # FastAPI imports
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import JSONResponse, FileResponse, Response
 from pydantic import BaseModel, Field
 
 # Add project root to path for imports
@@ -45,6 +45,7 @@ from src.api.sample_service import (
     CorruptAudioError,
     FileTooLargeError,
 )
+from src.api.import_export_service import ImportService, ImportError_
 
 
 # Pydantic Models for API
@@ -78,6 +79,9 @@ class EmotionRequest(BaseModel):
 
 class ReorderEmotionsRequest(BaseModel):
     orderedEmotions: List[str]
+
+class ExportBundleRequest(BaseModel):
+    characterIds: List[str]
 
 class ValidationRequest(BaseModel):
     type: str = Field(..., pattern="^(global|story|merged)$")
@@ -557,6 +561,9 @@ class FlexiTTSAPI:
     def _sample_service(self) -> SampleService:
         return SampleService(self.config_manager.get_stories_directory())
 
+    def _import_service(self) -> ImportService:
+        return ImportService(self.config_manager.get_stories_directory())
+
     def _character_error_response(self, e: CharacterError) -> HTTPException:
         status = {
             "CHARACTER_NOT_FOUND": 404,
@@ -581,6 +588,12 @@ class FlexiTTSAPI:
             "CORRUPT_AUDIO": 422,
             "FILE_TOO_LARGE": 413,
             "INVALID_FILENAME": 400,
+            "IMPORT_INVALID": 422,
+            "IMPORT_PARSE_ERROR": 422,
+            "IMPORT_INVALID_CHARACTER": 422,
+            "IMPORT_INVALID_CONFLICT": 400,
+            "IMPORT_EMPTY": 422,
+            "NO_CHARACTERS": 400,
         }.get(e.code, 400)
         return HTTPException(status_code=status, detail={"code": e.code, "message": str(e)})
 
@@ -856,6 +869,73 @@ class FlexiTTSAPI:
                     media_type=SampleService.content_type_for(path),
                     filename=path.name,
                 )
+            except CharacterError as e:
+                raise self._character_error_response(e)
+            except HTTPException:
+                raise
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=str(e))
+
+        # ---------------------- Phase 4: Import/Export ---------------------- #
+
+        @self.app.get("/api/stories/{story_id}/characters/{character_id}/export")
+        async def export_character(story_id: str, character_id: str,
+                                   format: str = "yaml", includeSamples: bool = True):
+            """Export one character with embedded samples (Phase 4.1)"""
+            try:
+                svc = self._import_service()
+                doc = svc.export_character(story_id, character_id,
+                                           include_samples=includeSamples)
+                if format.lower() == "json":
+                    content = json.dumps(doc, indent=2)
+                    media_type = "application/json"
+                    filename = f"{character_id}.json"
+                else:
+                    content = yaml.safe_dump(doc, sort_keys=False, allow_unicode=True)
+                    media_type = "application/x-yaml"
+                    filename = f"{character_id}.yml"
+                return Response(
+                    content=content, media_type=media_type,
+                    headers={"Content-Disposition": f"attachment; filename={filename}"},
+                )
+            except CharacterError as e:
+                raise self._character_error_response(e)
+            except HTTPException:
+                raise
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.post("/api/stories/{story_id}/characters/export")
+        async def export_characters_bundle(story_id: str, request: ExportBundleRequest):
+            """Export multiple characters as a ZIP with manifest (Phase 4.1)"""
+            try:
+                svc = self._import_service()
+                bundle = svc.export_characters_bundle(story_id, request.characterIds)
+                return Response(
+                    content=bundle, media_type="application/zip",
+                    headers={"Content-Disposition": "attachment; filename=characters-bundle.zip"},
+                )
+            except CharacterError as e:
+                raise self._character_error_response(e)
+            except HTTPException:
+                raise
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.post("/api/stories/{story_id}/characters/import")
+        async def import_characters(story_id: str, file: UploadFile,
+                                    conflict: str = "keep-both"):
+            """Import characters with conflict resolution (Phase 4.2)"""
+            try:
+                svc = self._import_service()
+                payload = await file.read()
+                fname = (file.filename or "").lower()
+                if fname.endswith(".zip"):
+                    result = svc.import_bundle(story_id, payload, conflict=conflict)
+                else:
+                    result = svc.import_characters(story_id, payload, conflict=conflict)
+                await self._broadcast_config_change("story", story_id)
+                return {"success": True, **result}
             except CharacterError as e:
                 raise self._character_error_response(e)
             except HTTPException:
