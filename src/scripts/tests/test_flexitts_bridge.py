@@ -56,6 +56,30 @@ def test_unknown_subcommand_is_json_error():
     assert payload.get("code") == "UNKNOWN_COMMAND"
 
 
+def test_absolute_path_within_stories_dir_is_accepted():
+    """Electron prepends stories-dir to Story- prefixed args, so the bridge
+    legitimately receives absolute paths. They must resolve like bare ids."""
+    import os
+    stories_dir = (Path(__file__).resolve().parent.parent.parent.parent
+                   / "Stories").resolve()
+    target = stories_dir / "Story-Default"
+    if not target.is_dir():
+        target = next(iter(p for p in stories_dir.glob("Story-*") if p.is_dir()), None)
+    if target is None:
+        return  # no stories in checkout; nothing to assert
+    payload, code = run_bridge(["characters", "list", str(target)])
+    assert code == 0
+    assert payload.get("success") is True
+    assert isinstance(payload["characters"], list)
+
+
+def test_absolute_path_outside_stories_dir_is_rejected():
+    payload, code = run_bridge(["characters", "list", "/etc"])
+    assert code == 0  # JSON error contract
+    assert payload.get("success") is False
+    assert payload.get("code") == "INVALID_STORY_ID"
+
+
 def test_validate_sox_via_bridge():
     payload, code = run_bridge(["characters", "validate-sox", '["gain +3"]'])
     assert code == 0

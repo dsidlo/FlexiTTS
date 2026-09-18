@@ -121,10 +121,18 @@ class CharacterService:
     # ------------------------------------------------------------------ #
 
     def _story_path(self, story_id: str) -> Path:
-        story_path = (self.stories_dir / story_id).resolve()
+        """Resolve a story id to its directory with containment checks.
+
+        Accepts either a bare directory name ("Story-Entanglement") or an
+        absolute path inside the stories directory. The absolute form arrives
+        because Electron's executePythonScript prepends stories-dir to args
+        that start with the story prefix.
+        """
         stories_root = self.stories_dir.resolve()
-        if story_id.startswith(("/", "..")) or ".." in story_id:
+        if not story_id or ".." in story_id:
             raise CharacterError(f"Invalid story id: {story_id}", code="INVALID_STORY_ID")
+        story_path = (self.stories_dir / story_id).resolve()
+        # Containment: resolved path must be a direct child of stories_dir
         if story_path.parent != stories_root:
             raise CharacterError(f"Invalid story id: {story_id}", code="INVALID_STORY_ID")
         if not story_path.is_dir():
