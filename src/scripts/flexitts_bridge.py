@@ -343,8 +343,27 @@ def handle_character_command(command: str, argv) -> int:
             return 1
         return 0
     except Exception as e:
-        print(json.dumps(_error_payload(e)))
-        return 1
+        # Expected client-input errors (unknown story/character, invalid id,
+        # validation failures) are reported as JSON on stdout with exit 0 so
+        # the renderer reads them as data via r.success. Only genuinely
+        # unexpected crashes should exit nonzero.
+        payload = _error_payload(e)
+        payload["success"] = False
+        expected_codes = {
+            "CHARACTER_NOT_FOUND", "EMOTION_NOT_FOUND", "CHARACTER_EXISTS",
+            "EMOTION_EXISTS", "INVALID_STORY_ID", "CHARACTER_ERROR",
+            "CHARACTER_VALIDATION_FAILED", "INVALID_LANGUAGE", "NAME_REQUIRED",
+            "EMOTION_NAME_REQUIRED", "SPEAKER_REQUIRED", "SAMPLE_REQUIRED",
+            "INVALID_SOX_EFFECTS", "INVALID_DIALOG_EFFECTS", "INVALID_ORDER",
+            "VOICE_TYPE_MISMATCH", "LAST_EMOTION_PROTECTED",
+            "SOX_SYNTAX_ERROR", "SOX_TIMEOUT", "SOX_INPUT_NOT_FOUND",
+            "SOX_NOT_INSTALLED", "SOX_EXECUTION_ERROR", "SOX_ERROR",
+            "UNSUPPORTED_FORMAT", "CORRUPT_AUDIO", "FILE_TOO_LARGE",
+            "INVALID_FILENAME", "IMPORT_INVALID", "IMPORT_PARSE_ERROR",
+            "IMPORT_INVALID_CHARACTER", "IMPORT_INVALID_CONFLICT", "IMPORT_EMPTY",
+        }
+        print(json.dumps(payload))
+        return 0 if payload.get("code") in expected_codes else 1
 
 
 def main():

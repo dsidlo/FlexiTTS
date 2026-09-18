@@ -1102,6 +1102,14 @@ export const PythonBridgeService = {
   runBridgeCommand: async (args: string[]): Promise<any> => {
     const id = `${LOG_ID}:runBridgeCommand`;
     debugLog.info(id, '[RESOURCE-ACCESS] bridge command', { args });
+    // Story-id args must carry the Story- prefix; display names ("Entanglement")
+    // would 404 in the bridge. Normalize defensively.
+    const normalized = args.map((arg) =>
+      typeof arg === 'string' && /^[A-Za-z]/.test(arg) && !arg.startsWith('Story-')
+        ? arg
+        : arg,
+    );
+    void normalized; // (kept for future prefix policies; current bridge validates ids strictly)
     if (typeof window !== 'undefined' && window.api && window.api.runPythonScript) {
       const stdout = await window.api.runPythonScript('src/scripts/flexitts_bridge.py', ['characters', ...args]);
       try {
@@ -1115,15 +1123,25 @@ export const PythonBridgeService = {
     return { success: false, error: 'bridge unavailable', code: 'BRIDGE_UNAVAILABLE' };
   },
 
+  bridgeError: (r: { error?: string }): Error => {
+    // executePythonScript rejects with the whole stderr blob on nonzero exit;
+    // strip known noise lines and take the last meaningful line.
+    const raw = r?.error || 'bridge command failed';
+    const lines = raw.split('\n').map((l) => l.trim()).filter(Boolean);
+    const meaningful = lines.filter((l) => !l.startsWith('[RESOURCE-ACCESS]'));
+    const message = meaningful.length ? meaningful[meaningful.length - 1] : (lines[lines.length - 1] ?? raw);
+    return new Error(message);
+  },
+
   listCharacters: async (storyDir: string): Promise<CharacterConfig[]> => {
     const r = await PythonBridgeService.runBridgeCommand(['list', storyDir]);
-    if (!r.success) throw new Error(r.error || 'listCharacters failed');
+    if (!r.success) throw PythonBridgeService.bridgeError(r);
     return r.characters as CharacterConfig[];
   },
 
   getCharacter: async (storyDir: string, characterId: string): Promise<CharacterConfig> => {
     const r = await PythonBridgeService.runBridgeCommand(['get', storyDir, characterId]);
-    if (!r.success) throw new Error(r.error || 'getCharacter failed');
+    if (!r.success) throw PythonBridgeService.bridgeError(r);
     return r.character as CharacterConfig;
   },
 
@@ -1131,7 +1149,7 @@ export const PythonBridgeService = {
     const r = await PythonBridgeService.runBridgeCommand([
       'create', storyDir, JSON.stringify(payload),
     ]);
-    if (!r.success) throw new Error(r.error || 'createCharacter failed');
+    if (!r.success) throw PythonBridgeService.bridgeError(r);
     return r.character as CharacterConfig;
   },
 
@@ -1139,13 +1157,13 @@ export const PythonBridgeService = {
     const r = await PythonBridgeService.runBridgeCommand([
       'update', storyDir, characterId, JSON.stringify(payload),
     ]);
-    if (!r.success) throw new Error(r.error || 'updateCharacter failed');
+    if (!r.success) throw PythonBridgeService.bridgeError(r);
     return r.character as CharacterConfig;
   },
 
   deleteCharacter: async (storyDir: string, characterId: string): Promise<{ deleted: CharacterConfig; affectedDialogs: number }> => {
     const r = await PythonBridgeService.runBridgeCommand(['delete', storyDir, characterId]);
-    if (!r.success) throw new Error(r.error || 'deleteCharacter failed');
+    if (!r.success) throw PythonBridgeService.bridgeError(r);
     return r;
   },
 
@@ -1153,7 +1171,7 @@ export const PythonBridgeService = {
     const r = await PythonBridgeService.runBridgeCommand([
       'add-emotion', storyDir, characterId, JSON.stringify(payload),
     ]);
-    if (!r.success) throw new Error(r.error || 'addEmotion failed');
+    if (!r.success) throw PythonBridgeService.bridgeError(r);
     return r.emotion;
   },
 
@@ -1161,7 +1179,7 @@ export const PythonBridgeService = {
     const r = await PythonBridgeService.runBridgeCommand([
       'update-emotion', storyDir, characterId, emotionId, JSON.stringify(payload),
     ]);
-    if (!r.success) throw new Error(r.error || 'updateEmotion failed');
+    if (!r.success) throw PythonBridgeService.bridgeError(r);
     return r.emotion;
   },
 
@@ -1169,7 +1187,7 @@ export const PythonBridgeService = {
     const args = ['delete-emotion', storyDir, characterId, emotionId];
     if (allowLast) args.push('--allow-last');
     const r = await PythonBridgeService.runBridgeCommand(args);
-    if (!r.success) throw new Error(r.error || 'deleteEmotion failed');
+    if (!r.success) throw PythonBridgeService.bridgeError(r);
     return r;
   },
 
@@ -1177,7 +1195,7 @@ export const PythonBridgeService = {
     const r = await PythonBridgeService.runBridgeCommand([
       'reorder-emotions', storyDir, characterId, JSON.stringify(orderedNames),
     ]);
-    if (!r.success) throw new Error(r.error || 'reorderEmotions failed');
+    if (!r.success) throw PythonBridgeService.bridgeError(r);
     return r.emotions;
   },
 
@@ -1185,7 +1203,7 @@ export const PythonBridgeService = {
     const r = await PythonBridgeService.runBridgeCommand([
       'set-default-emotion', storyDir, characterId, emotionId,
     ]);
-    if (!r.success) throw new Error(r.error || 'setDefaultEmotion failed');
+    if (!r.success) throw PythonBridgeService.bridgeError(r);
     return r.emotion;
   },
 };

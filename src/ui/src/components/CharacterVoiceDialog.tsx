@@ -56,6 +56,10 @@ export const CharacterVoiceDialog: React.FC<CharacterVoiceDialogProps> = ({
   }, []);
 
   const handleAddCharacter = useCallback(async () => {
+    if (!storyDir) {
+      setError('No story is loaded. Select a story first.');
+      return;
+    }
     if (!window.api?.showConfirmDialog) return;
     // Simple prompt-based creation (wizard comes with Phase 6b ReferenceField)
     const name = window.prompt('New character name:');
