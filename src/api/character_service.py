@@ -166,11 +166,18 @@ class CharacterService:
         _save_yaml(path, data, ryaml)
         script_dir = Path(__file__).resolve().parent.parent / "scripts"
         import sys as _sys
+        import io as _io
+        import contextlib as _contextlib
         if str(script_dir) not in _sys.path:
             _sys.path.insert(0, str(script_dir))
         import validate_config as vc  # noqa: E402
 
-        if not vc.validate_config(str(path)):
+        # Suppress validate_config's stdout so JSON bridge output stays clean
+        buf = _io.StringIO()
+        with _contextlib.redirect_stdout(buf):
+            valid = vc.validate_config(str(path))
+
+        if not valid:
             with open(path, "w", encoding="utf-8") as f:
                 f.write(original_text)
             raise ValidationError(

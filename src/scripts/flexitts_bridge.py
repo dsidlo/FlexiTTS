@@ -260,12 +260,69 @@ def _make_import_service():
     return ImportService(stories_dir)
 
 
+def _load_roundtrip(path: Path):
+    """ruamel round-trip load preserving comments."""
+    try:
+        from ruamel.yaml import YAML
+        ryaml = YAML()
+        ryaml.preserve_quotes = True
+        ryaml.indent(mapping=2, sequence=4, offset=2)
+        ryaml.width = 4096
+        with open(path, "r", encoding="utf-8") as f:
+            return ryaml.load(f), ryaml
+    except ImportError:
+        with open(path, "r", encoding="utf-8") as f:
+            return yaml.safe_load(f), None
+
+
+def _commit_roundtrip(path: Path, data, ryaml, original_text: str) -> None:
+    """Save, validate, roll back to original text on failure."""
+    if ryaml is not None:
+        with open(path, "w", encoding="utf-8") as f:
+            ryaml.dump(data, f)
+    else:
+        yaml.safe_dump(data, open(path, "w", encoding="utf-8"), sort_keys=False, allow_unicode=True)
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from validate_config import validate_config as _vc
+    # Suppress validate_config's stdout so JSON output stays clean
+    import io as _io
+    import contextlib as _contextlib
+    buf = _io.StringIO()
+    with _contextlib.redirect_stdout(buf):
+        valid = _vc(str(path))
+    if not valid:
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(original_text)
+
+
+def _load_config(story_dir: str) -> dict:
+    cfg = _make_character_service()._config_path(story_dir)
+    import yaml as _yaml
+    with open(cfg, "r", encoding="utf-8") as f:
+        return _yaml.safe_load(f) or {}
+
+
+def _voices_dir_for(story_dir: str) -> Path:
+    story_path = _make_character_service()._story_path(story_dir)
+    cfg = _load_config(story_dir)
+    voices_rel = str((cfg.get("global") or {}).get("voices", "")).strip()
+    return story_path / (voices_rel or "story-voice-refs")
+
+
 def _error_payload(e: Exception) -> dict:
     return {"error": str(e), "code": getattr(e, "code", type(e).__name__)}
 
 
 def handle_character_command(command: str, argv) -> int:
     """Handle character/emotion/sample/import-export bridge commands."""
+    def _emit(data: dict) -> None:
+        print(json.dumps(data, default=str))
+    # CharacterError available for typed raises (api dir must be on path)
+    api_dir = str(Path(__file__).resolve().parent.parent / "api")
+    if api_dir not in sys.path:
+        sys.path.insert(0, api_dir)
+    from character_service import CharacterError as CharacterErrorImpl
+    globals()['CharacterError'] = CharacterErrorImpl
     try:
         if command == "list":
             chars = _make_character_service().list_characters(argv[0])
@@ -331,6 +388,131 @@ def handle_character_command(command: str, argv) -> int:
             sample = _make_sample_service().upload_sample(
                 story_dir, character_id, emotion, filename, content)
             print(json.dumps({"success": True, "sample": sample}))
+
+        elif command == "import-characters":
+            story_dir, b64, conflict = argv[0], argv[1], (argv[2] if len(argv) > 2 else "keep-both")
+            import base64 as _b64
+            payload = _b64.b64decode(b64)
+            result = _make_import_service().import_characters(story_dir, payload, conflict=conflict)
+            _emit({"success": True, **result})
+
+        elif command == "create-dialog-effect-stub":
+            story_dir, name = argv[0], argv[1]
+            cfg_path = _make_character_service()._config_path(story_dir)
+            original = cfg_path.read_text(encoding="utf-8")
+            data, ryaml = _load_roundtrip(cfg_path)
+            effects = data.setdefault("dialog-effects", [])
+            already = any(str(e.get("name")) == name for e in effects)
+            if not already:
+                from ruamel.yaml.comments import CommentedMap
+                entry = CommentedMap()
+                entry["name"] = name
+                entry["sox-effects"] = [""]
+                effects.append(entry)
+                _commit_roundtrip(cfg_path, data, ryaml, original)
+            _emit({"success": True, "stub": name, "already": already})
+
+        elif command == "create-voice-sample-stub":
+            story_dir, character_id = argv[0], argv[1]
+            filename = argv[2] if len(argv) > 2 else ""
+            voices_dir = _voices_dir_for(story_dir)
+            target = (voices_dir / filename) if filename else (voices_dir / f"{character_id}-stub.wav")
+            created = not target.exists()
+            if created:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(b"")
+            _emit({"success": True, "path": str(target), "created": created})
+
+        elif command == "list-dialog-effects":
+            cfg = _load_config(argv[0])
+            effects = cfg.get("dialog-effects") or []
+            _emit({"success": True, "dialogEffects": effects})
+
+        elif command == "update-dialog-effect":
+            story_dir, old_name = argv[0], argv[1]
+            payload = json.loads(argv[2])
+            new_name = payload.get("name")
+            new_effects = payload.get("sox-effects")
+            cfg_path = _make_character_service()._config_path(story_dir)
+            original = cfg_path.read_text(encoding="utf-8")
+            data, ryaml = _load_roundtrip(cfg_path)
+            effects = data.get("dialog-effects") or []
+            entry = next((e for e in effects if str(e.get("name")) == old_name), None)
+            if entry is None:
+                raise CharacterError(f"Dialog effect not found: {old_name}", code="CHARACTER_NOT_FOUND")
+            renamed = False
+            if new_name and new_name != old_name:
+                entry["name"] = new_name
+                renamed = True
+            if isinstance(new_effects, list):
+                entry["sox-effects"] = [str(x) for x in new_effects]
+            # Rename propagation to referencing characters
+            if renamed:
+                for char in data.get("characters", []):
+                    de = char.get("dialog-effects")
+                    if isinstance(de, list):
+                        char["dialog-effects"] = [new_name if x == old_name else x for x in de]
+                    elif de == old_name:
+                        char["dialog-effects"] = new_name
+                    # Also emotion-level references
+                    ce = char.get("cloned-emotion")
+                    if isinstance(ce, list):
+                        for em in ce:
+                            if isinstance(em, dict) and isinstance(em.get("dialog-effects"), list):
+                                em["dialog-effects"] = [new_name if x == old_name else x for x in em["dialog-effects"]]
+                for cv in [c.get("custom-voice") for c in data.get("characters", [])]:
+                    if isinstance(cv, dict):
+                        for em in cv.get("emotions") or []:
+                            if isinstance(em, dict) and isinstance(em.get("dialog-effects"), list):
+                                em["dialog-effects"] = [new_name if x == old_name else x for x in em["dialog-effects"]]
+            _commit_roundtrip(cfg_path, data, ryaml, original)
+            _emit({"success": True, "renamed": renamed, "name": new_name or old_name})
+
+        elif command == "delete-dialog-effect":
+            story_dir, name = argv[0], argv[1]
+            cfg_path = _make_character_service()._config_path(story_dir)
+            data, ryaml = _load_roundtrip(cfg_path)
+            effects = data.get("dialog-effects") or []
+            dependents = []
+            for char in data.get("characters", []):
+                de = char.get("dialog-effects")
+                if de and (name in de if isinstance(de, list) else de == name):
+                    dependents.append(char.get("name"))
+            if dependents:
+                raise CharacterError(
+                    f"Cannot delete '{name}': referenced by characters: {', '.join(dependents)}",
+                    code="DIALOG_EFFECT_IN_USE")
+            effects[:] = [e for e in effects if str(e.get("name")) != name]
+            original = cfg_path.read_text(encoding="utf-8")
+            _commit_roundtrip(cfg_path, data, ryaml, original)
+            _emit({"success": True, "deleted": name})
+
+        elif command == "get-post-process":
+            cfg = _load_config(argv[0])
+            pp = (cfg.get("story-audio-post-process") or {}).get("sox-effects") or []
+            _emit({"success": True, "soxEffects": pp})
+
+        elif command == "set-post-process":
+            story_dir = argv[0]
+            effects = json.loads(argv[1])
+            cfg_path = _make_character_service()._config_path(story_dir)
+            original = cfg_path.read_text(encoding="utf-8")
+            data, ryaml = _load_roundtrip(cfg_path)
+            pp = data.setdefault("story-audio-post-process", {})
+            pp["sox-effects"] = [str(x) for x in effects]
+            _commit_roundtrip(cfg_path, data, ryaml, original)
+            _emit({"success": True})
+
+        elif command == "list-references":
+            story_dir = argv[0]
+            chars = _make_character_service().list_characters(story_dir)
+            defined = {e.get("name") for e in (_load_config(story_dir).get("dialog-effects") or [])}
+            unresolved = []
+            for c in chars:
+                for name in c.get("dialog-effects") or []:
+                    if name not in defined:
+                        unresolved.append({"character": c["name"], "type": "dialog-effects", "value": name})
+            _emit({"success": True, "unresolved": unresolved})
 
         elif command == "validate-sox":
             sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "api"))

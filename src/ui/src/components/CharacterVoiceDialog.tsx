@@ -3,6 +3,8 @@ import type { CharacterConfig } from '../models/types';
 import { PythonBridgeService } from '../services/pythonBridge';
 import { CharacterBar } from './CharacterBar';
 import { UnresolvedReferencesPanel, useUnresolvedReferences } from './UnresolvedReferences';
+import { DialogEffectsTab } from './DialogEffectsTab';
+import { PostProcessTab } from './PostProcessTab';
 
 /**
  * Phase 6.1: CharacterVoiceDialog - top-level dialog listing CharacterBars
@@ -28,6 +30,9 @@ export const CharacterVoiceDialog: React.FC<CharacterVoiceDialogProps> = ({
   const importInputRef = React.useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const [activeTab, setActiveTab] = useState<'characters' | 'dialog-effects' | 'post-process'>('characters');
+  const [postProcessEffects, setPostProcessEffects] = useState<string[]>([]);
+  const [postProcessDirty, setPostProcessDirty] = useState(false);
   const { unresolved } = useUnresolvedReferences(storyDir, reloadKey);
   const [availableDialogEffects, setAvailableDialogEffects] = useState<string[]>([]);
 
@@ -58,6 +63,7 @@ export const CharacterVoiceDialog: React.FC<CharacterVoiceDialogProps> = ({
       setAvailableDialogEffects(
         (rawConfig['dialog-effects'] ?? []).map((e: Record<string, unknown>) => String(e.name ?? '')).filter(Boolean),
       );
+      setPostProcessEffects((rawConfig['story-audio-post-process'] as { soxEffects?: string[] })?.['soxEffects'] ?? (rawConfig['story-audio-post-process'] as { 'sox-effects'?: string[] })?.['sox-effects'] ?? []);
       setReloadKey((k) => k + 1);
       onConfigChanged?.();
     } catch (e) {
@@ -80,6 +86,18 @@ export const CharacterVoiceDialog: React.FC<CharacterVoiceDialogProps> = ({
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [open, onClose]);
+
+  const handleTabKeyDown = useCallback((e: React.KeyboardEvent) => {
+    const order: Array<'characters' | 'dialog-effects' | 'post-process'> = ['characters', 'dialog-effects', 'post-process'];
+    const idx = order.indexOf(activeTab);
+    if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      setActiveTab(order[(idx + 1) % order.length]);
+    } else if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      setActiveTab(order[(idx - 1 + order.length) % order.length]);
+    }
+  }, []);
 
   const toggleExpand = useCallback((characterId: string) => {
     setExpanded((prev) => {
@@ -216,6 +234,34 @@ export const CharacterVoiceDialog: React.FC<CharacterVoiceDialogProps> = ({
       <div style={{ padding: '4px 12px', color: '#888', fontSize: 12, borderBottom: '1px solid #333' }}>
         <span data-testid="character-count">{characters.length} characters</span>
       </div>
+      <div style={{ display: 'flex', borderBottom: '2px solid #333', }} onKeyDown={handleTabKeyDown}>
+        {([
+          ['characters', '🎭 Characters'],
+          ['dialog-effects', '🔊 Dialog Effects'],
+          ['post-process', '📊 Post-Process'],
+        ] as const).map(([tab, label]) => (
+          <button
+            key={tab}
+            data-testid={`tab-${tab === 'dialog-effects' ? 'dialog-effects' : tab === 'post-process' ? 'post-process' : 'characters'}`}
+            onClick={() => setActiveTab(tab)}
+            style={{
+              flex: 1,
+              padding: '6px 4px',
+              background: 'transparent',
+              border: 'none',
+              borderBottom: activeTab === tab ? '2px solid #4a90d9' : '2px solid transparent',
+              color: activeTab === tab ? '#8ab4f8' : '#888',
+              cursor: 'pointer',
+              fontSize: 12,
+              fontWeight: activeTab === tab ? 600 : 400,
+            }}
+            role="tab"
+            aria-selected={activeTab === tab}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
       <div style={{ padding: '0 8px' }}>
         <UnresolvedReferencesPanel
           unresolved={unresolved}
@@ -225,13 +271,33 @@ export const CharacterVoiceDialog: React.FC<CharacterVoiceDialogProps> = ({
           onCreateStub={handleCreateStub}
         />
       </div>
-      <div style={{ flex: 1, overflowY: 'auto', padding: 8 }}>
-        {loading && <div style={{ color: '#888', padding: 12 }}>Loading…</div>}
-        {error && <div style={{ color: '#f66', padding: 12 }} data-testid="character-error">{error}</div>}
-        {!loading && !error && filtered.length === 0 && (
+      {activeTab === 'dialog-effects' && (
+        <DialogEffectsTab
+          storyDir={storyDir}
+          onRefresh={refresh}
+          onError={setError}
+        />
+      )}
+      {activeTab === 'post-process' && (
+        <PostProcessTab
+          storyDir={storyDir}
+          effects={postProcessEffects}
+          onEffectsChanged={(effs) => {
+            setPostProcessEffects(effs);
+            setPostProcessDirty(true);
+          }}
+          onError={setError}
+          dirty={postProcessDirty}
+          onSaved={() => setPostProcessDirty(false)}
+        />
+      )}
+      <div style={{ flex: 1, overflowY: 'auto', padding: 8, display: activeTab === 'characters' ? 'block' : 'none' }}>
+        {loading && activeTab === 'characters' && <div style={{ color: '#888', padding: 12 }}>Loading…</div>}
+        {error && activeTab === 'characters' && <div style={{ color: '#f66', padding: 12 }} data-testid="character-error">{error}</div>}
+        {activeTab === 'characters' && !loading && filtered.length === 0 && (
           <div style={{ color: '#666', padding: 12 }}>No characters match.</div>
         )}
-        {filtered.map((character) => (
+        {activeTab === 'characters' && filtered.map((character) => (
           <CharacterBar
             key={character.name}
             character={character}
