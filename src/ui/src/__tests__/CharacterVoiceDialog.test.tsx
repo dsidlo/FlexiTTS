@@ -15,6 +15,7 @@ vi.mock('../services/pythonBridge', () => ({
     listCharacters: vi.fn(),
     createCharacter: vi.fn(),
     deleteCharacter: vi.fn(),
+    loadGlobalConfig: vi.fn(),
   },
 }));
 
@@ -82,6 +83,33 @@ describe('CharacterVoiceDialog', () => {
     listCharactersMock.mockRejectedValue(new Error('bridge down'));
     render(<CharacterVoiceDialog storyDir="Story-Test" open onClose={vi.fn()} />);
     await waitFor(() => expect(screen.getByTestId('character-error')).toHaveTextContent('bridge down'));
+  });
+
+  it('falls back to prefix+current-story when storyDir is empty', async () => {
+    vi.mocked(PythonBridgeService.loadGlobalConfig).mockResolvedValue({
+      FlexiTTS: {
+        'stories-dir': '/home/user/Stories',
+        'story-dir-prefix': 'Story-',
+        'current-story': 'Entanglement',
+      },
+    });
+    listCharactersMock.mockResolvedValue(baseCharacters);
+    render(<CharacterVoiceDialog storyDir="" open onClose={vi.fn()} />);
+    await waitFor(() => {
+      expect(listCharactersMock).toHaveBeenCalledWith('Story-Entanglement');
+      expect(screen.getByTestId('character-count')).toHaveTextContent('2 characters');
+    });
+  });
+
+  it('shows guidance when no story is configured at all', async () => {
+    vi.mocked(PythonBridgeService.loadGlobalConfig).mockResolvedValue({
+      FlexiTTS: { 'stories-dir': '/home/user/Stories', 'story-dir-prefix': 'Story-' },
+    });
+    render(<CharacterVoiceDialog storyDir="" open onClose={vi.fn()} />);
+    await waitFor(() => {
+      expect(screen.getByTestId('character-error')).toHaveTextContent('No story is loaded');
+    });
+    expect(listCharactersMock).not.toHaveBeenCalled();
   });
 
   it('filters characters via search', async () => {

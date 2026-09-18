@@ -27,11 +27,27 @@ export const CharacterVoiceDialog: React.FC<CharacterVoiceDialogProps> = ({
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
-    if (!storyDir) return;
+    if (!open) return;
     setLoading(true);
     setError(null);
     try {
-      const list = await PythonBridgeService.listCharacters(storyDir);
+      // When the parent hasn't resolved a story yet (startup race), fall back
+      // to the persisted global config: prefix + current-story, matching how
+      // App.tsx resolves it. The user's config stores the bare name
+      // (e.g. "Entanglement") with story-dir-prefix "Story-".
+      let dir = storyDir;
+      if (!dir) {
+        const globalConfig = await PythonBridgeService.loadGlobalConfig();
+        const flex = (globalConfig as { FlexiTTS?: Record<string, string> })?.FlexiTTS ?? {};
+        const name = flex['current-story'];
+        if (!name) {
+          setError('No story is loaded. Select a story first.');
+          setLoading(false);
+          return;
+        }
+        dir = `${flex['story-dir-prefix'] || 'Story-'}${name}`;
+      }
+      const list = await PythonBridgeService.listCharacters(dir);
       setCharacters(list);
       onConfigChanged?.();
     } catch (e) {
@@ -39,7 +55,7 @@ export const CharacterVoiceDialog: React.FC<CharacterVoiceDialogProps> = ({
     } finally {
       setLoading(false);
     }
-  }, [storyDir, onConfigChanged]);
+  }, [storyDir, open, onConfigChanged]);
 
   useEffect(() => {
     if (open) void refresh();
