@@ -40,23 +40,30 @@ def log_exception(event: str, exc: Exception, **kwargs: Any) -> None:
     except Exception as log_err:
         logger.info(f"{event} log_exception_error={log_err!r}")
 
-try:
+def _load_tts_module():
+    """Load the TTS factory lazily.
+
+    Importing tts_factory pulls in torch/transformers/sklearn via qwen_tts
+    (~3.4s), which made even `--help` and dry-runs pay that cost. The
+    provider is only needed for real generation, so defer to first use.
+    """
     from tts_factory import create_tts_provider, TTSProviderFactory as TTSFactory
     from tts_interface import (
         TTSError,
         TTSConnectionError,
         TTSGenerationError,
-        CharacterNotSupportedError
+        CharacterNotSupportedError,
     )
-except ImportError as e:
-    TTSFactory = None
-    create_tts_provider = None
-    TTSError = None
-    TTSConnectionError = None
-    TTSGenerationError = None
-    CharacterNotSupportedError = None
-    print(f"WARNING: TTS provider imports failed: {e}", file=sys.stderr)
-    print("Audio generation will fail. Ensure GPU dependencies are installed.", file=sys.stderr)
+    return create_tts_provider, TTSFactory, TTSError, TTSConnectionError, TTSGenerationError, CharacterNotSupportedError
+
+
+# Placeholders so top-level references don't NameError on --help/dry-run paths.
+create_tts_provider = None
+TTSFactory = None
+TTSError = None
+TTSConnectionError = None
+TTSGenerationError = None
+CharacterNotSupportedError = None
 
 
 @dataclass
@@ -347,6 +354,8 @@ def main():
     parser.add_argument("--create-missing-clips", action="store_true")
     parser.add_argument("--create-silent-clips", action="store_true")
     parser.add_argument("--tts-service", type=str, default=None, help="WebSocket TTS service URL")
+
+    global create_tts_provider, TTSError, TTSConnectionError, TTSGenerationError, CharacterNotSupportedError
     args = parser.parse_args()
     log_debug(
         "main:args_parsed",
@@ -359,6 +368,14 @@ def main():
         create_silent_clips=args.create_silent_clips,
         tts_service=args.tts_service,
     )
+
+    # Lazy TTS import: --help and config/arg validation never need torch.
+    try:
+        (create_tts_provider, _TTSFactory, TTSError, TTSConnectionError,
+         TTSGenerationError, CharacterNotSupportedError) = _load_tts_module()
+    except ImportError as e:
+        print(f"WARNING: TTS provider imports failed: {e}", file=sys.stderr)
+        print("Audio generation will fail. Ensure GPU dependencies are installed.", file=sys.stderr)
 
     # Determine XML path first (needed for auto-detect)
     xml_path = Path(args.xml_file) if args.xml_file else None
