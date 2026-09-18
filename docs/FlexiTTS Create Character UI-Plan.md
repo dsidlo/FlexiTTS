@@ -353,9 +353,82 @@ and entering it generates a stub for the reference that is rendered in the UI.
 
 ---
 
-## Phase 7: State Management & Persistence
+## Phase 7: Dialog Editor Tabs (Characters / Dialog Effects / Story Post-Process)
 
-### 7.1 Local State
+The `CharacterVoiceDialog` becomes a tabbed editor. Three tabs give the UI
+complete coverage of the editable story-config.yml structures, each editing
+its corresponding top-level config section through the existing bridge:
+
+| Tab | Edits | Config section |
+|-----|-------|----------------|
+| 🎭 Characters | Character entries, emotions, voice wiring, samples | `characters:` |
+| 🔊 Dialog Effects | Named dialog-effect definitions and their SoX chains | `dialog-effects:` |
+| 📊 Story Post-Process | The global post-process SoX chain applied after chapter merge | `story-audio-post-process:` |
+
+### 7T.1 Tab bar in CharacterVoiceDialog
+
+- [ ] **Add a tab bar** to the dialog header (below search): Characters |
+      Dialog Effects | Story Post-Process
+  - [ ] Active tab visually distinguished (underline + accent color)
+  - [ ] Keyboard: Left/Right arrow keys switch tabs when the tab bar has focus
+  - [ ] `data-testid` per tab: `tab-characters`, `tab-dialog-effects`,
+        `tab-post-process`
+  - [ ] **Test**: Clicking each tab switches the visible panel
+  - [ ] **Test**: Active tab styling updates
+  - [ ] **Test**: Escape still closes the whole dialog regardless of active tab
+
+### 7T.2 Dialog Effects tab
+
+- [ ] **List named dialog-effects** with their SoX chains (reuse
+      `SoXEffectBuilder` per effect):
+  - [ ] Each entry shows `name` + editable `sox-effects` list
+  - [ ] Add new dialog-effect (name via input, empty SoX chain = stub)
+  - [ ] Delete dialog-effect with confirmation listing dependent characters
+        (characters referencing it via `ReferenceField`)
+  - [ ] Renaming cascades: every `characters[].dialog-effects` entry that
+        references the old name is updated in the same commit
+  - [ ] **Test**: Add a named effect; it appears in characters' reference
+        choices
+  - [ ] **Test**: Deleting an effect that characters reference shows the
+        affected-character list before confirming
+  - [ ] **Test**: Rename propagates to all referencing characters
+
+### 7T.3 Story Post-Process tab
+
+- [ ] **Edit `story-audio-post-process.sox-effects`** using the same
+      `SoXEffectBuilder`:
+  - [ ] Changes persist via the bridge with validation + rollback
+  - [ ] Known issue surfaced by Phase 5 validation: 'normalize' is not a SoX
+        effect ('norm' is) - the editor should pre-flag it red and offer
+        'norm' as the fix
+  - [ ] **Test**: Edit and persist the chain; config validates
+  - [ ] **Test**: Invalid effect names are highlighted red in the editor
+
+### 7T.4 Bridge commands
+
+- [ ] **New bridge subcommands** (delegating to validated service writes):
+  - [ ] `list-dialog-effects <story>` — parsed `dialog-effects` entries
+  - [ ] `update-dialog-effect <story> <old-name> --name <new> --effects <json>`
+        with rename propagation to referencing characters
+  - [ ] `delete-dialog-effect <story> <name>` (reports dependent characters)
+  - [ ] `get-post-process <story>` / `set-post-process <story> <effects-json>`
+  - [ ] **Test**: Each round-trips and the resulting config passes
+        `validate_config.py`
+
+### 7T.5 Tab state and consistency
+
+- [ ] Unresolved-references panel remains visible on **all** tabs (it
+      aggregates cross-references from every structure)
+- [ ] Switching tabs preserves unsaved in-tab edits per tab (draft state),
+      with a dirty indicator on tabs that have unsaved changes
+- [ ] **Test**: Editing in the Dialog Effects tab, switching to Characters and
+      back retains the draft with a dirty marker
+
+---
+
+## Phase 8: State Management & Persistence
+
+### 8.1 Local State
 
 - [ ] **Character selection state**:
   - [ ] Track selected character ID
@@ -370,7 +443,7 @@ and entering it generates a stub for the reference that is rendered in the UI.
   - [ ] **Test**: Dirty state indicator
   - [ ] **Test**: Discard changes
 
-### 7.2 Auto-save
+### 8.2 Auto-save
 
 - [ ] **Implement auto-save timer**:
   - [ ] Save every 30 seconds
@@ -380,7 +453,7 @@ and entering it generates a stub for the reference that is rendered in the UI.
   - [ ] **Test**: Toast notification display
   - [ ] **Test**: No auto-save on unchanged data
 
-### 7.3 Undo/Redo
+### 8.3 Undo/Redo
 
 - [ ] **Implement undo/redo stack**:
   - [ ] Track last 50 operations
@@ -392,9 +465,9 @@ and entering it generates a stub for the reference that is rendered in the UI.
 
 ---
 
-## Phase 8: Search & Filtering
+## Phase 9: Search & Filtering
 
-### 8.1 Search
+### 9.1 Search
 
 - [ ] **Implement character search**:
   - [ ] Filter by character name
@@ -404,7 +477,7 @@ and entering it generates a stub for the reference that is rendered in the UI.
   - [ ] **Test**: Search by partial name
   - [ ] **Test**: No results state
 
-### 8.2 Filters
+### 9.2 Filters
 
 - [ ] **Implement filter dropdown**:
   - [ ] Filter by language
@@ -414,7 +487,7 @@ and entering it generates a stub for the reference that is rendered in the UI.
   - [ ] **Test**: Filter by emotion count
   - [ ] **Test**: Combine multiple filters
 
-### 8.3 Sort
+### 9.3 Sort
 
 - [ ] **Implement sort dropdown**:
   - [ ] Sort by name (A-Z, Z-A)
@@ -424,9 +497,9 @@ and entering it generates a stub for the reference that is rendered in the UI.
 
 ---
 
-## Phase 9: Context Assignment
+## Phase 10: Context Assignment
 
-### 9.1 Quick Assign
+### 10.1 Quick Assign
 
 - [ ] **Assign character to dialog**:
   - [ ] Button in Character-Bar header
@@ -435,7 +508,7 @@ and entering it generates a stub for the reference that is rendered in the UI.
   - [ ] **Test**: Assign to selected dialog line
   - [ ] **Test**: Assign without selection (prompt)
 
-### 9.2 Bulk Assign
+### 10.2 Bulk Assign
 
 - [ ] **Bulk assign characters**:
   - [ ] Multi-select dialog lines
@@ -444,7 +517,7 @@ and entering it generates a stub for the reference that is rendered in the UI.
   - [ ] **Test**: Bulk assign to multiple lines
   - [ ] **Test**: Assign different characters to different lines
 
-### 9.3 Character Switching
+### 10.3 Character Switching
 
 - [ ] **Quick character swap**:
   - [ ] Dropdown in dialog bar
@@ -454,7 +527,7 @@ and entering it generates a stub for the reference that is rendered in the UI.
 
 ---
 
-## Phase 10: Keyboard Shortcuts & Accessibility
+## Phase 11: Keyboard Shortcuts & Accessibility
 
 ### 10.1 Keyboard Navigation
 
@@ -483,7 +556,7 @@ and entering it generates a stub for the reference that is rendered in the UI.
 
 ---
 
-## Phase 11: Error Handling & Recovery
+## Phase 12: Error Handling & Recovery
 
 ### 11.1 Network Errors
 
@@ -508,7 +581,7 @@ and entering it generates a stub for the reference that is rendered in the UI.
 
 ---
 
-## Phase 12: Integration Testing
+## Phase 13: Integration Testing
 
 ### 12.1 End-to-End Flows
 
@@ -531,7 +604,7 @@ and entering it generates a stub for the reference that is rendered in the UI.
 
 ---
 
-## Phase 13: Performance & Load Testing
+## Phase 14: Performance & Load Testing
 
 ### 13.1 Performance
 
@@ -545,7 +618,7 @@ and entering it generates a stub for the reference that is rendered in the UI.
   - [ ] Scroll performance
   - [ ] **Test**: Smooth scrolling with many items
 
-### 13.2 Load Testing
+### 14.2 Load Testing
 
 - [ ] **Concurrent operations**:
   - [ ] Multiple uploads simultaneously
