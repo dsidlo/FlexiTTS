@@ -46,6 +46,13 @@ from src.api.sample_service import (
     FileTooLargeError,
 )
 from src.api.import_export_service import ImportService, ImportError_
+from src.api.sox_service import (
+    SoxEngine,
+    SoxError,
+    SoxSyntaxError,
+    SoxExecutionError,
+    SoxTimeoutError,
+)
 
 
 # Pydantic Models for API
@@ -82,6 +89,15 @@ class ReorderEmotionsRequest(BaseModel):
 
 class ExportBundleRequest(BaseModel):
     characterIds: List[str]
+
+class SoxValidateRequest(BaseModel):
+    effects: List[str]
+
+class SoxProcessRequest(BaseModel):
+    audioPath: str
+    effects: List[str]
+    outputPath: Optional[str] = None
+    timeoutSeconds: Optional[float] = None
 
 class ValidationRequest(BaseModel):
     type: str = Field(..., pattern="^(global|story|merged)$")
@@ -594,6 +610,12 @@ class FlexiTTSAPI:
             "IMPORT_INVALID_CONFLICT": 400,
             "IMPORT_EMPTY": 422,
             "NO_CHARACTERS": 400,
+            "SOX_SYNTAX_ERROR": 422,
+            "SOX_EXECUTION_ERROR": 500,
+            "SOX_TIMEOUT": 504,
+            "SOX_ERROR": 400,
+            "SOX_INPUT_NOT_FOUND": 404,
+            "SOX_NOT_INSTALLED": 503,
         }.get(e.code, 400)
         return HTTPException(status_code=status, detail={"code": e.code, "message": str(e)})
 
@@ -873,6 +895,48 @@ class FlexiTTSAPI:
                 raise self._character_error_response(e)
             except HTTPException:
                 raise
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=str(e))
+
+        # ---------------------- Phase 5: SoX Effects Engine ---------------- #
+
+        @self.app.post("/api/validate/sox")
+        async def validate_sox(request: SoxValidateRequest):
+            """Syntax-validate an SoX effect chain (Phase 5.2)"""
+            try:
+                engine = SoxEngine()
+                result = engine.validate(request.effects)
+                return {"success": True, **result}
+            except SoxError as e:
+                raise self._character_error_response(e)
+            except HTTPException:
+                raise
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.post("/api/process/sox")
+        async def process_sox(request: SoxProcessRequest):
+            """Execute an SoX pipeline over an audio file (Phase 5.3)"""
+            try:
+                engine = SoxEngine(
+                    timeout_seconds=request.timeoutSeconds or 60.0)
+                result = engine.process(
+                    Path(request.audioPath), request.effects,
+                    output_path=Path(request.outputPath) if request.outputPath else None)
+                return {"success": True, **result}
+            except SoxError as e:
+                raise self._character_error_response(e)
+            except HTTPException:
+                raise
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.get("/api/sox/effects")
+        async def list_sox_effects():
+            """Effects supported by the local SoX binary (for the UI builder)"""
+            try:
+                from src.api.sox_service import _get_known_effects
+                return {"success": True, "effects": sorted(_get_known_effects())}
             except Exception as e:
                 raise HTTPException(status_code=500, detail=str(e))
 
