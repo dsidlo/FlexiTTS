@@ -234,6 +234,110 @@ def validate_story_path(story_path: str) -> bool:
         return False
 
 
+
+# ---------------------------------------------------------------------------
+# Character/emotion/sample management commands (Phase 6 wiring)
+# ---------------------------------------------------------------------------
+
+def _make_character_service():
+    stories_dir = config_manager.get_stories_directory()
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "api"))
+    from character_service import CharacterService
+    return CharacterService(stories_dir)
+
+
+def _make_sample_service():
+    stories_dir = config_manager.get_stories_directory()
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "api"))
+    from sample_service import SampleService
+    return SampleService(stories_dir)
+
+
+def _make_import_service():
+    stories_dir = config_manager.get_stories_directory()
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "api"))
+    from import_export_service import ImportService
+    return ImportService(stories_dir)
+
+
+def _error_payload(e: Exception) -> dict:
+    return {"error": str(e), "code": getattr(e, "code", type(e).__name__)}
+
+
+def handle_character_command(command: str, argv) -> int:
+    """Handle character/emotion/sample/import-export bridge commands."""
+    try:
+        if command == "list":
+            chars = _make_character_service().list_characters(argv[0])
+            print(json.dumps({"success": True, "characters": chars}))
+
+        elif command == "get":
+            char = _make_character_service().get_character(argv[0], argv[1])
+            print(json.dumps({"success": True, "character": char}))
+
+        elif command == "create":
+            char = _make_character_service().create_character(argv[0], json.loads(argv[1]))
+            print(json.dumps({"success": True, "character": char}))
+
+        elif command == "update":
+            char = _make_character_service().update_character(argv[0], argv[1], json.loads(argv[2]))
+            print(json.dumps({"success": True, "character": char}))
+
+        elif command == "delete":
+            result = _make_character_service().delete_character(argv[0], argv[1])
+            print(json.dumps({"success": True, **result}))
+
+        elif command == "add-emotion":
+            entry = _make_character_service().add_emotion(argv[0], argv[1], json.loads(argv[2]))
+            print(json.dumps({"success": True, "emotion": entry}))
+
+        elif command == "update-emotion":
+            entry = _make_character_service().update_emotion(argv[0], argv[1], argv[2], json.loads(argv[3]))
+            print(json.dumps({"success": True, "emotion": entry}))
+
+        elif command == "delete-emotion":
+            allow_last = len(argv) > 3 and argv[3] == "--allow-last"
+            result = _make_character_service().delete_emotion(argv[0], argv[1], argv[2], allow_delete_last=allow_last)
+            print(json.dumps({"success": True, **result}))
+
+        elif command == "reorder-emotions":
+            emotions = _make_character_service().reorder_emotions(argv[0], argv[1], json.loads(argv[2]))
+            print(json.dumps({"success": True, "emotions": emotions}))
+
+        elif command == "set-default-emotion":
+            entry = _make_character_service().set_default_emotion(argv[0], argv[1], argv[2])
+            print(json.dumps({"success": True, "emotion": entry}))
+
+        elif command == "sample-metadata":
+            emotion_id = argv[2] if len(argv) > 2 and argv[2] != "-" else None
+            meta = _make_sample_service().get_sample_metadata(argv[0], argv[1], emotion_id)
+            print(json.dumps({"success": True, "sample": meta}))
+
+        elif command == "export":
+            doc = _make_import_service().export_character(argv[0], argv[1], include_samples=True)
+            print(json.dumps({"success": True, "document": doc}))
+
+        elif command == "import":
+            conflict = argv[2] if len(argv) > 2 else "keep-both"
+            payload = Path(argv[1]).read_bytes()
+            result = _make_import_service().import_characters(argv[0], payload, conflict=conflict)
+            print(json.dumps({"success": True, **result}))
+
+        elif command == "validate-sox":
+            sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "api"))
+            from sox_service import SoxEngine
+            engine = SoxEngine()
+            print(json.dumps({"success": True, **engine.validate(json.loads(argv[0]) if argv else [])}))
+
+        else:
+            print(json.dumps({"success": False, "error": f"Unknown character command: {command}", "code": "UNKNOWN_COMMAND"}))
+            return 1
+        return 0
+    except Exception as e:
+        print(json.dumps(_error_payload(e)))
+        return 1
+
+
 def main():
     """Main entry point for bridge functions"""
     if len(sys.argv) < 2:
@@ -286,6 +390,12 @@ def main():
             path = sys.argv[2]
             is_valid = validate_story_path(path)
             print(json.dumps({"valid": is_valid}))
+
+        elif command == "characters":
+            if len(sys.argv) < 3:
+                print(json.dumps({"success": False, "error": "characters requires a subcommand", "code": "MISSING_SUBCOMMAND"}))
+                return 1
+            return handle_character_command(sys.argv[2], sys.argv[3:])
             
         else:
             print(f"Unknown command: {command}")

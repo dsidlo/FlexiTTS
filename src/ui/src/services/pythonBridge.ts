@@ -1,4 +1,4 @@
-import type { StoryConfig } from '../models/types';
+import type { StoryConfig, CharacterConfig } from '../models/types';
 import { debugLog } from '../utils/debugLogger';
 
 const LOG_ID = '[pythonBridge]';
@@ -1091,5 +1091,101 @@ export const PythonBridgeService = {
       debugLog.exception(id, 'startAndConnectTtsService', e);
       return false;
     }
-  }
+  },
+
+  // ---------------------------------------------------------------------
+  // Character / Emotion / Sample management (Phase 6)
+  // Commands delegate to src/scripts/flexitts_bridge.py which wraps the
+  // Python character/sample/import-export services (single source of truth).
+  // ------------------------------------------------------------------
+
+  runBridgeCommand: async (args: string[]): Promise<any> => {
+    const id = `${LOG_ID}:runBridgeCommand`;
+    debugLog.info(id, '[RESOURCE-ACCESS] bridge command', { args });
+    if (typeof window !== 'undefined' && window.api && window.api.runPythonScript) {
+      const stdout = await window.api.runPythonScript('src/scripts/flexitts_bridge.py', ['characters', ...args]);
+      try {
+        return JSON.parse(stdout);
+      } catch (parseErr: unknown) {
+        debugLog.exception(id, 'bridge output not JSON', parseErr, { stdout: stdout?.slice(0, 200) });
+        throw new Error(`Bridge returned non-JSON output: ${String(stdout).slice(0, 120)}`);
+      }
+    }
+    debugLog.warn(id, 'runPythonScript not available; bridge command skipped');
+    return { success: false, error: 'bridge unavailable', code: 'BRIDGE_UNAVAILABLE' };
+  },
+
+  listCharacters: async (storyDir: string): Promise<CharacterConfig[]> => {
+    const r = await PythonBridgeService.runBridgeCommand(['list', storyDir]);
+    if (!r.success) throw new Error(r.error || 'listCharacters failed');
+    return r.characters as CharacterConfig[];
+  },
+
+  getCharacter: async (storyDir: string, characterId: string): Promise<CharacterConfig> => {
+    const r = await PythonBridgeService.runBridgeCommand(['get', storyDir, characterId]);
+    if (!r.success) throw new Error(r.error || 'getCharacter failed');
+    return r.character as CharacterConfig;
+  },
+
+  createCharacter: async (storyDir: string, payload: Record<string, unknown>): Promise<CharacterConfig> => {
+    const r = await PythonBridgeService.runBridgeCommand([
+      'create', storyDir, JSON.stringify(payload),
+    ]);
+    if (!r.success) throw new Error(r.error || 'createCharacter failed');
+    return r.character as CharacterConfig;
+  },
+
+  updateCharacter: async (storyDir: string, characterId: string, payload: Record<string, unknown>): Promise<CharacterConfig> => {
+    const r = await PythonBridgeService.runBridgeCommand([
+      'update', storyDir, characterId, JSON.stringify(payload),
+    ]);
+    if (!r.success) throw new Error(r.error || 'updateCharacter failed');
+    return r.character as CharacterConfig;
+  },
+
+  deleteCharacter: async (storyDir: string, characterId: string): Promise<{ deleted: CharacterConfig; affectedDialogs: number }> => {
+    const r = await PythonBridgeService.runBridgeCommand(['delete', storyDir, characterId]);
+    if (!r.success) throw new Error(r.error || 'deleteCharacter failed');
+    return r;
+  },
+
+  addEmotion: async (storyDir: string, characterId: string, payload: Record<string, unknown>): Promise<any> => {
+    const r = await PythonBridgeService.runBridgeCommand([
+      'add-emotion', storyDir, characterId, JSON.stringify(payload),
+    ]);
+    if (!r.success) throw new Error(r.error || 'addEmotion failed');
+    return r.emotion;
+  },
+
+  updateEmotion: async (storyDir: string, characterId: string, emotionId: string, payload: Record<string, unknown>): Promise<any> => {
+    const r = await PythonBridgeService.runBridgeCommand([
+      'update-emotion', storyDir, characterId, emotionId, JSON.stringify(payload),
+    ]);
+    if (!r.success) throw new Error(r.error || 'updateEmotion failed');
+    return r.emotion;
+  },
+
+  deleteEmotion: async (storyDir: string, characterId: string, emotionId: string, allowLast = false): Promise<any> => {
+    const args = ['delete-emotion', storyDir, characterId, emotionId];
+    if (allowLast) args.push('--allow-last');
+    const r = await PythonBridgeService.runBridgeCommand(args);
+    if (!r.success) throw new Error(r.error || 'deleteEmotion failed');
+    return r;
+  },
+
+  reorderEmotions: async (storyDir: string, characterId: string, orderedNames: string[]): Promise<any[]> => {
+    const r = await PythonBridgeService.runBridgeCommand([
+      'reorder-emotions', storyDir, characterId, JSON.stringify(orderedNames),
+    ]);
+    if (!r.success) throw new Error(r.error || 'reorderEmotions failed');
+    return r.emotions;
+  },
+
+  setDefaultEmotion: async (storyDir: string, characterId: string, emotionId: string): Promise<any> => {
+    const r = await PythonBridgeService.runBridgeCommand([
+      'set-default-emotion', storyDir, characterId, emotionId,
+    ]);
+    if (!r.success) throw new Error(r.error || 'setDefaultEmotion failed');
+    return r.emotion;
+  },
 };

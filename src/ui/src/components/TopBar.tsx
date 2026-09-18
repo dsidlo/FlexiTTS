@@ -18,6 +18,7 @@ interface TopBarProps {
   hasUnsavedChanges?: boolean;
   editorMode?: boolean;
   onToggleEditor?: () => void;
+  onToggleCharacterVoices?: () => void;
   alertHistory?: AlertHistoryItem[];
   onRemoveAlertHistoryItem?: (id: string) => void;
   onClearAlertHistory?: () => void;
@@ -31,7 +32,7 @@ interface TopBarProps {
 export const TopBar: React.FC<TopBarProps> = ({
   config, chapter, filePath, chapterList, hasChapterAudio,
   selectedCharacter, onChapterSelect, onCharacterSelect, onSave, onRenderComplete,
-  hasUnsavedChanges, editorMode, onToggleEditor,
+  hasUnsavedChanges, editorMode, onToggleEditor, onToggleCharacterVoices,
   alertHistory = [], onRemoveAlertHistoryItem, onClearAlertHistory,
   currentStory, onStorySelect, renderState
 }) => {
@@ -309,6 +310,27 @@ export const TopBar: React.FC<TopBarProps> = ({
             title="Open Markdown Editor"
           >
             Edit Text
+          </button>
+        )}
+        {onToggleCharacterVoices && (
+          <button
+            data-testid="toggle-character-voices"
+            onClick={onToggleCharacterVoices}
+            style={{
+              marginLeft: '8px',
+              padding: '4px 12px',
+              backgroundColor: '#e0e0e0',
+              color: '#333',
+              border: '1px solid #888',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontSize: '0.9em',
+              fontWeight: 'bold'
+            }}
+            title="Open Character Voices"
+            aria-label="Toggle character voices dialog"
+          >
+            🎭 Characters
           </button>
         )}
       </div>

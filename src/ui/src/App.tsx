@@ -4,6 +4,7 @@ import { PythonBridgeService } from './services/pythonBridge';
 import type { AlertHistoryItem, StoryConfig, StoryInfo } from './models/types';
 import { TopBar } from './components/TopBar';
 import { DialogBar } from './components/DialogBar';
+import { CharacterVoiceDialog } from './components/CharacterVoiceDialog';
 import { AlertContainer } from './components/AlertContainer';
 import { useChapter, useMarkdown, useAlerts, useTtsAlerts, type AlertType } from './hooks';
 import { alertService, alerts } from './services/alertService';
@@ -71,6 +72,7 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [showChapterMenu, setShowChapterMenu] = useState(false);
   const [menuPos, setMenuPos] = useState({ x: 0, y: 0 });
+  const [showCharacterVoices, setShowCharacterVoices] = useState(false);
 
   // Alert system state
   const { alerts: alertList, addAlert, removeAlert, clearAlerts } = useAlerts();
@@ -612,6 +614,14 @@ function App() {
       )}
 
       {chapter && (
+        <CharacterVoiceDialog
+          storyDir={currentStory?.directory_name || ''}
+          open={showCharacterVoices}
+          onClose={() => setShowCharacterVoices(false)}
+        />
+      )}
+
+      {chapter && (
         <TopBar
           config={config}
           chapter={chapter}
@@ -626,6 +636,7 @@ function App() {
           hasUnsavedChanges={hasAnyUnsaved}
           editorMode={editorMode}
           onToggleEditor={handleToggleEditor}
+          onToggleCharacterVoices={() => setShowCharacterVoices((v) => !v)}
           alertHistory={alertHistory}
           onRemoveAlertHistoryItem={removeAlertHistoryItem}
           onClearAlertHistory={() => {
