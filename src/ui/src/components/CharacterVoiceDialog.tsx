@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import type { CharacterConfig } from '../models/types';
 import { PythonBridgeService } from '../services/pythonBridge';
 import { CharacterBar } from './CharacterBar';
+import { UnresolvedReferencesPanel, useUnresolvedReferences } from './UnresolvedReferences';
 
 /**
  * Phase 6.1: CharacterVoiceDialog - top-level dialog listing CharacterBars
@@ -24,7 +25,11 @@ export const CharacterVoiceDialog: React.FC<CharacterVoiceDialogProps> = ({
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const importInputRef = React.useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+  const { unresolved } = useUnresolvedReferences(storyDir, reloadKey);
+  const [availableDialogEffects, setAvailableDialogEffects] = useState<string[]>([]);
 
   const refresh = useCallback(async () => {
     if (!open) return;
@@ -49,6 +54,11 @@ export const CharacterVoiceDialog: React.FC<CharacterVoiceDialogProps> = ({
       }
       const list = await PythonBridgeService.listCharacters(dir);
       setCharacters(list);
+      const rawConfig = await PythonBridgeService.loadStoryConfigForStory(dir);
+      setAvailableDialogEffects(
+        (rawConfig['dialog-effects'] ?? []).map((e: Record<string, unknown>) => String(e.name ?? '')).filter(Boolean),
+      );
+      setReloadKey((k) => k + 1);
       onConfigChanged?.();
     } catch (e) {
       setError((e as Error).message);
@@ -61,6 +71,15 @@ export const CharacterVoiceDialog: React.FC<CharacterVoiceDialogProps> = ({
     if (open) void refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, storyDir]);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [open, onClose]);
 
   const toggleExpand = useCallback((characterId: string) => {
     setExpanded((prev) => {
@@ -92,6 +111,53 @@ export const CharacterVoiceDialog: React.FC<CharacterVoiceDialogProps> = ({
       setError((e as Error).message);
     }
   }, [storyDir, refresh]);
+
+  const handleImport = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+    try {
+      const content = await file.text();
+      const blob = new Blob([content], { type: file.type || 'application/octet-stream' });
+      const dataFile = new File([blob], file.name);
+      // The bridge import command needs a file path; use the bridge with base64
+      const buffer = await new Promise<ArrayBuffer>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as ArrayBuffer);
+        reader.onerror = () => reject(new Error('Cannot read import file'));
+        reader.readAsArrayBuffer(dataFile);
+      });
+      const bytes = new Uint8Array(buffer);
+      let binary = '';
+      const chunkSize = 0x8000;
+      for (let i = 0; i < bytes.length; i += chunkSize) {
+        binary += String.fromCharCode.apply(null, [...bytes.subarray(i, i + chunkSize)] as unknown as number[]);
+      }
+      const result = await PythonBridgeService.runBridgeCommand([
+        'import-characters', storyDir, btoa(binary), 'keep-both',
+      ]);
+      if (!result.success) {
+        setError(result.error || 'Import failed');
+        return;
+      }
+      await refresh();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }, [storyDir, refresh]);
+
+  const handleCreateStub = useCallback(async (type: string, value: string) => {
+    try {
+      if (type === 'dialog-effects') {
+        await PythonBridgeService.runBridgeCommand([
+          'create-dialog-effect-stub', storyDir, value,
+        ]);
+        await refresh();
+      }
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }, [refresh]);
 
   const filtered = characters.filter((c) =>
     c.name.toLowerCase().includes(search.toLowerCase()),
@@ -129,11 +195,35 @@ export const CharacterVoiceDialog: React.FC<CharacterVoiceDialogProps> = ({
           style={{ flex: 1, background: '#242424', color: '#ddd', border: '1px solid #444', borderRadius: 4, padding: '4px 8px' }}
         />
         <button data-testid="character-add" style={toolbarButtonStyle} onClick={handleAddCharacter} title="Add character">＋</button>
+        <button
+          data-testid="character-import"
+          style={toolbarButtonStyle}
+          onClick={() => importInputRef.current?.click()}
+          title="Import characters"
+        >
+          ⇩
+        </button>
+        <input
+          ref={importInputRef}
+          type="file"
+          accept=".yml,.yaml,.json,.zip"
+          style={{ display: 'none' }}
+          onChange={(e) => void handleImport(e)}
+        />
         <button data-testid="character-refresh" style={toolbarButtonStyle} onClick={() => void refresh()} title="Reload">⟳</button>
         <button data-testid="character-close" style={toolbarButtonStyle} onClick={onClose} title="Close">✕</button>
       </div>
       <div style={{ padding: '4px 12px', color: '#888', fontSize: 12, borderBottom: '1px solid #333' }}>
         <span data-testid="character-count">{characters.length} characters</span>
+      </div>
+      <div style={{ padding: '0 8px' }}>
+        <UnresolvedReferencesPanel
+          unresolved={unresolved}
+          onJump={(characterId) => {
+            setExpanded((prev) => new Set(prev).add(characterId));
+          }}
+          onCreateStub={handleCreateStub}
+        />
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: 8 }}>
         {loading && <div style={{ color: '#888', padding: 12 }}>Loading…</div>}
@@ -148,6 +238,7 @@ export const CharacterVoiceDialog: React.FC<CharacterVoiceDialogProps> = ({
             storyDir={storyDir}
             expanded={expanded.has(character.name)}
             selected={false}
+            availableDialogEffects={availableDialogEffects}
             onToggleExpand={toggleExpand}
             onRefresh={refresh}
             onError={setError}

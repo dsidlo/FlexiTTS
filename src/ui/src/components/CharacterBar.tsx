@@ -2,6 +2,8 @@ import React, { useCallback, useMemo, useState } from 'react';
 import type { CharacterConfig } from '../models/types';
 import { PythonBridgeService } from '../services/pythonBridge';
 import { EmotionRow } from './EmotionRow';
+import { ReferenceField } from './ReferenceField';
+import { VoiceSampleUploader } from './VoiceSampleUploader';
 
 /**
  * Phase 6.2: CharacterBar - one row per character in the CharacterVoiceDialog.
@@ -15,6 +17,8 @@ export interface CharacterBarProps {
   storyDir: string;
   expanded: boolean;
   selected: boolean;
+  /** Defined story-level dialog-effects names (dropdown choices). */
+  availableDialogEffects: string[];
   onToggleExpand: (characterId: string) => void;
   onRefresh: () => void;
   onError: (message: string) => void;
@@ -37,7 +41,8 @@ const normalizeSpeaker = (character: CharacterConfig): string => {
 };
 
 export const CharacterBar: React.FC<CharacterBarProps> = ({
-  character, storyDir, expanded, selected, onToggleExpand, onRefresh, onError,
+  character, storyDir, expanded, selected, availableDialogEffects,
+  onToggleExpand, onRefresh, onError,
 }) => {
   const [menuOpen, setMenuOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -57,6 +62,11 @@ export const CharacterBar: React.FC<CharacterBarProps> = ({
       onToggleExpand(character.name);
     }
   }, [character.name, onToggleExpand]);
+
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setMenuOpen(true);
+  }, []);
 
   const handleDelete = useCallback(async () => {
     setMenuOpen(false);
@@ -99,6 +109,54 @@ export const CharacterBar: React.FC<CharacterBarProps> = ({
     }
   }, [character, storyDir, onRefresh, onError]);
 
+  const dialogEffectChoices = useMemo(() => {
+    // Choices come from the story's dialog-effects definitions; the parent
+    // passes them via props when available. Empty here means no defined list.
+    return availableDialogEffects;
+  }, [availableDialogEffects]);
+
+  const qwen3Speakers = ['aiden', 'dylan', 'eric', 'ono_anna', 'ryan', 'serena', 'sohee', 'uncle_fu', 'vivian'];
+
+  const handleCommitDialogEffect = useCallback(async (value: string) => {
+    if (!value.trim()) return;
+    setBusy(true);
+    try {
+      // If the reference is new (unsatisfied), generate a stub first
+      const defined = dialogEffectChoices.some(
+        (c) => c.toLowerCase() === value.trim().toLowerCase());
+      if (!defined) {
+        await PythonBridgeService.runBridgeCommand([
+          'create-dialog-effect-stub', storyDir, value.trim(),
+        ]);
+      }
+      await PythonBridgeService.updateCharacter(storyDir, character.name, {
+        dialogEffects: [
+          ...((character['dialog-effects'] ?? []) as string[]), value.trim(),
+        ],
+      });
+      onRefresh();
+    } catch (e) {
+      onError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }, [storyDir, character.name, dialogEffectChoices, onRefresh, onError]);
+
+  const handleCommitSpeaker = useCallback(async (value: string) => {
+    if (!value.trim()) return;
+    setBusy(true);
+    try {
+      await PythonBridgeService.updateCharacter(storyDir, character.name, {
+        customVoice: { speaker: value.trim() },
+      });
+      onRefresh();
+    } catch (e) {
+      onError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }, [storyDir, character.name, onRefresh, onError]);
+
   const handleAddEmotion = useCallback(async () => {
     const name = window.prompt('New emotion name:');
     if (!name) return;
@@ -130,6 +188,7 @@ export const CharacterBar: React.FC<CharacterBarProps> = ({
       role="button"
       tabIndex={0}
       onKeyDown={handleKeyDown}
+      onContextMenu={handleContextMenu}
       aria-expanded={expanded}
     >
       <div
@@ -172,6 +231,39 @@ export const CharacterBar: React.FC<CharacterBarProps> = ({
           {Array.isArray(character['sox-effects']) && character['sox-effects'].length > 0 && (
             <div style={{ color: '#888', fontSize: 12, fontFamily: 'monospace', marginBottom: 6 }}>
               SoX: {character['sox-effects'].join(' | ')}
+            </div>
+          )}
+
+          {/* Phase 6b: reference fields for consistent cross-references */}
+          <div style={{ display: 'flex', gap: 10, marginBottom: 8, alignItems: 'flex-end' }}>
+            {character['custom-voice'] && (
+              <ReferenceField
+                label="Speaker"
+                testId={`ref-speaker-${character.name}`}
+                value={normalizeSpeaker(character)}
+                choices={qwen3Speakers}
+                onCommit={(v) => void handleCommitSpeaker(v)}
+              />
+            )}
+            <ReferenceField
+              label="Add dialog-effect"
+              testId={`ref-dialog-effect-${character.name}`}
+              value=""
+              choices={dialogEffectChoices}
+              onCommit={(v) => void handleCommitDialogEffect(v)}
+              allowFreeText
+            />
+          </div>
+
+          {character['voice-sample'] && !character['custom-voice'] && (
+            <div style={{ marginBottom: 8 }}>
+              <VoiceSampleUploader
+                storyDir={storyDir}
+                characterId={character.name}
+                emotionId={null}
+                onUploaded={onRefresh}
+                onError={onError}
+              />
             </div>
           )}
           {emotions.length > 0 ? (

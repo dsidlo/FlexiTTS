@@ -117,7 +117,14 @@ export const VoiceSampleUploader: React.FC<VoiceSampleUploaderProps> = ({
         style={{ display: 'none' }}
         onChange={handleBrowse}
       />
-      {progress && <div style={{ marginTop: 4, color: '#8ab4f8' }}>{progress}</div>}
+      {progress && (
+        <div style={{ marginTop: 6 }}>
+          <div style={{ height: 4, background: '#333', borderRadius: 2, overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: '100%', background: '#4a90d9', animation: 'p6b-progress 1.2s ease-in-out' }} />
+          </div>
+          <div style={{ marginTop: 4, color: '#8ab4f8', fontSize: 11 }}>{progress}</div>
+        </div>
+      )}
     </div>
   );
 };
