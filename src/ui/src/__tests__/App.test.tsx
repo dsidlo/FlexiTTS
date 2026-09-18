@@ -1,3 +1,4 @@
+import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import App from '../App';
@@ -83,7 +84,6 @@ const createMockConfig = () => ({
 
 // Store current editorMode state
 let currentEditorMode = false;
-const editorModeSetters: Array<(v: boolean) => void> = [];
 
 vi.mock('../hooks', async () => {
   const actual = await vi.importActual<typeof import('../hooks')>('../hooks');
@@ -130,13 +130,17 @@ vi.mock('../hooks', async () => {
       setHasUnsavedChanges: vi.fn(),
     })),
     useMarkdown: vi.fn(() => {
+      // useState-backed mock: setEditorMode must trigger a re-render so the
+      // editor aside appears immediately after a toggle click, regardless of
+      // unrelated async-load timing.
+      const realUseState = React.useState;
+      const [editorMode, setEditorModeState] = realUseState(currentEditorMode);
       const setEditorMode = vi.fn((value: boolean) => {
         currentEditorMode = value;
-        // Notify all listeners
-        editorModeSetters.forEach(fn => fn(value));
+        setEditorModeState(value);
       });
       return {
-        editorMode: currentEditorMode,
+        editorMode,
         setEditorMode,
         markdownContent: '# Test Markdown',
         setMarkdownContent: vi.fn(),
