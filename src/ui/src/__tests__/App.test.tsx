@@ -187,7 +187,12 @@ describe('App', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    
+
+    // Reset module-level mock state leaked by earlier tests: a previous
+    // test's toggle click leaves currentEditorMode true, which would make
+    // the next test's toggle click *close* the editor instead of opening it.
+    currentEditorMode = false;
+
     // Setup window.api for IPC mocking
     (window as unknown as { api: Partial<Window['api']> }).api = {
       listStories: vi.fn().mockResolvedValue([
