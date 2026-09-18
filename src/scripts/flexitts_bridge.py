@@ -323,6 +323,15 @@ def handle_character_command(command: str, argv) -> int:
             result = _make_import_service().import_characters(argv[0], payload, conflict=conflict)
             print(json.dumps({"success": True, **result}))
 
+        elif command == "upload-sample":
+            story_dir, character_id, emotion_id, filename, b64 = argv[0], argv[1], argv[2], argv[3], argv[4]
+            emotion = None if emotion_id == "-" else emotion_id
+            import base64 as _b64
+            content = base64.b64decode(b64)
+            sample = _make_sample_service().upload_sample(
+                story_dir, character_id, emotion, filename, content)
+            print(json.dumps({"success": True, "sample": sample}))
+
         elif command == "validate-sox":
             sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "api"))
             from sox_service import SoxEngine

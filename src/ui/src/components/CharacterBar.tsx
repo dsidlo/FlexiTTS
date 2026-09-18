@@ -1,6 +1,7 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import type { CharacterConfig } from '../models/types';
 import { PythonBridgeService } from '../services/pythonBridge';
+import { EmotionRow } from './EmotionRow';
 
 /**
  * Phase 6.2: CharacterBar - one row per character in the CharacterVoiceDialog.
@@ -98,6 +99,23 @@ export const CharacterBar: React.FC<CharacterBarProps> = ({
     }
   }, [character, storyDir, onRefresh, onError]);
 
+  const handleAddEmotion = useCallback(async () => {
+    const name = window.prompt('New emotion name:');
+    if (!name) return;
+    setBusy(true);
+    try {
+      await PythonBridgeService.addEmotion(storyDir, character.name, {
+        emotion: name.trim(),
+        instruct: '',
+      });
+      onRefresh();
+    } catch (e) {
+      onError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }, [character.name, storyDir, onRefresh, onError]);
+
   const rowStyle: React.CSSProperties = {
     border: selected ? '1px solid #4a90d9' : '1px solid #333',
     borderRadius: 6,
@@ -159,22 +177,32 @@ export const CharacterBar: React.FC<CharacterBarProps> = ({
           {emotions.length > 0 ? (
             <div>
               {emotions.map((em, idx) => {
-                const name = String((em as Record<string, unknown>).emotion ?? (em as Record<string, unknown>).name ?? idx);
-                const instruct = String((em as Record<string, unknown>).instruct ?? '');
                 return (
-                  <div key={idx} data-testid={`emotion-row-${character.name}-${name}`}
-                       style={{ display: 'flex', gap: 8, padding: '3px 0', fontSize: 13 }}>
-                    <span style={{ width: 90 }}>{name}</span>
-                    <span style={{ color: '#999', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {instruct || '—'}
-                    </span>
-                  </div>
+                  <EmotionRow
+                    key={idx}
+                    characterId={character.name}
+                    emotion={em as { emotion?: string; name?: string; instruct?: string; 'sox-effects'?: string[] }}
+                    isDefault={idx === 0}
+                    storyDir={storyDir}
+                    onSaved={onRefresh}
+                    onError={onError}
+                  />
                 );
               })}
             </div>
           ) : (
             <div style={{ color: '#666', fontSize: 12 }}>No emotions configured</div>
           )}
+          <div style={{ marginTop: 6 }}>
+            <button
+              data-testid={`emotion-add-${character.name}`}
+              style={addEmotionButtonStyle}
+              onClick={() => void handleAddEmotion()}
+              disabled={busy}
+            >
+              ＋ Add Emotion
+            </button>
+          </div>
         </div>
       )}
     </div>
@@ -210,4 +238,13 @@ const menuItemStyle: React.CSSProperties = {
   color: '#ddd',
   padding: '8px 12px',
   cursor: 'pointer',
+};
+const addEmotionButtonStyle: React.CSSProperties = {
+  background: 'transparent',
+  border: '1px dashed #555',
+  color: '#aaa',
+  borderRadius: 4,
+  cursor: 'pointer',
+  padding: '3px 10px',
+  fontSize: 12,
 };
