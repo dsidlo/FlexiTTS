@@ -149,7 +149,24 @@ export const SoXEffectBuilder: React.FC<SoXEffectBuilderProps> = ({
       {validation && !validation.isValid && (
         <div data-testid="sox-validation-errors" style={{ color: '#f66', fontSize: 11, marginTop: 6 }}>
           {validation.errors.slice(0, 3).map((e, i) => (
-            <div key={i}>⚠ {e.message}</div>
+            <div key={i}>
+              ⚠ {e.message}
+              {e.code === 'UNKNOWN_EFFECT' && /\bnormalize\b/i.test(e.message) && (
+                <button
+                  data-testid={`sox-suggest-norm-${e.index ?? 0}`}
+                  style={{ marginLeft: 6, background: 'transparent', border: '1px solid #8ab4f8', color: '#8ab4f8', borderRadius: 3, cursor: 'pointer', fontSize: 10, padding: '0 6px' }}
+                  onClick={() => {
+                    // Replace 'normalize' with 'norm' in the offending chain
+                    const idx = e.index ?? 0;
+                    const next = [...draft];
+                    if (next[idx]) next[idx] = next[idx].replace(/\bnormalize\b/gi, 'norm');
+                    commit(next);
+                  }}
+                >
+                  Fix: use 'norm'
+                </button>
+              )}
+            </div>
           ))}
         </div>
       )}

@@ -25,7 +25,7 @@ export function useUnresolvedReferences(storyDir: string, reloadKey: number) {
     setLoading(true);
     try {
       const r = await PythonBridgeService.runBridgeCommand(['list-references', storyDir]);
-      if (r.success) setUnresolved(r.unresolved as UnresolvedRef[]);
+      if (r.success) setUnresolved((r.unresolved ?? []) as UnresolvedRef[]);
     } catch {
       setUnresolved([]); // bridge unavailable; leave panel empty
     } finally {

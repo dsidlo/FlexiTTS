@@ -4,7 +4,7 @@
  */
 
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { EmotionRow } from '../components/EmotionRow';
 import { VoiceSampleUploader } from '../components/VoiceSampleUploader';
 import { SoXEffectBuilder } from '../components/SoXEffectBuilder';
@@ -219,6 +219,25 @@ describe('SoXEffectBuilder (Phase 6.5)', () => {
     expect(onChanged).toHaveBeenCalledWith(['gain +3', 'reverb 50']);
   });
 
+  it('suggests norm for normalize in validation errors', async () => {
+    runBridgeCommandMock.mockResolvedValue({
+      success: true,
+      isValid: false,
+      errors: [{ code: 'UNKNOWN_EFFECT', message: "Unknown SoX effect 'normalize'", index: 0 }],
+    });
+    const onChanged = vi.fn();
+    render(<SoXEffectBuilder effects={['normalize']} onChanged={onChanged} />);
+    // eslint-disable-next-line no-console
+    console.log('RENDERED');
+    await waitFor(() => {
+      expect(screen.getByTestId('sox-validation-errors')).toBeInTheDocument();
+      expect(screen.getByTestId('sox-suggest-norm-0')).toBeInTheDocument();
+    }, { timeout: 5000 });
+    // Click the fix button: chain updates to use 'norm'
+    fireEvent.click(screen.getByTestId('sox-suggest-norm-0'));
+    expect(onChanged).toHaveBeenCalledWith(['norm']);
+  });
+
   it('validates via bridge and shows errors for unknown effect', async () => {
     runBridgeCommandMock.mockResolvedValue({
       success: true,
@@ -233,6 +252,8 @@ describe('SoXEffectBuilder (Phase 6.5)', () => {
     // Error highlight on the offending row
     expect(screen.getByTestId('sox-effect-0')).toHaveStyle({ color: '#f66' });
   });
+
+
 });
 
 describe('AudioPreviewPlayer (Phase 6.6)', () => {

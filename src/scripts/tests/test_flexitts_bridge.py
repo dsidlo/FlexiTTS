@@ -6,6 +6,8 @@ success:false), not as stderr with a nonzero exit.
 """
 
 import json
+import pytest
+import yaml
 import subprocess
 import sys
 from pathlib import Path
@@ -60,7 +62,7 @@ def test_absolute_path_within_stories_dir_is_accepted():
     """Electron prepends stories-dir to Story- prefixed args, so the bridge
     legitimately receives absolute paths. They must resolve like bare ids."""
     import os
-    stories_dir = (Path(__file__).resolve().parent.parent.parent.parent
+    stories_dir = (Path(__file__).resolve().parent.parent.parent
                    / "Stories").resolve()
     target = stories_dir / "Story-Default"
     if not target.is_dir():
@@ -78,6 +80,66 @@ def test_absolute_path_outside_stories_dir_is_rejected():
     assert code == 0  # JSON error contract
     assert payload.get("success") is False
     assert payload.get("code") == "INVALID_STORY_ID"
+
+
+class TestPhase7BridgeCommands:
+    """Phase 7T.4 bridge commands: dialog-effects and post-process CRUD."""
+
+    @pytest.fixture(autouse=True)
+    def _backup_restore(self):
+        """Backup and restore Story-Default config around each test."""
+        import shutil
+        self._backup = "/tmp/p7-bridge-backup.yml"
+        self.config_src = (Path(SCRIPT).resolve().parent.parent.parent
+                           / "Stories" / "Story-Default" / "story-config.yml")
+        if not self.config_src.exists():
+            pytest.skip("Stories/Story-Default not found")
+        shutil.copy(self.config_src, self._backup)
+        yield self.config_src
+        shutil.copy(self._backup, self.config_src)
+
+    def test_rename_propagates_to_referencing_characters(self, _backup_restore):
+        # Create a stub effect, wire a character, rename, verify propagation
+        stub, _ = run_bridge(["characters", "create-dialog-effect-stub", "Story-Default", "test-prop"])
+        assert stub["success"]
+        update, _ = run_bridge(["characters", "update", "Story-Default", "Narrator",
+                             json.dumps({"dialogEffects": ["test-prop"]})])
+        assert update["success"]
+        rename, _ = run_bridge(["characters", "update-dialog-effect", "Story-Default", "test-prop",
+                             json.dumps({"name": "echo-chamber"})])
+        assert rename["success"] and rename["renamed"]
+        cfg = yaml.safe_load(self.config_src.read_text())
+        names = [e["name"] for e in cfg["dialog-effects"]]
+        assert "echo-chamber" in names and "test-prop" not in names
+        narrator = next(c for c in cfg["characters"] if c["name"] == "Narrator")
+        assert narrator["dialog-effects"] == ["echo-chamber"]
+
+    def test_delete_with_dependents_blocked_then_unlinked_succeeds(self, _backup_restore):
+        run_bridge(["characters", "create-dialog-effect-stub", "Story-Default", "test-del"])
+        run_bridge(["characters", "update", "Story-Default", "Narrator",
+                    json.dumps({"dialogEffects": ["test-del"]})])
+        blocked, _ = run_bridge(["characters", "delete-dialog-effect", "Story-Default", "test-del"])
+        assert blocked.get("code") == "DIALOG_EFFECT_IN_USE"
+        # Unlink first
+        run_bridge(["characters", "update", "Story-Default", "Narrator",
+                    json.dumps({"dialogEffects": []})])
+        deleted, _ = run_bridge(["characters", "delete-dialog-effect", "Story-Default", "test-del"])
+        assert deleted["success"] and deleted["deleted"] == "test-del"
+
+    def test_post_process_round_trip(self, _backup_restore):
+        effects = ["norm", "gain -3"]
+        set_result, _ = run_bridge(["characters", "set-post-process", "Story-Default",
+                                 json.dumps(effects)])
+        assert set_result["success"]
+        get_result, _ = run_bridge(["characters", "get-post-process", "Story-Default"])
+        assert get_result["soxEffects"] == effects
+        cfg = yaml.safe_load(self.config_src.read_text())
+        assert cfg["story-audio-post-process"]["sox-effects"] == effects
+        # Validate the resulting config
+        import sys as _sys
+        _sys.path.insert(0, str(Path(SCRIPT).resolve().parent))
+        from validate_config import validate_config
+        assert validate_config(str(self.config_src))
 
 
 def test_validate_sox_via_bridge():

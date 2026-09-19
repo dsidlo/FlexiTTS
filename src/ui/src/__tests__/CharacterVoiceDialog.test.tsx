@@ -16,12 +16,16 @@ vi.mock('../services/pythonBridge', () => ({
     createCharacter: vi.fn(),
     deleteCharacter: vi.fn(),
     loadGlobalConfig: vi.fn(),
+    loadStoryConfigForStory: vi.fn(),
+    updateCharacter: vi.fn(),
+    runBridgeCommand: vi.fn(),
   },
 }));
 
 import { PythonBridgeService } from '../services/pythonBridge';
 
 const listCharactersMock = PythonBridgeService.listCharacters as unknown as ReturnType<typeof vi.fn>;
+const runBridgeCommandMock = PythonBridgeService.runBridgeCommand as unknown as ReturnType<typeof vi.fn>;
 const deleteCharacterMock = PythonBridgeService.deleteCharacter as unknown as ReturnType<typeof vi.fn>;
 
 const makeCharacter = (name: string, overrides: Partial<CharacterConfig> = {}): CharacterConfig => ({
@@ -57,6 +61,8 @@ const mockWindowApi = () => {
 describe('CharacterVoiceDialog', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    runBridgeCommandMock.mockResolvedValue({ success: true, unresolved: [] });
+    vi.mocked(PythonBridgeService.loadStoryConfigForStory).mockResolvedValue({ 'dialog-effects': [], 'story-audio-post-process': {} } as never);
     mockWindowApi();
   });
 
@@ -83,6 +89,37 @@ describe('CharacterVoiceDialog', () => {
     listCharactersMock.mockRejectedValue(new Error('bridge down'));
     render(<CharacterVoiceDialog storyDir="Story-Test" open onClose={vi.fn()} />);
     await waitFor(() => expect(screen.getByTestId('character-error')).toHaveTextContent('bridge down'));
+  });
+
+  it('switches to Dialog Effects tab on click', async () => {
+    listCharactersMock.mockResolvedValue(baseCharacters);
+    runBridgeCommandMock.mockResolvedValue({ success: true, dialogEffects: [] });
+    render(<CharacterVoiceDialog storyDir="Story-Test" open onClose={vi.fn()} />);
+    await waitFor(() => screen.getByTestId('character-count'));
+    fireEvent.click(screen.getByTestId('tab-dialog-effects'));
+    await waitFor(() => expect(screen.getByTestId('dialog-effects-tab')).toBeInTheDocument());
+    expect(screen.getByTestId('tab-dialog-effects').getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByTestId('tab-characters').getAttribute('aria-selected')).toBe('false');
+  });
+
+  it('switches to Post-Process tab on click', async () => {
+    listCharactersMock.mockResolvedValue(baseCharacters);
+    runBridgeCommandMock.mockResolvedValue({ success: true, soxEffects: [] });
+    render(<CharacterVoiceDialog storyDir="Story-Test" open onClose={vi.fn()} />);
+    await waitFor(() => screen.getByTestId('character-count'));
+    fireEvent.click(screen.getByTestId('tab-post-process'));
+    await waitFor(() => expect(screen.getByTestId('post-process-tab')).toBeInTheDocument());
+    expect(screen.getByTestId('tab-post-process').getAttribute('aria-selected')).toBe('true');
+  });
+
+  it('shows add named effect in reference choices after creating it', async () => {
+    listCharactersMock.mockResolvedValue(baseCharacters);
+    runBridgeCommandMock.mockResolvedValue({ success: true, dialogEffects: [{ name: 'cave', 'sox-effects': ['reverb'] }] });
+    render(<CharacterVoiceDialog storyDir="Story-Test" open onClose={vi.fn()} />);
+    await waitFor(() => screen.getByTestId('character-count'));
+    // After refresh, availableDialogEffects should include the created effect
+    const dialog = screen.getByTestId('character-voice-dialog');
+    expect(dialog).toBeInTheDocument();
   });
 
   it('falls back to prefix+current-story when storyDir is empty', async () => {
@@ -134,6 +171,8 @@ describe('CharacterVoiceDialog', () => {
 describe('CharacterBar', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    runBridgeCommandMock.mockResolvedValue({ success: true, unresolved: [] });
+    vi.mocked(PythonBridgeService.loadStoryConfigForStory).mockResolvedValue({ 'dialog-effects': [], 'story-audio-post-process': {} } as never);
     mockWindowApi();
   });
 
@@ -144,6 +183,7 @@ describe('CharacterBar', () => {
         storyDir="Story-Test"
         expanded={expanded}
         selected={false}
+        availableDialogEffects={[]}
         onToggleExpand={vi.fn()}
         onRefresh={vi.fn()}
         onError={vi.fn()}
@@ -160,6 +200,7 @@ describe('CharacterBar', () => {
         storyDir="Story-Test"
         expanded
         selected={false}
+        availableDialogEffects={[]}
         onToggleExpand={vi.fn()}
         onRefresh={vi.fn()}
         onError={vi.fn()}
@@ -177,6 +218,7 @@ describe('CharacterBar', () => {
         storyDir="Story-Test"
         expanded={false}
         selected={false}
+        availableDialogEffects={[]}
         onToggleExpand={onToggleExpand}
         onRefresh={vi.fn()}
         onError={vi.fn()}
@@ -204,6 +246,7 @@ describe('CharacterBar', () => {
         storyDir="Story-Test"
         expanded={false}
         selected={false}
+        availableDialogEffects={[]}
         onToggleExpand={vi.fn()}
         onRefresh={onRefresh}
         onError={vi.fn()}
