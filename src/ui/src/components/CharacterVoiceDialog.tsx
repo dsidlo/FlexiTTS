@@ -198,7 +198,7 @@ export const CharacterVoiceDialog: React.FC<CharacterVoiceDialogProps> = ({
         top: 60,
         left: 8,
         bottom: 8,
-        width: 420,
+        width: 560,
         background: '#1a1a1a',
         border: '1px solid #444',
         borderRadius: 8,
