@@ -27,6 +27,8 @@ export const DialogEffectsTab: React.FC<DialogEffectsTabProps> = ({
   const [dirty, setDirty] = useState<Set<string>>(new Set());
   const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
   const [dependentCount, setDependentCount] = useState(0);
+  const [renamingEffect, setRenamingEffect] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -148,16 +150,34 @@ export const DialogEffectsTab: React.FC<DialogEffectsTabProps> = ({
             }}
           />
           <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
-            <button
-              data-testid={`dialog-effect-rename-${eff.name}`}
-              style={smallButtonStyle}
-              onClick={() => {
-                const newName = window.prompt(`Rename '${eff.name}' to:`);
-                if (newName && newName.trim() !== eff.name) void renameEffect(eff.name, newName.trim());
-              }}
-            >
-              Rename
-            </button>
+            {renamingEffect === eff.name ? (
+              <div style={{ display: 'flex', gap: 4 }}>
+                <input
+                  data-testid={`dialog-effect-rename-input-${eff.name}`}
+                  autoFocus
+                  value={renameValue}
+                  onChange={(e) => setRenameValue(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && renameValue.trim() && renameValue.trim() !== eff.name) {
+                      void renameEffect(eff.name, renameValue.trim());
+                      setRenamingEffect(null);
+                    }
+                    if (e.key === 'Escape') { setRenamingEffect(null); setRenameValue(''); }
+                  }}
+                  style={{ background: '#242424', color: '#ddd', border: '1px solid #444', borderRadius: 4, padding: '4px 8px', fontSize: 12, width: 140 }}
+                />
+                <button style={smallButtonStyle} onClick={() => { void renameEffect(eff.name, renameValue.trim()); setRenamingEffect(null); }} title="Confirm">✓</button>
+                <button style={smallButtonStyle} onClick={() => { setRenamingEffect(null); setRenameValue(''); }} title="Cancel">✕</button>
+              </div>
+            ) : (
+              <button
+                data-testid={`dialog-effect-rename-${eff.name}`}
+                style={smallButtonStyle}
+                onClick={() => { setRenamingEffect(eff.name); setRenameValue(eff.name); }}
+              >
+                Rename
+              </button>
+            )}
             <button
               data-testid={`dialog-effect-delete-${eff.name}`}
               style={smallButtonStyle}

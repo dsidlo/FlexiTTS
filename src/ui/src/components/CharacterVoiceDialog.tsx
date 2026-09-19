@@ -108,27 +108,34 @@ export const CharacterVoiceDialog: React.FC<CharacterVoiceDialogProps> = ({
     });
   }, []);
 
+  const [newCharName, setNewCharName] = useState('');
+  const [showNewCharInput, setShowNewCharInput] = useState(false);
+
   const handleAddCharacter = useCallback(async () => {
+    setShowNewCharInput(true);
+  }, []);
+
+  const handleCreateCharacter = useCallback(async () => {
+    const name = newCharName.trim();
+    if (!name) return;
     if (!storyDir) {
       setError('No story is loaded. Select a story first.');
       return;
     }
-    if (!window.api?.showConfirmDialog) return;
-    // Simple prompt-based creation (wizard comes with Phase 6b ReferenceField)
-    const name = window.prompt('New character name:');
-    if (!name) return;
     try {
       await PythonBridgeService.createCharacter(storyDir, {
-        name: name.trim(),
+        name,
         language: 'English',
         voiceType: 'custom',
         voice: { speaker: 'ryan', instruct: '' },
       });
+      setNewCharName('');
+      setShowNewCharInput(false);
       await refresh();
     } catch (e) {
       setError((e as Error).message);
     }
-  }, [storyDir, refresh]);
+  }, [newCharName, storyDir, refresh]);
 
   const handleImport = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -212,7 +219,26 @@ export const CharacterVoiceDialog: React.FC<CharacterVoiceDialogProps> = ({
           onChange={(e) => setSearch(e.target.value)}
           style={{ flex: 1, background: '#242424', color: '#ddd', border: '1px solid #444', borderRadius: 4, padding: '4px 8px' }}
         />
-        <button data-testid="character-add" style={toolbarButtonStyle} onClick={handleAddCharacter} title="Add character">＋</button>
+        {showNewCharInput ? (
+          <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+            <input
+              data-testid="character-new-name"
+              autoFocus
+              value={newCharName}
+              onChange={(e) => setNewCharName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void handleCreateCharacter();
+                if (e.key === 'Escape') { setShowNewCharInput(false); setNewCharName(''); }
+              }}
+              placeholder="Character name…"
+              style={{ background: '#242424', color: '#ddd', border: '1px solid #444', borderRadius: 4, padding: '4px 8px', fontSize: 13, width: 160 }}
+            />
+            <button data-testid="character-create-confirm" style={toolbarButtonStyle} onClick={() => void handleCreateCharacter()} title="Create">✓</button>
+            <button style={toolbarButtonStyle} onClick={() => { setShowNewCharInput(false); setNewCharName(''); }} title="Cancel">✕</button>
+          </div>
+        ) : (
+          <button data-testid="character-add" style={toolbarButtonStyle} onClick={handleAddCharacter} title="Add character">＋</button>
+        )}
         <button
           data-testid="character-import"
           style={toolbarButtonStyle}

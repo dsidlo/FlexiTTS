@@ -157,22 +157,31 @@ export const CharacterBar: React.FC<CharacterBarProps> = ({
     }
   }, [storyDir, character.name, onRefresh, onError]);
 
+  const [newEmotionName, setNewEmotionName] = useState('');
+  const [showEmotionInput, setShowEmotionInput] = useState(false);
+
   const handleAddEmotion = useCallback(async () => {
-    const name = window.prompt('New emotion name:');
+    setShowEmotionInput(true);
+  }, []);
+
+  const handleCreateEmotion = useCallback(async () => {
+    const name = newEmotionName.trim();
     if (!name) return;
     setBusy(true);
     try {
       await PythonBridgeService.addEmotion(storyDir, character.name, {
-        emotion: name.trim(),
+        emotion: name,
         instruct: '',
       });
+      setNewEmotionName('');
+      setShowEmotionInput(false);
       onRefresh();
     } catch (e) {
       onError((e as Error).message);
     } finally {
       setBusy(false);
     }
-  }, [character.name, storyDir, onRefresh, onError]);
+  }, [newEmotionName, storyDir, character.name, onRefresh, onError]);
 
   const rowStyle: React.CSSProperties = {
     border: selected ? '1px solid #4a90d9' : '1px solid #333',
@@ -286,14 +295,33 @@ export const CharacterBar: React.FC<CharacterBarProps> = ({
             <div style={{ color: '#666', fontSize: 12 }}>No emotions configured</div>
           )}
           <div style={{ marginTop: 6 }}>
-            <button
-              data-testid={`emotion-add-${character.name}`}
-              style={addEmotionButtonStyle}
-              onClick={() => void handleAddEmotion()}
-              disabled={busy}
-            >
-              ＋ Add Emotion
-            </button>
+            {showEmotionInput ? (
+              <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                <input
+                  data-testid={`emotion-new-name-${character.name}`}
+                  autoFocus
+                  value={newEmotionName}
+                  onChange={(e) => setNewEmotionName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') void handleCreateEmotion();
+                    if (e.key === 'Escape') { setShowEmotionInput(false); setNewEmotionName(''); }
+                  }}
+                  placeholder="Emotion name…"
+                  style={{ background: '#242424', color: '#ddd', border: '1px solid #444', borderRadius: 4, padding: '4px 8px', fontSize: 13, width: 140 }}
+                />
+                <button style={addEmotionButtonStyle} onClick={() => void handleCreateEmotion()} title="Create">✓</button>
+                <button style={addEmotionButtonStyle} onClick={() => { setShowEmotionInput(false); setNewEmotionName(''); }} title="Cancel">✕</button>
+              </div>
+            ) : (
+              <button
+                data-testid={`emotion-add-${character.name}`}
+                style={addEmotionButtonStyle}
+                onClick={() => void handleAddEmotion()}
+                disabled={busy}
+              >
+                ＋ Add Emotion
+              </button>
+            )}
           </div>
         </div>
       )}
