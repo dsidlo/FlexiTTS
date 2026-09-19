@@ -3,6 +3,7 @@ import type { CharacterConfig } from '../models/types';
 import { PythonBridgeService } from '../services/pythonBridge';
 import { CharacterBar } from './CharacterBar';
 import { UnresolvedReferencesPanel, useUnresolvedReferences } from './UnresolvedReferences';
+import { alerts } from '../services/alertService';
 import { DialogEffectsTab } from './DialogEffectsTab';
 import { PostProcessTab } from './PostProcessTab';
 
@@ -26,11 +27,24 @@ export const CharacterVoiceDialog: React.FC<CharacterVoiceDialogProps> = ({
   const [characters, setCharacters] = useState<CharacterConfig[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [undoStack, setUndoStack] = useState<string[]>([]);
+  const [redoStack, setRedoStack] = useState<string[]>([]);
+  const [expanded, setExpanded] = useState<Set<string>>(() => {
+    try {
+      const saved = sessionStorage.getItem('flexitts-expanded-characters');
+      return new Set(saved ? JSON.parse(saved) : []);
+    } catch { return new Set(); }
+  });
   const importInputRef = React.useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
+  const [newCharName, setNewCharName] = useState('');
+  const [showNewCharInput, setShowNewCharInput] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
-  const [activeTab, setActiveTab] = useState<'characters' | 'dialog-effects' | 'post-process'>('characters');
+  const [activeTab, setActiveTab] = useState<'characters' | 'dialog-effects' | 'post-process'>(() => {
+    try {
+      return (sessionStorage.getItem('flexitts-active-tab') as 'characters' | 'dialog-effects' | 'post-process') || 'characters';
+    } catch { return 'characters'; }
+  });
   const [postProcessEffects, setPostProcessEffects] = useState<string[]>([]);
   const [postProcessDirty, setPostProcessDirty] = useState(false);
   const { unresolved } = useUnresolvedReferences(storyDir, reloadKey);
@@ -59,11 +73,11 @@ export const CharacterVoiceDialog: React.FC<CharacterVoiceDialogProps> = ({
       }
       const list = await PythonBridgeService.listCharacters(dir);
       setCharacters(list);
-      const rawConfig = await PythonBridgeService.loadStoryConfigForStory(dir);
+      const rawConfig = (await PythonBridgeService.loadStoryConfigForStory(dir)) ?? {};
       setAvailableDialogEffects(
-        (rawConfig['dialog-effects'] ?? []).map((e: Record<string, unknown>) => String(e.name ?? '')).filter(Boolean),
+        ((rawConfig as unknown as Record<string, unknown>)['dialog-effects'] as Array<Record<string, unknown>> ?? []).map((e) => String(e?.name ?? '')).filter(Boolean),
       );
-      setPostProcessEffects((rawConfig['story-audio-post-process'] as { soxEffects?: string[] })?.['soxEffects'] ?? (rawConfig['story-audio-post-process'] as { 'sox-effects'?: string[] })?.['sox-effects'] ?? []);
+      setPostProcessEffects(((rawConfig as unknown as Record<string, unknown>)['story-audio-post-process'] as Record<string, unknown>)?.['sox-effects'] as string[] ?? []);
       setReloadKey((k) => k + 1);
       onConfigChanged?.();
     } catch (e) {
@@ -87,6 +101,82 @@ export const CharacterVoiceDialog: React.FC<CharacterVoiceDialogProps> = ({
     return () => window.removeEventListener('keydown', handler);
   }, [open, onClose]);
 
+  // Persist expanded characters and active tab across dialog reopens
+  useEffect(() => {
+    try { sessionStorage.setItem('flexitts-expanded-characters', JSON.stringify([...expanded])); } catch {}
+  }, [expanded]);
+  useEffect(() => {
+    try { sessionStorage.setItem('flexitts-active-tab', activeTab); } catch {}
+  }, [activeTab]);
+
+  // Undo/Redo: snapshot config content on each refresh (post-mutation)
+  useEffect(() => {
+    if (!open || !storyDir) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const cfg = await PythonBridgeService.loadStoryConfigForStory(storyDir);
+        const text = JSON.stringify(cfg, null, 2);
+        if (cancelled) return;
+        setUndoStack((prev) => {
+          if (prev.length > 0 && prev[prev.length - 1] === text) return prev;
+          const next = [...prev, text];
+          return next.slice(-50); // keep last 50
+        });
+        setRedoStack([]);
+      } catch {}
+    })();
+    return () => { cancelled = true; };
+  }, [storyDir, reloadKey, open]);
+
+  const handleUndo = useCallback(async () => {
+    if (undoStack.length < 2) return;
+    // The current state is the last entry; the previous is second-to-last
+    const currentText = undoStack[undoStack.length - 1];
+    const previousText = undoStack[undoStack.length - 2];
+    if (!window.api?.writeFile) return;
+    try {
+      const cfgPath = `${storyDir}/story-config.yml`;
+      // Parse the previous snapshot back to YAML for writing
+      const jsyaml = (await import('js-yaml')).default;
+      const previousObj = JSON.parse(previousText);
+      await window.api.writeFile(cfgPath, jsyaml.dump(previousObj, { sortKeys: false }));
+      setRedoStack((prev) => [...prev, currentText]);
+      setUndoStack((prev) => prev.slice(0, -1));
+      await refresh();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }, [undoStack, storyDir, refresh]);
+
+  const handleRedo = useCallback(async () => {
+    if (redoStack.length === 0) return;
+    if (!window.api?.writeFile) return;
+    try {
+      const redoText = redoStack[redoStack.length - 1];
+      const cfgPath = `${storyDir}/story-config.yml`;
+      const redoObj = JSON.parse(redoText);
+      const jsyaml = (await import('js-yaml')).default ?? (await import('js-yaml'));
+      await window.api.writeFile(cfgPath, (jsyaml as any).dump ? (jsyaml as any).dump(redoObj, { sortKeys: false }) : redoText);
+      setUndoStack((prev) => [...prev, redoText]);
+      setRedoStack((prev) => prev.slice(0, -1));
+      await refresh();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }, [redoStack, storyDir, refresh]);
+
+  // Ctrl+Z / Ctrl+Shift+Z keyboard shortcuts
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.key === 'z' && !e.shiftKey) { e.preventDefault(); void handleUndo(); }
+      else if (e.ctrlKey && e.key === 'Z' && e.shiftKey) { e.preventDefault(); void handleRedo(); }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [open, handleUndo, handleRedo]);
+
   const handleTabKeyDown = useCallback((e: React.KeyboardEvent) => {
     const order: Array<'characters' | 'dialog-effects' | 'post-process'> = ['characters', 'dialog-effects', 'post-process'];
     const idx = order.indexOf(activeTab);
@@ -107,9 +197,6 @@ export const CharacterVoiceDialog: React.FC<CharacterVoiceDialogProps> = ({
       return next;
     });
   }, []);
-
-  const [newCharName, setNewCharName] = useState('');
-  const [showNewCharInput, setShowNewCharInput] = useState(false);
 
   const handleAddCharacter = useCallback(async () => {
     setShowNewCharInput(true);
@@ -255,6 +342,8 @@ export const CharacterVoiceDialog: React.FC<CharacterVoiceDialogProps> = ({
           onChange={(e) => void handleImport(e)}
         />
         <button data-testid="character-refresh" style={toolbarButtonStyle} onClick={() => void refresh()} title="Reload">⟳</button>
+        <button data-testid="character-undo" style={toolbarButtonStyle} onClick={() => void handleUndo()} disabled={undoStack.length < 2} title="Undo (Ctrl+Z)">↩</button>
+        <button data-testid="character-redo" style={toolbarButtonStyle} onClick={() => void handleRedo()} disabled={redoStack.length === 0} title="Redo (Ctrl+Shift+Z)">↪</button>
         <button data-testid="character-close" style={toolbarButtonStyle} onClick={onClose} title="Close">✕</button>
       </div>
       <div style={{ padding: '4px 12px', color: '#888', fontSize: 12, borderBottom: '1px solid #333' }}>
@@ -334,6 +423,7 @@ export const CharacterVoiceDialog: React.FC<CharacterVoiceDialogProps> = ({
             onToggleExpand={toggleExpand}
             onRefresh={refresh}
             onError={setError}
+            onSaved={(msg) => alerts.success(msg)}
           />
         ))}
       </div>

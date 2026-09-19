@@ -61,8 +61,13 @@ const mockWindowApi = () => {
 describe('CharacterVoiceDialog', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Clear sessionStorage to prevent state leakage between tests
+    sessionStorage.clear();
     runBridgeCommandMock.mockResolvedValue({ success: true, unresolved: [] });
     vi.mocked(PythonBridgeService.loadStoryConfigForStory).mockResolvedValue({ 'dialog-effects': [], 'story-audio-post-process': {} } as never);
+    vi.mocked(PythonBridgeService.loadGlobalConfig).mockResolvedValue({
+      FlexiTTS: { 'stories-dir': '/tmp', 'story-dir-prefix': 'Story-', 'current-story': 'Test' },
+    });
     mockWindowApi();
   });
 

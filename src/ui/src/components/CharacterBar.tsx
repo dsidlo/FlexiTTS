@@ -1,6 +1,7 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import type { CharacterConfig } from '../models/types';
 import { PythonBridgeService } from '../services/pythonBridge';
+
 import { EmotionRow } from './EmotionRow';
 import { ReferenceField } from './ReferenceField';
 import { VoiceSampleUploader } from './VoiceSampleUploader';
@@ -22,6 +23,7 @@ export interface CharacterBarProps {
   onToggleExpand: (characterId: string) => void;
   onRefresh: () => void;
   onError: (message: string) => void;
+  onSaved?: (message: string) => void;
 }
 
 const normalizeLanguage = (character: CharacterConfig): string => {
@@ -42,7 +44,7 @@ const normalizeSpeaker = (character: CharacterConfig): string => {
 
 export const CharacterBar: React.FC<CharacterBarProps> = ({
   character, storyDir, expanded, selected, availableDialogEffects,
-  onToggleExpand, onRefresh, onError,
+  onToggleExpand, onRefresh, onError, onSaved,
 }) => {
   const [menuOpen, setMenuOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -81,6 +83,7 @@ export const CharacterBar: React.FC<CharacterBarProps> = ({
     try {
       await PythonBridgeService.deleteCharacter(storyDir, character.name);
       onRefresh();
+      onSaved?.(`Deleted character '${character.name}'`);
     } catch (e) {
       onError((e as Error).message);
     } finally {
@@ -176,6 +179,7 @@ export const CharacterBar: React.FC<CharacterBarProps> = ({
       setNewEmotionName('');
       setShowEmotionInput(false);
       onRefresh();
+      onSaved?.(`Added emotion '${name}' to '${character.name}'`);
     } catch (e) {
       onError((e as Error).message);
     } finally {
