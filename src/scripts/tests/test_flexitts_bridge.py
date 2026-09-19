@@ -142,6 +142,50 @@ class TestPhase7BridgeCommands:
         assert validate_config(str(self.config_src))
 
 
+class TestPhase7TabState:
+    """Phase 7T.5: Dialog Effects tab state and consistency."""
+
+    @pytest.fixture(autouse=True)
+    def _backup_restore(self):
+        import shutil
+        self._backup = "/tmp/p7-bridge-backup.yml"
+        self.config_src = (Path(SCRIPT).resolve().parent.parent.parent
+                           / "Stories" / "Story-Default" / "story-config.yml")
+        if not self.config_src.exists():
+            pytest.skip("Stories/Story-Default not found")
+        shutil.copy(self.config_src, self._backup)
+        yield self.config_src
+        shutil.copy(self._backup, self.config_src)
+
+    def test_edit_dialog_effects_and_verify_config_valid(self, _backup_restore):
+        stub, _ = run_bridge(["characters", "create-dialog-effect-stub", "Story-Default", "test-draft"])
+        assert stub["success"]
+        cfg = yaml.safe_load(self.config_src.read_text())
+        names = [e["name"] for e in cfg["dialog-effects"]]
+        assert "test-draft" in names
+        from validate_config import validate_config as _vc
+        import sys as _sys
+        _sys.path.insert(0, str(Path(SCRIPT).resolve().parent))
+        assert _vc(str(self.config_src))
+
+    def test_timestamped_backup_created_on_mutation(self, _backup_restore):
+        import glob
+        import re
+        # Use a distinct effect name to avoid matching existing backups
+        effect_name = f"backup-test-{id(self) % 100000}"
+        stub, _ = run_bridge(["characters", "create-dialog-effect-stub", "Story-Default", effect_name])
+        assert stub["success"]
+        new_backups = [b for b in glob.glob(str(_backup_restore.parent / "story-config.*.bak"))
+                       if re.search(r"story-config\.\d{8}_\d{6}\.bak", b)]
+        assert len(new_backups) >= 1, f"expected at least 1 timestamped backup, got {new_backups}"
+        for b in new_backups:
+            assert re.search(r"story-config\.\d{8}_\d{6}\.bak", b), f"bad backup name: {b}"
+        # Clean up
+        run_bridge(["characters", "update", "Story-Default", "Narrator",
+                    json.dumps({"dialogEffects": []})])
+        run_bridge(["characters", "delete-dialog-effect", "Story-Default", effect_name])
+
+
 def test_validate_sox_via_bridge():
     payload, code = run_bridge(["characters", "validate-sox", '["gain +3"]'])
     assert code == 0

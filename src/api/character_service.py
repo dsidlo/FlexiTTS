@@ -14,6 +14,7 @@ docs/FlexiTTS Create Character UI-Plan.md. All operations:
 
 from __future__ import annotations
 
+import shutil
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, Dict, List
@@ -59,6 +60,26 @@ class EmotionExistsError(CharacterError):
 class ValidationError(CharacterError):
     def __init__(self, message: str):
         super().__init__(message, code="CHARACTER_VALIDATION_FAILED")
+
+
+def _rotate_backups(path: Path, max_backups: int) -> None:
+    """Keep only the most recent max_backups timestamped .bak files."""
+    if max_backups <= 0:
+        return
+    pattern = f"{path.stem}.*.bak"
+    backups = sorted(path.parent.glob(pattern), key=lambda p: p.stat().st_mtime, reverse=True)
+    for stale in backups[max_backups:]:
+        stale.unlink(missing_ok=True)
+
+
+def _get_backup_count() -> int:
+    """Read config-backup-count from the global FlexiTTS config."""
+    try:
+        from base_config_manager import config_manager
+        cfg = config_manager.load_main_config()
+        return int(cfg.get('FlexiTTS', {}).get('config-backup-count', 10))
+    except Exception:
+        return 10
 
 
 def _load_yaml(path: Path):
@@ -162,7 +183,20 @@ class CharacterService:
         self._commit(path, data, ryaml, original_text)
 
     def _commit(self, path: Path, data: Any, ryaml, original_text: str) -> None:
-        """Save, validate, and roll back to original text on failure."""
+        """Save, validate, and roll back to original text on failure.
+
+        Writes a timestamped backup of the pre-change config before saving
+        (story-config.yml.YYYYMMDD_HHMMSS.bak), so every committed change
+        has a point-in-time restore point.
+        """
+        # Timestamped backup of the pre-change config
+        from datetime import datetime as _dt
+        timestamp = _dt.now().strftime("%Y%m%d_%H%M%S")
+        backup_path = path.parent / f"{path.stem}.{timestamp}.bak"
+        if path.exists():
+            shutil.copy2(path, backup_path)
+
+        _rotate_backups(path, _get_backup_count())
         _save_yaml(path, data, ryaml)
         script_dir = Path(__file__).resolve().parent.parent / "scripts"
         import sys as _sys
@@ -180,6 +214,9 @@ class CharacterService:
         if not valid:
             with open(path, "w", encoding="utf-8") as f:
                 f.write(original_text)
+            # Remove the backup since the change was rolled back
+            if backup_path.exists():
+                backup_path.unlink()
             raise ValidationError(
                 "Change rejected: resulting story-config.yml fails validation "
                 "(rolled back)"

@@ -282,7 +282,8 @@ class ConfigManager:
         return {
             'FlexiTTS': {
                 'stories-dir': str(Path(data_dir) / 'FlexiTTS' / 'stories'),
-                'story-dir-prefix': 'Story-'
+                'story-dir-prefix': 'Story-',
+                'config-backup-count': 10
             }
         }
 
