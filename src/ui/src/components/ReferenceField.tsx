@@ -43,10 +43,13 @@ export const ReferenceField: React.FC<ReferenceFieldProps> = ({
   const inputRef = useRef<HTMLInputElement>(null);
 
   const filtered = useMemo(() => {
-    const q = draft.trim().toLowerCase();
     if (!open) return choices;
+    const q = draft.trim().toLowerCase();
+    // If the draft equals the committed value (user hasn't typed), show all
+    // choices rather than filtering to the current value's matches
+    if (q === value.trim().toLowerCase()) return choices;
     return choices.filter((c) => c.toLowerCase().includes(q));
-  }, [choices, draft, open]);
+  }, [choices, draft, open, value]);
 
   const commitValue = useCallback((next: string) => {
     setDraft(next);

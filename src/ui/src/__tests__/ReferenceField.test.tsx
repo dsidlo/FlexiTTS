@@ -38,6 +38,15 @@ describe('ReferenceField (Phase 6b.1)', () => {
     expect(screen.getByTestId('ref-option-aiden')).toBeInTheDocument();
   });
 
+  it('shows all 9 speakers when no text has been typed', () => {
+    const speakers = ['aiden', 'dylan', 'eric', 'ono_anna', 'ryan', 'serena', 'sohee', 'uncle_fu', 'vivian'];
+    render(<ReferenceField label="Speaker" value="ryan" choices={speakers} onCommit={noop} testId="ref" />);
+    fireEvent.focus(screen.getByTestId('ref-input'));
+    for (const s of speakers) {
+      expect(screen.getByTestId(`ref-option-${s}`)).toBeInTheDocument();
+    }
+  });
+
   it('picks an existing value from the list (satisfied, no red)', async () => {
     const onCommit = vi.fn();
     render(<ReferenceField label="Speaker" value="" choices={['ryan', 'aiden']} onCommit={onCommit} testId="ref" />);
