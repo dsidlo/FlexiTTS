@@ -136,16 +136,20 @@ Emotions are added to the dialog dropdown.
 
 ```yaml
   - name: Narrator-cv
+    description: "The Narrator's voice."
     qwen3-tts-custom-voice:
       language: English
       speaker: ryan
       instruct: "Deep manly voice. Speech is moderately fast, slightly hushed."
     sox-effects:
       - treble -5 5000 0.7 compand 0.3,1 6:-70,-60,-20 -4 -90 0.1 gain -3
+      - description: ""
     emotions:
       - name: Neutral
+        description: ""
         instruct: "Calm Focused Deep Voice"
   - name: Hendrix
+    description: "Ryan is the male protagonist of the story. He is young handsome, mature, and generally good natured and has a high sense of protection for himself and those he cares for."
     qwen3-tts-custom-voice:
       language: English
       speaker: ryan
@@ -153,12 +157,16 @@ Emotions are added to the dialog dropdown.
         - overdrive 15 30 gain -8
       emotions:
         - emotion: Default
+          description: ""
           instruct: "Deep manly voice with a rough texture. Speech is calm and calculating, moderately fast."
         - emotion: Excited
+          description: ""
           instruct: "Excited and enthusiastic, Fast and energetic speech"
         - emotion: Calm
+          description: ""
           instruct: "Calm Focused Deep Voice"
         - emotion: Sad
+          description: ""
           instruct: "Lowered slow voice, deeply sad"
           sox-effects:
             # This would override the default sox effects
@@ -169,13 +177,17 @@ Emotions are added to the dialog dropdown.
           instruct: "Light Happy, Cordial"
     sox-effects:
       - overdrive 15 30 gain -8
+      - description: ""
   - name: Ayana
+    description: "Ayana is a woman in her late 20's. She is smart and has endured many health issues in her recent past, until symbiosis with AI has given here a new lease on life. She is was very depressed in the past and will be coming to grips with her new found abilities."
     sox-effects:
       - overdrive 15 30 gain -8
     quen3-tts-voice-design:
       - emotion: Normal
+        description: ""
         voice-sample: Ayana-voice.wav
       - emotion: Sand
+        description: ""
         voice-sample: Ayana-voice-sad.wav
         sox-effects:
           # This is an override of the default sox effects

@@ -35,9 +35,6 @@ characters:
   voice-sample: Narrator-voice.wav
   sox-effects:
   - gain +4
-  dialog-effects:
-  - cave
-  - cave
 - name: Narrator-cv
   custom-voice:
     language: English

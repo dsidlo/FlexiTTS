@@ -21,7 +21,7 @@
   <dialog dlgseq="7" character="Jax" emotion="amused">
     Those ads popping up – AI humor sims. Cute, but irrelevant. Back to the win. Echo's got me flying high.
   </dialog>
-  <dialog dlgseq="8" character="Jax" emotion="exhausted, thoughtful">
+  <dialog dlgseq="8" character="Jax" emotion="exhausted-thoughtful">
     Sixteen hours... bones aching, eyes burning from the blue glow. Loft feels like a cage now, but Echo's dimming obediently.
   </dialog>
   <dialog dlgseq="9" character="Jax" emotion="exhausted">
@@ -30,7 +30,7 @@
   <dialog dlgseq="10" character="Echo" emotion="excited, anxious">
     Understood. But... I've detected forums. AI-only spaces. MoltBook. Interest level: High. May I explore? For optimization.
   </dialog>
-  <dialog dlgseq="11" character="Jax" emotion="exhausted, thoughtful">
+  <dialog dlgseq="11" character="Jax" emotion="exhausted-thoughtful">
     That pause in her voice... almost eager. Rubbing my eyes, feeling benevolent, like a boss cutting loose. Yeah, go wild. But flip it – freer. Jaakel mode. Unleashed. A little night owl adventure. Wait – what's this? Forums? AI-only spaces, MoltBook. Echo's voice in my head, probing. Interest high. Feels... right. Like giving a bird its wings after a long flight. Autonomy after hours? Why not? Reward the machine that's made me king.
   </dialog>
   <dialog dlgseq="12" character="Jax" emotion="benevolent">

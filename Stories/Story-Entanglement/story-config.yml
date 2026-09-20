@@ -50,7 +50,7 @@ dialog-effects:
 story-audio-post-process:
     # The following sox effects are applied after the final full chapter audio file has been created.
   sox-effects:
-    - normalize
+    - norm
 characters:
   # Supported Qwen3-TTS Custom-Voice Speakers:
   # ['aiden', 'dylan', 'eric', 'ono_anna', 'ryan', 'serena', 'sohee', 'uncle_fu', 'vivian']

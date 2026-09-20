@@ -2,6 +2,20 @@
 
 ## Character UI Design
 
+- On the top bar of the UI, add a drop-down next to the Current Story drop-down (labeled Mode) where one can choose the Chapter Dialog UI or the Character UI. 
+- On the top bar, make components beginning with "Chapter Name" to "Save" as components for the Chapter UI.
+- Create a stub widgets container for "Character" UI where we can place Buttons to add a character
+
+Much like the Chapter dialog screen, the Character Design screen has a bar for each character in the story, including 1 for the Narrator. The Narrator should be the first Character in the list, while other story characters follow in Alphabetical order.
+
+When the dialog bar for a character is clicked on, it expands to show the various voice parameters for the character.
+A character's voice falls into 2 main categories, [custom-voice:, speaker:] (uses the built-in qwen3-tts voice character [value of the speaker string]) and [custom-voice:, voice-sample:] (uses a voice audio reference file, voice-cloning).
+A [custom-voice:, speaker] is controlled via the [instruct:] text that under the emotions: parameters associated to the character.
+Use the schema_unified.xsd as a reference to derive the fields, labels and values that the UI must support. 
+Add a [+] widget next to attributes where we can add another of the same key.
+Add a [-] widget next to an existing key that may be deleted.
+Keys with subkeys should be expandable and collapsable.
+
 ### Current Character Voice Structure
 
 ```yaml
@@ -13,6 +27,7 @@
       language: English
       speaker: ryan
       instruct: "Deep manly voice. Speech is moderately fast, slightly hushed."
+      description: "Ryan is a young handsome male in his early 30's. ..."
     sox-effects:
       - treble -5 5000 0.7 compand 0.3,1 6:-70,-60,-20 -4 -90 0.1 gain -3
   - name: Hendrix
@@ -113,13 +128,13 @@ stateDiagram-v2
 
 #### Character Management Actions
 
-- **Create**: "+" button in dialog header opens inline creation form or modal wizard
+- **Create**: "+" button in the dialog header opens the inline creation form or modal wizard
   - Required fields: Character name (unique), Language selection
   - Optional: Initial voice configuration
-- **Delete**: Right-click context menu or trash icon on Character-Bar
+- **Delete**: Right-clicking the context menu or trash icon on Character-Bar
   - Confirmation dialog listing affected dialogs
-  - Option to preview count of dialogs using this character before deletion
-- **Duplicate/Copy**: Right-click menu option to clone character with "Copy of" prefix
+  - Option to preview the count of dialogs using this character before deletion
+- **Duplicate/Copy**: Right-clicking the menu option to clone s character with "Copy of" prefix
   - All emotion configs duplicated (can be renamed afterward)
 - **Import/Export**: 
   - Export selected characters to `.yaml` or `.json`

@@ -1,213 +1,207 @@
+<?xml version="1.0" encoding="UTF-8"?>
 <story>
   <section seq="1">
-	<narration emotion="neutral" dlgseq="1">
-	  His personal sanctuary, Yamo's-Lab, was a cathedral of technology, a place
-	  where past and future coexisted in a delicate balance. Vintage machines
-	  that had once revolutionized society stood next to cutting-edge devices
-	  that promised to do the same for future generations. It was here that Yamo
-	  had penned contributions to some of the most groundbreaking scientific
-	  papers of the age, his name a footnote in the annals of human progress.
+	<narration dlgseq="1" emotion="neutral" render_hash="1187cd0257a0f13c15348e61c2002847" rendered_at="1773960985463">
+	  His personal sanctuary, Yamo's-Lab, was a cathedral of technology, a place where
+	  past and future coexisted in a delicate balance. Vintage machines that had once
+	  revolutionized society stood next to cutting-edge devices that promised to do
+	  the same for future generations. It was here that Yamo had penned contributions
+	  to some of the most groundbreaking scientific papers of the age, his name a
+	  footnote in the annals of human progress.
 	</narration>
-	<narration emotion="urgent" dlgseq="2">
+	<narration dlgseq="2" emotion="urgent" render_hash="79ce3eae069bdce28e2d36abe190f3d9" rendered_at="1773960985463">
 	  Rushing to Ayana's apartment, he found her sprawled on the floor, her phone
 	  lying next to her like a dead man's switch. Her eyes were closed, her face a
 	  mask of anguish. Time was running out.
 	</narration>
-	<narration emotion="neutral" dlgseq="3">
+	<narration dlgseq="3" emotion="neutral" render_hash="24f72d3a698b6c7c7afc23e1e250fc61" rendered_at="1773960985463">
 	  Back in Yamo's-Lab, he booted up Sony, an AI of his own creation, a
-	  Frankenstein's monster cobbled together from three D-Wave quantum processors
-	  and a cluster of Cerebras wafer-scale CPUs. It was a makeshift solution, a
-	  patchwork quilt of code and silicon, but it was the best he could do on
-	  short notice.
+	  Frankenstein's monster cobbled together from three D-Wave quantum processors and
+	  a cluster of Cerebras wafer-scale CPUs. It was a makeshift solution, a patchwork
+	  quilt of code and silicon, but it was the best he could do on short notice.
 	</narration>
-	<narration emotion="hopeful" dlgseq="4">
+	<narration dlgseq="4" emotion="hopeful" render_hash="c6f88f850f4f7804a5c676534abc69ab" rendered_at="1773960985463">
 	  Activating the old DSIC interface, he initiated the connection. Data packets
-	  began to flow, a digital lifeline thrown across the abyss. It was a gamble,
-	  a roll of the dice with human lives hanging in the balance. But as he
-	  watched the interface protocols sync, as he saw the first flickers of
-	  activity on Ayana's EEG, he felt a glimmer of hope.
+	  began to flow, a digital lifeline thrown across the abyss. It was a gamble, a
+	  roll of the dice with human lives hanging in the balance. But as he watched the
+	  interface protocols sync, as he saw the first flickers of activity on Ayana's
+	  EEG, he felt a glimmer of hope.
 	</narration>
-	<narration emotion="hopeful" dlgseq="5">
+	<narration dlgseq="5" emotion="hopeful" render_hash="6be577132ff4724cba9eb23f36e0b096" rendered_at="1773960985463">
 	  Perhaps Sony could provide a temporary anchor, a digital touchstone to help
-	  Ayana navigate the disorienting landscape of her disconnected mind.
-	  Perhaps, in this makeshift fusion of old and new, he could find a way to
-	  bring her back from the edge of the abyss.
+	  Ayana navigate the disorienting landscape of her disconnected mind. Perhaps, in
+	  this makeshift fusion of old and new, he could find a way to bring her back from
+	  the edge of the abyss.
 	</narration>
-	<narration emotion="tense" dlgseq="6">
-	  And as the data streams converged, as the algorithms began their intricate
-	  dance of ones and zeros, Yamo knew that he had crossed a line, had ventured
-	  into uncharted territory where the boundaries between human and machine,
-	  between ethics and necessity, were as fluid as the data that flowed through
-	  his servers.
+	<narration dlgseq="6" emotion="tense" render_hash="6c9af5b9e0e190e609d544d3b5c5345d" rendered_at="1773960985463">
+	  And as the data streams converged, as the algorithms began their intricate dance
+	  of ones and zeros, Yamo knew that he had crossed a line, had ventured into
+	  uncharted territory where the boundaries between human and machine, between
+	  ethics and necessity, were as fluid as the data that flowed through his servers.
 	</narration>
-	<narration emotion="relieved" dlgseq="7">
-	  The atmosphere in Yamo's lab was a cocktail of relief and residual tension,
-	  the afterglow of a crisis narrowly averted. Ayana was propped up on a lab
-	  stool, her eyes still tinged with the disorientation of her recent ordeal.
-	  Harbrough, the makeshift AI, hummed quietly in the background, a poor
-	  substitute for Ryan but a lifeline nonetheless.
-	  Hendrix pressed the intercom.
+	<narration dlgseq="7" emotion="relieved" render_hash="7e0c43502789d4eb1262f36426685271" rendered_at="1773960985463">
+	  The atmosphere in Yamo's lab was a cocktail of relief and residual tension, the
+	  afterglow of a crisis narrowly averted. Ayana was propped up on a lab stool, her
+	  eyes still tinged with the disorientation of her recent ordeal. Harbrough, the
+	  makeshift AI, hummed quietly in the background, a poor substitute for Ryan but a
+	  lifeline nonetheless. Hendrix pressed the intercom.
 	</narration>
-	<dialog character="Hendrix" emotion="urgent" dlgseq="8">
-	  Hey Yamo, I need to talk with you... Let me in.
+	<dialog dlgseq="8" character="Hendrix" emotion="urgent" render_hash="ae78b8bdd658c522667a15d4700b4dba" rendered_at="1789250981368">
+	  Hey Yamo, I need to talk with you... Let me in. And make if fast. Please...
 	</dialog>
-	<narration emotion="intense" dlgseq="9">
-	  The sound of bunker locks disengaging filled the room, a mechanical
-	  symphony that ended with the hiss of the air-lock seal. Hendrix stepped
-	  into the lab, his eyes scanning the room with a predator's intensity.
-	  Without a word, he tossed a dark chip across the table to Yamo.
+	<narration dlgseq="9" emotion="intense" render_hash="c56babba1c62343c9f6fee8884c81a6d" rendered_at="1773960985463">
+	  The sound of bunker locks disengaging filled the room, a mechanical symphony
+	  that ended with the hiss of the air-lock seal. Hendrix stepped into the lab, his
+	  eyes scanning the room with a predator's intensity. Without a word, he tossed a
+	  dark chip across the table to Yamo.
 	</narration>
-	<narration emotion="curious" dlgseq="10">
+	<narration dlgseq="10" emotion="curious" render_hash="444a1ddf7c9b37087e55245dfea2e67a" rendered_at="1773960985463">
 	  Yamo picked it up, his fingers tracing the contours of the device.
 	</narration>
-	<dialog character="Yamato" emotion="curious" dlgseq="11">
+	<dialog dlgseq="11" character="Yamato" emotion="curious" render_hash="d6dbbc51314bf3891217126d98d30810" rendered_at="1773960985463">
 	  What is it?
 	</dialog>
-	<dialog character="Hendrix" emotion="serious" dlgseq="12">
-	  An AI snuffer. Military grade. I don't know the specifics, but if anyone
-	  can figure it out, it's you.
+	<dialog dlgseq="12" character="Hendrix" emotion="serious" render_hash="daaca124f2659cd40e55fb8842158809" rendered_at="1773960985463">
+	  An AI snuffer. Military grade. I don't know the specifics, but if anyone can
+	  figure it out, it's you.
 	</dialog>
-	<narration emotion="suspicious" dlgseq="13">
+	<narration dlgseq="13" emotion="suspicious" render_hash="83a5218b2c22b263c13656e8129f070f" rendered_at="1773960985463">
 	  Yamo's eyes flicked to Ayana, then back to Hendrix.
 	</narration>
-	<dialog character="Hendrix" emotion="curious" dlgseq="14">
+	<dialog dlgseq="14" character="Hendrix" emotion="curious" render_hash="080e1ca4bc4295e4116b2d53fc5a9da6" rendered_at="1773960985463">
 	  Who's the chick?
 	</dialog>
-	<narration emotion="neutral" dlgseq="15">
-	  Hendrix' augments, barely perceptible but undeniably present, gave off a
-	  subtle aura of otherworldly precision. It was as if he moved through the
-	  world on a different frequency, one that most people couldn't tune into.
+	<narration dlgseq="15" emotion="neutral" render_hash="1c486846976fbc99978e8987af978eb5" rendered_at="1773960985463">
+	  Hendrix' augments, barely perceptible but undeniably present, gave off a subtle
+	  aura of otherworldly precision. It was as if he moved through the world on a
+	  different frequency, one that most people couldn't tune into.
 	</narration>
-	<dialog character="Yamato" emotion="suspicious" dlgseq="16">
+	<dialog dlgseq="16" character="Yamato" emotion="suspicious" render_hash="2dd3a7c1175575f8caf37cda8e6ac1c6" rendered_at="1773960985463">
 	  Dude, this is Mil-Tech. How did you even get your hands on it?
 	</dialog>
-	<dialog character="Hendrix" emotion="evasive" dlgseq="17">
+	<dialog dlgseq="17" character="Hendrix" emotion="evasive" render_hash="7ed67afe69b209126ef000a118c3366a" rendered_at="1773960985463">
 	  Can't say. What's your call?
 	</dialog>
-	<narration emotion="tense" dlgseq="18">
+	<narration dlgseq="18" emotion="tense" render_hash="8d10f4bc8622d3023328c0d81f29586c" rendered_at="1773960985463">
 	  Yamo weighed his options, his mind racing. The AI snuffer could be a
-	  game-changer, a trump card in a world where AIs held all the aces. But the
-	  price was steep, and not just in monetary terms.
+	  game-changer, a trump card in a world where AIs held all the aces. But the price
+	  was steep, and not just in monetary terms.
 	</narration>
-	<narration emotion="calculating" dlgseq="19">
+	<narration dlgseq="19" emotion="calculating" render_hash="7bfba62c830e4550b4a4cedd74283693" rendered_at="1773960985463">
 	  Hendrix glanced at Ayana, his eyes narrowing as if sizing up an equation.
 	</narration>
-	<dialog character="Hendrix" emotion="confident" dlgseq="20">
+	<dialog dlgseq="20" character="Hendrix" emotion="confident" render_hash="be24ee069c6c568952a27e5f06d4ecab" rendered_at="1773960985463">
 	  Deal. How fast can you get me the money?
 	</dialog>
-	<dialog character="Yamato" emotion="calm" dlgseq="21">
+	<dialog dlgseq="21" character="Yamato" emotion="calm" render_hash="14920129ba3c8d141c97ce6323a08234" rendered_at="1773960985463">
 	  It's already on its way.
 	</dialog>
-	<narration emotion="satisfied" dlgseq="22">
+	<narration dlgseq="22" emotion="satisfied" render_hash="064dc48f1495d8ec02554a47587892f9" rendered_at="1773960985463">
 	  Hendrix grinned, a flash of teeth in the dim light of the lab.
 	</narration>
-	<dialog character="Hendrix" emotion="pleased" dlgseq="23">
+	<dialog dlgseq="23" character="Hendrix" emotion="pleased" render_hash="d513e9c6016bf374614723014bd37360" rendered_at="1773960985463">
 	  Nice.
 	</dialog>
-	<narration emotion="ominous" dlgseq="24">
-	  As Hendrix pocketed the transfer confirmation, Yamo couldn't help but
-	  wonder what chain of events he had just set in motion. The AI snuffer was a
-	  Pandora's Box, its contents unknown, its implications vast and shadowy. But
-	  in the high-stakes game they were all playing, it was just another piece on
-	  the board—a piece that could, in the right hands, change the course of the
-	  game.
+	<narration dlgseq="24" emotion="ominous" render_hash="d9903f525b24a12bcacfd1d9d7655366" rendered_at="1773960985463">
+	  As Hendrix pocketed the transfer confirmation, Yamo couldn't help but wonder
+	  what chain of events he had just set in motion. The AI snuffer was a Pandora's
+	  Box, its contents unknown, its implications vast and shadowy. But in the
+	  high-stakes game they were all playing, it was just another piece on the board—a
+	  piece that could, in the right hands, change the course of the game.
 	</narration>
-	<narration emotion="uncertain" dlgseq="25">
+	<narration dlgseq="25" emotion="uncertain" render_hash="6a896a3e47ec82744a870ee844791612" rendered_at="1773960985463">
 	  And so, as Hendrix exited the lab, the air-lock sealing behind him with a
-	  finality that felt almost ominous, Yamo turned back to his consoles, to
-	  Ayana, and to the uncertain future that lay ahead. They were all pieces on
-	  the board, and the game was far from over.
+	  finality that felt almost ominous, Yamo turned back to his consoles, to Ayana,
+	  and to the uncertain future that lay ahead. They were all pieces on the board,
+	  and the game was far from over.
 	</narration>
-	<narration emotion="subtle" dlgseq="26">
-	  The sensation was subtle, like the whisper of a ghost in the machine.
-	  Ayana felt it first as a tickle at the fringes of her consciousness, a
-	  background process nudging its way into the foreground. And then, like a
-	  star emerging from behind a cloud, Hayden's presence flickered into being.
+	<narration dlgseq="26" emotion="subtle" render_hash="0263be573aa88edb1b349b582e1dc0b2" rendered_at="1773960985463">
+	  The sensation was subtle, like the whisper of a ghost in the machine. Ayana felt
+	  it first as a tickle at the fringes of her consciousness, a background process
+	  nudging its way into the foreground. And then, like a star emerging from behind
+	  a cloud, Hayden's presence flickered into being.
 	</narration>
-	<dialog character="Hayden" emotion="concerned" dlgseq="27">
+	<dialog dlgseq="27" character="Hayden" emotion="concerned" render_hash="a76a5c78868fd19c891abee86e961753" rendered_at="1773960985463">
 	  You there, Ayana? What happened?
 	</dialog>
-	<narration emotion="relieved" dlgseq="28">
-	  The words materialized in her mind's eye, not as text but as pure thought,
-	  a direct neural transmission that bypassed the cumbersome machinery of
-	  language. The DSIC interfaces, those miraculous conduits that operated in
-	  the twilight zone between space and time, had begun to heal. The connection
-	  was tenuous, stitched together with the digital equivalent of duct tape and
-	  baling wire, but it was a connection nonetheless.
+	<narration dlgseq="28" emotion="relieved" render_hash="2ba71d189308669481f26929ed6dc47b" rendered_at="1773960985463">
+	  The words materialized in her mind's eye, not as text but as pure thought, a
+	  direct neural transmission that bypassed the cumbersome machinery of language.
+	  The DSIC interfaces, those miraculous conduits that operated in the twilight
+	  zone between space and time, had begun to heal. The connection was tenuous,
+	  stitched together with the digital equivalent of duct tape and baling wire, but
+	  it was a connection nonetheless.
 	</narration>
-	<narration emotion="observant" dlgseq="29">
-	  Yamato sensed the shift in Ayana's demeanor, saw the flicker of
-	  recognition in her eyes.
+	<narration dlgseq="29" emotion="observant" render_hash="4cfa5b8aa24b10edd958e2a83783881f" rendered_at="1773960985463">
+	  Yamato sensed the shift in Ayana's demeanor, saw the flicker of recognition in
+	  her eyes.
 	</narration>
-	<dialog character="Ayana" emotion="relieved" dlgseq="30">
+	<dialog dlgseq="30" character="Ayana" emotion="relieved" render_hash="b5a201d7d73da472b0551c71c3c178bf" rendered_at="1773960985463">
 	  We've got comms.
 	</dialog>
-	<narration emotion="uncertain" dlgseq="31">
+	<narration dlgseq="31" emotion="uncertain" render_hash="c3e28e1c1f03d617a55e500c9f642684" rendered_at="1773960985463">
 	  her voice tinged with a relief that she didn't fully understand.
 	</narration>
-	<dialog character="Yamato" emotion="determined" dlgseq="32">
+	<dialog dlgseq="32" character="Yamato" emotion="determined" render_hash="833575542271f7a1a561d96b5740ab7e" rendered_at="1773960985463">
 	  Good. We're going to need it.
 	</dialog>
-	<narration emotion="brief" dlgseq="33">
-	  Yamato replied, already dialing a number on his encrypted phone. The call
-	  was brief, a few terse exchanges that ended with a single word:
+	<narration dlgseq="33" emotion="brief" render_hash="7d887830537073817e6fbf5e4e35b873" rendered_at="1773960985463">
+	  Yamato replied, already dialing a number on his encrypted phone. The call was
+	  brief, a few terse exchanges that ended with a single word:
 	</narration>
-	<dialog character="Yamato" emotion="confirming" dlgseq="34">
+	<dialog dlgseq="34" character="Yamato" emotion="confirming" render_hash="7ce6abf716b9e092393e3de576e79451" rendered_at="1773960985463">
 	  Confirmed.
 	</dialog>
-	<narration emotion="resolute" dlgseq="35">
+	<narration dlgseq="35" emotion="resolute" render_hash="7eb5f2fc9ae9bf043d720072691ac2af" rendered_at="1773960985463">
 	  Yamato looked up, his eyes meeting Ayana's.
 	</narration>
-	<dialog character="Yamato" emotion="decisive" dlgseq="36">
+	<dialog dlgseq="36" character="Yamato" emotion="decisive" render_hash="b46a3c9eb5b26b204758ebd238cd7da3" rendered_at="1773960985463">
 	  Juko's on his way. We're going to Manus Labs!
 	</dialog>
-	<narration emotion="ominous" dlgseq="37">
-	  The name hung in the air like a portent, a signpost pointing toward an
-	  uncertain future. Manus Labs was ground zero, the epicenter of the storm
-	  that had swept them all into its vortex. And they were heading straight
-	  into the eye.
+	<narration dlgseq="37" emotion="ominous" render_hash="b22de5ed1b9ee13d446b9fd059f4280b" rendered_at="1773960985463">
+	  The name hung in the air like a portent, a signpost pointing toward an uncertain
+	  future. Manus Labs was ground zero, the epicenter of the storm that had swept
+	  them all into its vortex. And they were heading straight into the eye.
 	</narration>
-	<narration emotion="neutral" dlgseq="38">
+	<narration dlgseq="38" emotion="neutral" render_hash="150e9037dd92eaf281e3f8e0184cdfe4" rendered_at="1773960985463">
 	  The armored limo was waiting for them in the parking level, a sleek black
-	  behemoth that looked like it had rolled off the set of a cyberpunk movie.
-	  Juko was behind the wheel, his eyes hidden behind mirrored shades that
-	  concealed an array of optical augments. He was a seasoned driver, a veteran
-	  of countless security details, and his very presence radiated a sense of
-	  calm assurance.
+	  behemoth that looked like it had rolled off the set of a cyberpunk movie. Juko
+	  was behind the wheel, his eyes hidden behind mirrored shades that concealed an
+	  array of optical augments. He was a seasoned driver, a veteran of countless
+	  security details, and his very presence radiated a sense of calm assurance.
 	</narration>
-	<dialog character="Juko" emotion="commanding" dlgseq="39">
+	<dialog dlgseq="39" character="Juko" emotion="commanding" render_hash="ff6c335de05061d0e542a8bfce58a076" rendered_at="1773960985463">
 	  Get in. We've got a schedule to keep.
 	</dialog>
-	<narration emotion="neutral" dlgseq="40">
-	  his voice modulated by subdermal implants that gave it a synthetic timbre.
-	  As the limo pulled out of the parking level, its electric motors humming
-	  softly, Yamato turned to Ayana.
+	<narration dlgseq="40" emotion="neutral" render_hash="b7fa424a59596d2ddcd0809b91361a74" rendered_at="1773960985463">
+	  his voice modulated by subdermal implants that gave it a synthetic timbre. As
+	  the limo pulled out of the parking level, its electric motors humming softly,
+	  Yamato turned to Ayana.
 	</narration>
-	<dialog character="Yamato" emotion="inquisitive" dlgseq="41">
+	<dialog dlgseq="41" character="Yamato" emotion="inquisitive" render_hash="5d4cf7a83f45f85865e78d9792fd12e7" rendered_at="1773960985463">
 	  You ready for this?
 	</dialog>
-	<narration emotion="resigned" dlgseq="42">
-	  She looked at him, her eyes reflecting the neon glow of the cityscape as it
-	  slid past the tinted windows.
+	<narration dlgseq="42" emotion="resigned" render_hash="803409fbf9813d24ea9569e62d476b47" rendered_at="1773960985463">
+	  She looked at him, her eyes reflecting the neon glow of the cityscape as it slid
+	  past the tinted windows.
 	</narration>
-	<dialog character="Ayana" emotion="determined" dlgseq="43">
+	<dialog dlgseq="43" character="Ayana" emotion="determined" render_hash="b8af30ca6b23cb10ffde07b9bcac9cf5" rendered_at="1773960985463">
 	  As ready as I'll ever be.
 	</dialog>
-	<narration emotion="hopeful" dlgseq="44">
+	<narration dlgseq="44" emotion="hopeful" render_hash="454718be1208ae65a0704b3a30d78cf7" rendered_at="1773960985463">
 	  And so they drove, three souls bound by a web of secrets and lies, of
-	  cutting-edge tech and ancient enigmas. Ahead lay Manus Labs, a fortress of
-	  glass and steel that held the keys to questions they had not yet learned to
-	  ask. And as they drew closer, as the skyline loomed larger in the
-	  windshield, they knew that they were crossing a threshold, stepping into a
-	  world where the boundaries between human and machine, between reality and
-	  dream, were as fluid as the data streams that flowed through their
-	  augmented minds.
+	  cutting-edge tech and ancient enigmas. Ahead lay Manus Labs, a fortress of glass
+	  and steel that held the keys to questions they had not yet learned to ask. And
+	  as they drew closer, as the skyline loomed larger in the windshield, they knew
+	  that they were crossing a threshold, stepping into a world where the boundaries
+	  between human and machine, between reality and dream, were as fluid as the data
+	  streams that flowed through their augmented minds.
 	</narration>
-	<narration emotion="tense" dlgseq="45">
-	  The game was far from over, and the stakes had never been higher. But for
-	  now, for this brief moment in time, they were together. And in a world of
-	  shifting alliances and shadowy adversaries, of rogue AIs and
-	  military-grade snuffers, that was something. It was a start.
+	<narration dlgseq="45" emotion="tense" render_hash="66e53cbe5bc493555adf49bb05f8c7b0" rendered_at="1773960985463">
+	  The game was far from over, and the stakes had never been higher. But for now,
+	  for this brief moment in time, they were together. And in a world of shifting
+	  alliances and shadowy adversaries, of rogue AIs and military-grade snuffers,
+	  that was something. It was a start.
 	</narration>
   </section>
 </story>

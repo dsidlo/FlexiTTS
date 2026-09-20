@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <story>
   <section seq="1">
-	<narration dlgseq="1" emotion="uneasy">
+	<narration dlgseq="1" emotion="uneasy" render_hash="bd2f039a89048b98dd7d406a43df1ad8" rendered_at="1773961008749">
 	  As the bunker locks re-engaged, sealing the deal both literally and
 	  metaphorically, Yamo couldn't shake the feeling that he had just crossed a line,
 	  stepped into a shadowy realm where the stakes were higher and the rules were
@@ -9,7 +9,7 @@
 	  sometimes the only way to survive was to dance with the devil. And so they
 	  danced.
 	</narration>
-	<narration dlgseq="2" emotion="atmospheric">
+	<narration dlgseq="2" emotion="atmospheric" render_hash="2730a88f1b3035efcdab26c2de29db02" rendered_at="1773961008749">
 	  The limo glided through the neon tapestry of the city, its electric hum drowned
 	  out by the cacophony of urban life. They merged onto the highway, the skyline
 	  receding in the rearview mirror as they sped toward the enigmatic fortress of
@@ -17,34 +17,34 @@
 	  mercury vapor lights, relics from a bygone era that cast long, distorted shadows
 	  on the asphalt.
 	</narration>
-	<dialog dlgseq="3" character="Juko" emotion="professional">
+	<dialog dlgseq="3" character="Juko" emotion="professional" render_hash="367d329400d03ad94ecaad128c28823a" rendered_at="1773961008749">
 	  Clear. You can exit the vehicle.
 	</dialog>
   </section>
   <section seq="2">
-	<narration dlgseq="1" emotion="tense">
+	<narration dlgseq="1" emotion="tense" render_hash="52acbe655c98192fafe86e6d5b81dbfc" rendered_at="1773961008749">
 	  No sooner had they stepped onto the lot than the air itself seemed to ripple, to
 	  fracture like a broken mirror. Six figures materialized out of the distortion,
 	  their movements so fast they seemed to rez in from hyper-motion. Yakuza
 	  assassins, augmented to the point of being post-human, surrounded the group in a
 	  deadly semicircle.
 	</narration>
-	<dialog dlgseq="2" character="Yakuza-1" emotion="sneering">
+	<dialog dlgseq="2" character="Yakuza-1" emotion="sneering" render_hash="0a095722433861c05b2e29f1e19ed86f" rendered_at="1773961008749">
 	  Payment delivered. But we weren't told to stand down. Someone's not happy with
 	  you.
 	</dialog>
-	<dialog dlgseq="3" character="Yakuza-2" emotion="menacing">
+	<dialog dlgseq="3" character="Yakuza-2" emotion="menacing" render_hash="c1a5e917e774ba2c46564eeb48bfa653" rendered_at="1773961008749">
 	  That's unfortunate, because we're about to have some collateral damage.
 	</dialog>
   </section>
   <section seq="3">
-	<narration dlgseq="1" emotion="violent">
+	<narration dlgseq="1" emotion="violent" render_hash="28ab73e2bcc89db6a37d12ef995d0b56" rendered_at="1773961008749">
 	  Almost simultaneously, Juko's augments activated. Two glowing threads of
 	  mono-molecular wire flashed from his fingertips, slicing through the air—and
 	  through two more assassins—with surgical precision. They fell, their bodies
 	  partitioned into grotesque sculptures of flesh and bone.
 	</narration>
-	<narration dlgseq="2" emotion="feral">
+	<narration dlgseq="2" emotion="feral" render_hash="d331dcdc3b96fa0ddddbc9901f3298c9" rendered_at="1773961008749">
 	  Hendrix' mantis blades deployed in a flash of cold steel, skewering the talker
 	  even as he lunged at two others attempting to retreat. With a feral leap, he
 	  bisected one mid-air, landing in a crouch as the two halves of the man fell to
@@ -52,23 +52,23 @@
 	</narration>
   </section>
   <section seq="4">
-	<narration dlgseq="1" emotion="reflective">
+	<narration dlgseq="1" emotion="reflective" render_hash="e7a3aee1c397ae10b481ac37843bcc0c" rendered_at="1772277985038">
 	  As the dust settled, as the echoes of violence faded into the night, the group
 	  stood in a circle, their faces lit by the flickering mercury vapor lights. They
 	  were a motley crew of scientists, drivers, and augmented warriors, bound by a
 	  web of secrets and debts, of loyalties and betrayals.
 	</narration>
-	<narration dlgseq="2" emotion="resolute">
+	<narration dlgseq="2" emotion="resolute" render_hash="3c385c17f0cec51b92941e7c08288fd1" rendered_at="1772277985043">
 	  But in that moment, as they looked at each other across the circle of fallen
 	  bodies, they knew that the game had changed. The stakes had been raised, and the
 	  rules rewritten. And as they turned to face the looming edifice of Manus Labs,
 	  its glass façade reflecting the chaos that had just unfolded, they knew that
 	  they were stepping into a new chapter, a new level of the game.
 	</narration>
-	<narration dlgseq="3" emotion="determined">
+	<narration dlgseq="3" emotion="determined" render_hash="bf937ec9d87f0cd6fa62ee76c6843410" rendered_at="1772277985044">
 	  And this time, they were playing for keeps.
 	</narration>
-	<narration dlgseq="4" emotion="plot-note">
+	<narration dlgseq="4" emotion="plot-note" render_hash="b3d97c607a72ef4085feb3d926c6e7d9" rendered_at="1772277985047">
 	  This is where our protagonists enter the lab and take and erase all programs and
 	  documentation of the Entanglement Project. Key entanglement hardware is
 	  destroyed, sabotaged and hidden. So how are the links maintained once the
