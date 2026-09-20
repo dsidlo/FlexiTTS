@@ -11,6 +11,10 @@ env:
   UV_CACHE_DIR: /tmp/.uv-cache
   PIP_ROOT_USER_ACTION: ignore
 
+# Least privilege: tests read nothing; packaging writes packages + releases.
+permissions:
+  contents: read
+
 jobs:
   test-python:
     name: Scripts + Integration tests (pytest)
@@ -110,6 +114,10 @@ jobs:
   package-electron:
     name: Package with electron-builder
     needs: [test-python, test-ui]
+    # Release publishing on tag builds needs contents:write; job-level grant
+    # overrides the read-only workflow default.
+    permissions:
+      contents: write
     # Artifacts are produced for main pushes and tag pushes only.
     # Branch pushes (e.g. electro-bun) run tests without packaging churn.
     if: >-
@@ -182,5 +190,6 @@ jobs:
           path: |
             src/ui/dist-packages/*.AppImage
           if-no-files-found: error
+
 
 
