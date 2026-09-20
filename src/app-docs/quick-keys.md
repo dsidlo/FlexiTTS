@@ -24,9 +24,20 @@ be overridden in `~/.config/FlexiTTS/FlexiTTS.yml` under `FlexiTTS.shortcuts`
 
 | Key | Action |
 | --- | --- |
+| `Ctrl+N` | Start creating a new character |
+| `Delete` | Delete the selected character (asks first) |
+| `Ctrl+F` | Focus the character search box |
+| `Space` | Select the focused character; again to preview its sample |
 | `Ctrl+Z` | Undo last character-config edit |
 | `Ctrl+Shift+Z` | Redo |
 | `Esc` | Close the dialog |
+
+## Global editing
+
+| Key | Action |
+| --- | --- |
+| `Ctrl+S` | Save (chapter text or XML, depending on view) |
+| `Esc` | Deselect dialog lines |
 
 ## Editor (Edit Text)
 
