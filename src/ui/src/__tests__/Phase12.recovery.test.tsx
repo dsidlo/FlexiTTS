@@ -99,7 +99,7 @@ const makeFile = (content: string): File => {
 
 describe('Import conflict resolution (Phase 12.3)', () => {
   const makeDialog = (props: Partial<Record<string, unknown>> = {}) => (
-    <CharacterVoiceDialog storyDir="Story-Test" open onClose={vi.fn()} {...(props as never)} />
+    <CharacterVoiceDialog storyDir="Story-Test" open onClose={vi.fn()} {...(props as Record<string, never>)} />
   );
 
   beforeEach(() => {
