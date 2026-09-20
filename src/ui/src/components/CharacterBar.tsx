@@ -21,6 +21,8 @@ export interface CharacterBarProps {
   /** Defined story-level dialog-effects names (dropdown choices). */
   availableDialogEffects: string[];
   voicesDir?: string;
+  /** Phase 10.1: open the assign picker for the current dialog selection. */
+  onQuickAssign?: () => void;
   onToggleExpand: (characterId: string) => void;
   onRefresh: () => void;
   onError: (message: string) => void;
@@ -45,7 +47,7 @@ const normalizeSpeaker = (character: CharacterConfig): string => {
 
 export const CharacterBar: React.FC<CharacterBarProps> = ({
   character, storyDir, expanded, selected, availableDialogEffects,
-  onToggleExpand, onRefresh, onError, onSaved, voicesDir,
+  onToggleExpand, onRefresh, onError, onSaved, voicesDir, onQuickAssign,
 }) => {
   const [menuOpen, setMenuOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -241,6 +243,24 @@ export const CharacterBar: React.FC<CharacterBarProps> = ({
           {expanded ? '▾' : '▸'}
         </span>
         <strong style={{ flex: 1 }}>{character.name}</strong>
+        {onQuickAssign && (
+          <button
+            type="button"
+            data-testid={`quick-assign-${character.name}`}
+            aria-label={`Assign ${character.name} to selected dialog lines`}
+            title="Assign this character to selected dialog lines (Ctrl+Click lines to select)"
+            onClick={(e) => {
+              e.stopPropagation();
+              onQuickAssign();
+            }}
+            style={{
+              marginRight: 8, padding: '2px 8px', borderRadius: 4, cursor: 'pointer',
+              border: '1px solid #99c', background: '#eef4ff', fontSize: 12,
+            }}
+          >
+            ⇥ Assign
+          </button>
+        )}
         <span style={{ color: '#888', marginRight: 12 }}>{language}</span>
         <span style={{ color: '#8ab4f8' }}>{speaker}</span>
         <div style={{ position: 'relative' }} onClick={(e) => e.stopPropagation()}>

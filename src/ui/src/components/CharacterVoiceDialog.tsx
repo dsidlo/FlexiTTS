@@ -19,10 +19,12 @@ export interface CharacterVoiceDialogProps {
   onClose: () => void;
   /** Notifies the parent that story-config.yml changed (reload config). */
   onConfigChanged?: () => void;
+  /** Phase 10.1: quick-assign callback per character (opens assign picker). */
+  onQuickAssign?: (characterName: string) => void;
 }
 
 export const CharacterVoiceDialog: React.FC<CharacterVoiceDialogProps> = ({
-  storyDir, open, onClose, onConfigChanged,
+  storyDir, open, onClose, onConfigChanged, onQuickAssign,
 }) => {
   const [characters, setCharacters] = useState<CharacterConfig[]>([]);
   const [loading, setLoading] = useState(false);
@@ -524,6 +526,7 @@ export const CharacterVoiceDialog: React.FC<CharacterVoiceDialogProps> = ({
             selected={false}
             availableDialogEffects={availableDialogEffects}
             voicesDir={voicesDirPath}
+            onQuickAssign={onQuickAssign ? () => onQuickAssign(character.name) : undefined}
             onToggleExpand={toggleExpand}
             onRefresh={refresh}
             onError={setError}
@@ -552,4 +555,3 @@ const filterSelectStyle: React.CSSProperties = {
   fontSize: 11,
   cursor: 'pointer',
 };
-

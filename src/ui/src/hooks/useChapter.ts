@@ -34,6 +34,14 @@ export interface UseChapterReturn {
   loadChapter: (filePath: string, loadedConfig?: StoryConfig, forceStoryDir?: string) => Promise<void>;
   handleChapterSelect: (filePath: string, loadedConfig?: StoryConfig) => Promise<void>;
   handleUpdateDialog: (dlgseq: string, sectionId: string, updatedDialog: DialogElement) => Promise<void>;
+  /**
+   * Phase 10.2: assign one character to many dialog lines in a single pass
+   * (validate + auto-save once). Returns per-target success counts.
+   */
+  bulkAssignCharacter: (
+    targets: Array<{ dlgseq: string; sectionId: string; _index?: number }>,
+    newCharacter: string,
+  ) => Promise<{ assigned: number; failed: number }>;
   getIsStaleClip: (sectionId: string, dlgseq: string) => boolean;
   /**
    * Merge freshly rendered dialog signatures (from the render pipeline) into the
@@ -41,7 +49,7 @@ export interface UseChapterReturn {
    * for another disk read. Keys are dialog ids ("SSS_DDD").
    */
   applyRenderResults: (rendered: Record<string, { hash: string; renderedAt?: number }>) => void;
-  refreshClips: (fullRefresh?: boolean, chapterOverride?: Chapter | null) => Promise<void>;
+  refreshClips: (chapterOverride?: Chapter | null) => Promise<void>;
   checkRenderState: (chapterOverride?: Chapter | null, refreshDialogHashes?: boolean) => Promise<void>;
   setCurrentChapterFile: React.Dispatch<React.SetStateAction<string>>;
   runXmlGenerationPipeline: (stem: string, attempt: number) => Promise<void>;
@@ -537,7 +545,7 @@ export const useChapter = (storyDirectory?: string): UseChapterReturn => {
       const xmlPath = updatedChapter.fileName;
       if (xmlPath && hasChanges) {
         try {
-          if (typeof window !== 'undefined' && window.api && window.api.writeFile) {
+          if (typeof window !== 'undefined' && window.api) {
             await PythonBridgeService.writeChapterFile(xmlPath, newXml);
             setLastSavedXmlValue(newXml);
             setHasUnsavedChangesValue(false);
@@ -584,6 +592,93 @@ export const useChapter = (storyDirectory?: string): UseChapterReturn => {
     setLastSavedXmlValue,
   ]);
 
+  // Phase 10.2: bulk re-assign one or more dialog lines to a character in a
+  // single pass. Calling handleUpdateDialog in a loop would clobber earlier
+  // iterations (each call closes over the same stale `chapter`), so all target
+  // dialogs are patched at once, validated together, and auto-saved once.
+  const bulkAssignCharacter = useCallback(async (
+    targets: Array<{ dlgseq: string; sectionId: string; _index?: number }>,
+    newCharacter: string,
+  ): Promise<{ assigned: number; failed: number }> => {
+    if (!chapter || targets.length === 0) return { assigned: 0, failed: 0 };
+
+    const effectiveStoryDir = storyDirectory || 'Story-Default';
+    const targetKeys = new Set(targets.map((t) => (t._index !== undefined ? `i:${t._index}` : `s:${t.sectionId || '0'}:${t.dlgseq}`)));
+    const keyFor = (d: DialogElement) => (d._index !== undefined ? `i:${d._index}` : `s:${d.sectionId || '0'}:${d.dlgseq}`);
+
+    const updatedDialogs = chapter.dialogs.map((d) => {
+      if (!targetKeys.has(keyFor(d))) return d;
+      return {
+        ...d,
+        character: newCharacter,
+        attributes: { ...d.attributes, character: newCharacter, dlgseq: d.dlgseq, section_seq: d.sectionId || '0' },
+      };
+    });
+
+    const assignedCount = targets.filter((t) => {
+      const original = chapter.dialogs.find((d) => keyFor(d) === (t._index !== undefined ? `i:${t._index}` : `s:${t.sectionId || '0'}:${t.dlgseq}`));
+      return original !== undefined;
+    }).length;
+
+    const draftChapter = { ...chapter, dialogs: updatedDialogs };
+
+    try {
+      const validationMap = await validateChapterDialogs(updatedDialogs, config, effectiveStoryDir);
+      const validatedDialogs = draftChapter.dialogs.map((dialog) => ({
+        ...dialog,
+        validationIssues: validationMap[getDialogValidationKey(dialog)] || [],
+      }));
+
+      const updatedChapter = { ...chapter, dialogs: validatedDialogs };
+      setChapter(updatedChapter);
+
+      const newXml = generateXMLFromChapter(updatedChapter);
+      setXmlContent(newXml);
+      const hasChanges = newXml !== lastSavedXmlRef.current;
+
+      const xmlPath = updatedChapter.fileName;
+      if (xmlPath && hasChanges && typeof window !== 'undefined' && window.api) {
+        try {
+          await PythonBridgeService.writeChapterFile(xmlPath, newXml);
+          setLastSavedXmlValue(newXml);
+          setHasUnsavedChangesValue(false);
+          debugLog.info('useChapter:bulkAssignCharacter', 'Auto-saved chapter XML after bulk character assignment', {
+            xmlPath,
+            assigned: targetKeys.size,
+            newCharacter,
+          });
+        } catch (writeErr) {
+          debugLog.warn('useChapter:bulkAssignCharacter', 'Failed to auto-save chapter XML after bulk assignment', {
+            xmlPath,
+            error: writeErr,
+          });
+          setHasUnsavedChangesValue(hasChanges);
+        }
+      } else if (xmlPath) {
+        setHasUnsavedChangesValue(hasChanges);
+      }
+
+      await refreshClips(updatedChapter);
+      await checkRenderState(updatedChapter, false);
+      return { assigned: assignedCount, failed: targets.length - assignedCount };
+    } catch (error) {
+      debugLog.exception('useChapter:bulkAssignCharacter', 'bulk assignment failed', error, {
+        targets: targets.length,
+        newCharacter,
+      });
+      return { assigned: 0, failed: targets.length };
+    }
+  }, [
+    chapter,
+    config,
+    storyDirectory,
+    lastSavedXmlRef,
+    refreshClips,
+    checkRenderState,
+    setHasUnsavedChangesValue,
+    setLastSavedXmlValue,
+  ]);
+
   return {
     config,
     chapter,
@@ -610,6 +705,7 @@ export const useChapter = (storyDirectory?: string): UseChapterReturn => {
     loadChapter,
     handleChapterSelect,
     handleUpdateDialog,
+    bulkAssignCharacter,
     applyRenderResults,
     getIsStaleClip,
     refreshClips,

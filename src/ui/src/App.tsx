@@ -5,6 +5,7 @@ import type { AlertHistoryItem, StoryConfig, StoryInfo } from './models/types';
 import { TopBar } from './components/TopBar';
 import { DialogBar } from './components/DialogBar';
 import { CharacterVoiceDialog } from './components/CharacterVoiceDialog';
+import { CharacterAssignPicker } from './components/CharacterAssignPicker';
 import { AlertContainer } from './components/AlertContainer';
 import { useChapter, useMarkdown, useAlerts, useTtsAlerts, type AlertType } from './hooks';
 import { alertService, alerts } from './services/alertService';
@@ -51,6 +52,7 @@ function App() {
     xmlContentRef, hasUnsavedChangesRef,
     setLastSavedXmlValue, setHasUnsavedChangesValue,
     loadChapter, handleUpdateDialog, getIsStaleClip, checkRenderState, renderState, applyRenderResults,
+    bulkAssignCharacter,
   } = useChapter(currentStory?.directory_name);
 
   // Track the latest renderState so the post-render clip refresh can merge the
@@ -73,6 +75,73 @@ function App() {
   const [showChapterMenu, setShowChapterMenu] = useState(false);
   const [menuPos, setMenuPos] = useState({ x: 0, y: 0 });
   const [showCharacterVoices, setShowCharacterVoices] = useState(false);
+
+  // Phase 10: dialog multi-selection and character assignment picker.
+  // Selected lines are identified by their stable composite key; picker is
+  // opened by Ctrl+Shift+A, context menu, or the CharacterBar quick-assign.
+  const [selectedDialogKeys, setSelectedDialogKeys] = useState<Set<string>>(new Set());
+  const [assignPickerOpen, setAssignPickerOpen] = useState(false);
+
+  const dialogKeyOf = useCallback((dlgseq: string, sectionId: string, _index?: number) =>
+    _index !== undefined ? `i:${_index}` : `s:${sectionId || '0'}:${dlgseq}`, []);
+
+  const handleToggleDialogSelect = useCallback((dlgseq: string, sectionId: string, _index: number | undefined, _additive: boolean) => {
+    const key = dialogKeyOf(dlgseq, sectionId, _index);
+    setSelectedDialogKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }, [dialogKeyOf]);
+
+  // Phase 10.1: Ctrl+Shift+A opens the assign picker for the current
+  // selection; with no selection it targets the most recently interacted
+  // line via the picker's "no selection" prompt path (picker opens with
+  // count 0 and the user can still pick a character, which shows a hint).
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.shiftKey && (e.key === 'A' || e.key === 'a')) {
+        e.preventDefault();
+        setAssignPickerOpen((open) => !open);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
+
+  // Clear stale selection keys when the chapter changes
+  useEffect(() => {
+    setSelectedDialogKeys(new Set());
+  }, [chapter?.fileName]);
+
+  const handleAssignFromPicker = useCallback(async (characterName: string) => {
+    setAssignPickerOpen(false);
+    if (selectedDialogKeys.size === 0) {
+      alerts.warning('No dialog lines selected. Ctrl+Click dialog headers to select lines for assignment.');
+      return;
+    }
+    const targets = chapter?.dialogs
+      .filter((d) => selectedDialogKeys.has(dialogKeyOf(d.dlgseq, d.sectionId || '0', d._index)))
+      .map((d) => ({ dlgseq: d.dlgseq, sectionId: d.sectionId || '0', _index: d._index })) ?? [];
+    const result = await bulkAssignCharacter(targets, characterName);
+    if (result.assigned > 0) {
+      alerts.success(`Assigned ${result.assigned} line${result.assigned === 1 ? '' : 's'} to ${characterName}.`);
+    }
+    if (result.failed > 0) {
+      alerts.error(`Failed to assign ${result.failed} line${result.failed === 1 ? '' : 's'}.`);
+    }
+    setSelectedDialogKeys(new Set());
+  }, [selectedDialogKeys, chapter, dialogKeyOf, bulkAssignCharacter]);
+
+  const handleAssignCharacterRequest = useCallback((dlgseq: string, sectionId: string, _index?: number) => {
+    // Context menu on a line: if the line is not in the selection, make it
+    // the sole target; otherwise assign the whole selection.
+    const key = dialogKeyOf(dlgseq, sectionId, _index);
+    if (!selectedDialogKeys.has(key)) {
+      setSelectedDialogKeys(new Set([key]));
+    }
+    setAssignPickerOpen(true);
+  }, [selectedDialogKeys, dialogKeyOf]);
 
   // Alert system state
   const { alerts: alertList, addAlert, removeAlert, clearAlerts } = useAlerts();
@@ -618,6 +687,16 @@ function App() {
           storyDir={currentStory?.directory_name || ''}
           open={showCharacterVoices}
           onClose={() => setShowCharacterVoices(false)}
+          onQuickAssign={(characterName) => {
+            // Phase 10.1: quick assign from the Characters tab. Requires an
+            // existing dialog selection; hints otherwise.
+            if (selectedDialogKeys.size === 0) {
+              alerts.warning('No dialog lines selected. Ctrl+Click dialog headers, then use Assign.');
+              return;
+            }
+            setAssignPickerOpen(false);
+            void handleAssignFromPicker(characterName);
+          }}
         />
       )}
 
@@ -760,6 +839,9 @@ function App() {
                   onRefreshClips={refreshClips}
                   availableCharacters={config?.characters?.map(c => c.name) || []}
                   availableEmotions={getAvailableEmotions(dialog.character)}
+                  isSelected={selectedDialogKeys.has(dialogKeyOf(dialog.dlgseq, dialog.sectionId || '0', dialog._index))}
+                  onToggleSelect={handleToggleDialogSelect}
+                  onAssignCharacter={handleAssignCharacterRequest}
                 />
               );
             })}
@@ -795,6 +877,15 @@ function App() {
       )}
 
       {/* Alert notifications container */}
+      {/* Phase 10: character assignment picker (quick/bulk assign, A/B compare) */}
+      <CharacterAssignPicker
+        open={assignPickerOpen}
+        characters={config?.characters ?? []}
+        targetCount={selectedDialogKeys.size}
+        allowCompare
+        onCancel={() => setAssignPickerOpen(false)}
+        onAssign={handleAssignFromPicker}
+      />
       <AlertContainer alerts={alertList} onDismiss={removeAlert} />
     </div>
   );

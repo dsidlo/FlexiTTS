@@ -19,13 +19,19 @@ interface DialogBarProps {
   isTimestampStale?: boolean;  // New: specifically for timestamp out of sync
   availableCharacters?: string[];
   availableEmotions?: string[]; // Emotions available for current character
+  /** Phase 10: whether this line is part of the current multi-selection. */
+  isSelected?: boolean;
+  /** Phase 10: toggle this line's membership in the multi-selection (Ctrl+Click). */
+  onToggleSelect?: (dlgseq: string, sectionId: string, _index: number | undefined, additive: boolean) => void;
+  /** Phase 10: open the character picker to assign this line (or the whole selection). */
+  onAssignCharacter?: (dlgseq: string, sectionId: string, _index: number | undefined) => void;
   onSaveRequest?: () => Promise<void>;
   onUpdateDialog: (dlgseq: string, sectionId: string, updatedDialog: DialogElement) => Promise<void>;
   onRefreshClips?: () => void;
 }
 
 export const DialogBar: React.FC<DialogBarProps> = ({
-  dialog, displayId, chapterFileName, storyDirectory, isFilteredOut, hasAudioClip, isStaleClip = false, isTimestampStale = false, availableCharacters = [], availableEmotions = [],
+  dialog, displayId, chapterFileName, storyDirectory, isFilteredOut, hasAudioClip, isStaleClip = false, isTimestampStale = false, availableCharacters = [], availableEmotions = [], isSelected = false, onToggleSelect, onAssignCharacter,
   onSaveRequest, onUpdateDialog, onRefreshClips
 }) => {
   const validationIssues = dialog.validationIssues || [];
@@ -154,6 +160,18 @@ export const DialogBar: React.FC<DialogBarProps> = ({
     setShowContextMenu(true);
     setContextMenuPos({ x: e.pageX, y: e.pageY });
   };
+
+  // Phase 10.1: Ctrl/Cmd+Click toggles this line in the multi-selection.
+  // Plain clicks keep the existing expand/collapse behavior.
+  const handleHeaderClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if ((e.ctrlKey || e.metaKey) && onToggleSelect) {
+      onToggleSelect(dialog.dlgseq, dialog.sectionId || '0', dialog._index, e.shiftKey);
+      return;
+    }
+    setIsExpanded(!isExpanded);
+  };
+
 
   const closeContextMenu = () => {
     setShowContextMenu(false);
@@ -335,11 +353,9 @@ export const DialogBar: React.FC<DialogBarProps> = ({
           fontWeight: 'bold',
           textShadow: '1px 1px 2px rgba(0,0,0,0.5)'
         }}
-        onClick={(e) => {
-          e.stopPropagation();
-          setIsExpanded(!isExpanded);
-        }}
+        onClick={handleHeaderClick}
         onContextMenu={handleContextMenu}
+        data-selected={isSelected || undefined}
       >
         <div className="dialog-character" style={{ display: 'flex', alignItems: 'center' }}>
           <span style={{ marginRight: '10px', opacity: 0.8, fontSize: '0.9em' }}>#{displayId || dialog.dlgseq}</span>
@@ -746,6 +762,21 @@ export const DialogBar: React.FC<DialogBarProps> = ({
           }}
         >
           <div style={{ padding: '5px 10px', fontWeight: 'bold', borderBottom: '1px solid #eee', color: '#333' }}>Edit Attributes</div>
+          {/* Phase 10.1/10.2: assign character via picker */}
+          {onAssignCharacter && availableCharacters.length > 0 && (
+            <div
+              className="context-menu-assign"
+              style={{ padding: '5px 15px', cursor: 'pointer', color: '#1a4d8f', fontWeight: 600 }}
+              onClick={() => {
+                closeContextMenu();
+                onAssignCharacter(dialog.dlgseq, dialog.sectionId || '0', dialog._index);
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#f0f0f0')}
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+            >
+              Assign Character…
+            </div>
+          )}
           {Object.keys(dialog.attributes)
             .filter(key => key !== 'render_hash' && key !== 'rendered_at') // internal render bookkeeping
             .map(key => (
