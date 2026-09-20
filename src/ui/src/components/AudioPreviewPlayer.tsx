@@ -62,6 +62,7 @@ export const AudioPreviewPlayer: React.FC<AudioPreviewPlayerProps> = ({
         style={buttonStyle}
         onClick={toggle}
         title={playing ? 'Stop' : 'Play'}
+        aria-label={playing ? 'Stop audio preview' : 'Play audio preview'}
       >
         {playing ? '⏹' : '▶'}
       </button>

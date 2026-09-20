@@ -119,9 +119,9 @@ export const SoXEffectBuilder: React.FC<SoXEffectBuilderProps> = ({
                 {effect}
               </span>
             )}
-            <button style={tinyButtonStyle} onClick={() => moveEffect(index, -1)} disabled={index === 0} title="Move up">↑</button>
-            <button style={tinyButtonStyle} onClick={() => moveEffect(index, 1)} disabled={index === draft.length - 1} title="Move down">↓</button>
-            <button data-testid={`sox-remove-${index}`} style={tinyButtonStyle} onClick={() => removeEffect(index)} title="Remove">✕</button>
+            <button style={tinyButtonStyle} onClick={() => moveEffect(index, -1)} disabled={index === 0} title="Move up" aria-label={`Move effect ${index + 1} up`}>↑</button>
+            <button style={tinyButtonStyle} onClick={() => moveEffect(index, 1)} disabled={index === draft.length - 1} title="Move down" aria-label={`Move effect ${index + 1} down`}>↓</button>
+            <button data-testid={`sox-remove-${index}`} style={tinyButtonStyle} onClick={() => removeEffect(index)} title="Remove" aria-label={`Remove effect ${index + 1}`}>✕</button>
           </div>
         );
       })}

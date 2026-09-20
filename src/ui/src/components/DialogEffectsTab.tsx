@@ -131,6 +131,7 @@ export const DialogEffectsTab: React.FC<DialogEffectsTabProps> = ({
           style={{ border: '1px solid #4a90d9', borderRadius: 4, color: '#8ab4f8', background: 'transparent', cursor: 'pointer', padding: '4px 10px', fontSize: 12 }}
           onClick={() => void addEffect()}
           disabled={!newName.trim()}
+          aria-label="Add dialog effect"
         >
           Add
         </button>
@@ -166,8 +167,8 @@ export const DialogEffectsTab: React.FC<DialogEffectsTabProps> = ({
                   }}
                   style={{ background: '#242424', color: '#ddd', border: '1px solid #444', borderRadius: 4, padding: '4px 8px', fontSize: 12, width: 140 }}
                 />
-                <button style={smallButtonStyle} onClick={() => { void renameEffect(eff.name, renameValue.trim()); setRenamingEffect(null); }} title="Confirm">✓</button>
-                <button style={smallButtonStyle} onClick={() => { setRenamingEffect(null); setRenameValue(''); }} title="Cancel">✕</button>
+                <button style={smallButtonStyle} onClick={() => { void renameEffect(eff.name, renameValue.trim()); setRenamingEffect(null); }} title="Confirm" aria-label={`Confirm rename of ${eff.name}`}>✓</button>
+                <button style={smallButtonStyle} onClick={() => { setRenamingEffect(null); setRenameValue(''); }} title="Cancel" aria-label={`Cancel rename of ${eff.name}`}>✕</button>
               </div>
             ) : (
               <button

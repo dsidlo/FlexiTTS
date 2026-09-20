@@ -51,6 +51,7 @@ export const PostProcessTab: React.FC<PostProcessTabProps> = ({
         style={{ marginTop: 8, border: '1px solid #4a90d9', borderRadius: 4, color: '#8ab4f8', background: 'transparent', cursor: 'pointer', padding: '4px 12px', fontSize: 12 }}
         onClick={() => void save(effects)}
         disabled={saving || !dirty}
+        aria-label="Save post-process chain"
       >
         {saving ? 'Saving…' : 'Save Post-Process Chain'}
       </button>

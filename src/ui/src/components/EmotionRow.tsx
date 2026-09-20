@@ -101,8 +101,8 @@ export const EmotionRow: React.FC<EmotionRowProps> = ({
           placeholder="Instruct text…"
           aria-label="Emotion instruct"
         />
-        <button style={smallButtonStyle} onClick={() => void save()} disabled={busy} title="Save">✓</button>
-        <button style={smallButtonStyle} onClick={() => setEditing(false)} disabled={busy} title="Cancel">✕</button>
+        <button style={smallButtonStyle} onClick={() => void save()} disabled={busy} title="Save" aria-label={`Save emotion ${emotionName}`}>✓</button>
+        <button style={smallButtonStyle} onClick={() => setEditing(false)} disabled={busy} title="Cancel" aria-label={`Cancel editing emotion ${emotionName}`}>✕</button>
       </div>
     );
   }
@@ -116,8 +116,8 @@ export const EmotionRow: React.FC<EmotionRowProps> = ({
       <span style={instructStyle} title={String(emotion.instruct ?? '')}>
         {String(emotion.instruct ?? '') || '—'}
       </span>
-      <button data-testid={`emotion-edit-${characterId}-${emotionName}`} style={smallButtonStyle} onClick={startEdit} title="Edit">✏️</button>
-      <button data-testid={`emotion-default-${characterId}-${emotionName}`} style={smallButtonStyle} onClick={() => void setDefault()} disabled={busy || isDefault} title="Set as default">⭐</button>
+      <button data-testid={`emotion-edit-${characterId}-${emotionName}`} style={smallButtonStyle} onClick={startEdit} title="Edit" aria-label={`Edit emotion ${emotionName}`}>✏️</button>
+      <button data-testid={`emotion-default-${characterId}-${emotionName}`} style={smallButtonStyle} onClick={() => void setDefault()} disabled={busy || isDefault} title="Set as default" aria-label={`Set emotion ${emotionName} as default`}>⭐</button>
       <button data-testid={`emotion-delete-${characterId}-${emotionName}`} style={smallButtonStyle} onClick={() => void remove()} disabled={busy} title="Delete">🗑</button>
     </div>
   );

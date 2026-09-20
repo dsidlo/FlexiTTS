@@ -23,6 +23,10 @@ export interface CharacterBarProps {
   voicesDir?: string;
   /** Phase 10.1: open the assign picker for the current dialog selection. */
   onQuickAssign?: () => void;
+  /** Phase 11: true while this character's voice sample preview plays. */
+  previewing?: boolean;
+  /** Phase 11: toggle keyboard selection (Select/Space/Delete target). */
+  onSelect?: (characterName: string) => void;
   onToggleExpand: (characterId: string) => void;
   onRefresh: () => void;
   onError: (message: string) => void;
@@ -47,7 +51,7 @@ const normalizeSpeaker = (character: CharacterConfig): string => {
 
 export const CharacterBar: React.FC<CharacterBarProps> = ({
   character, storyDir, expanded, selected, availableDialogEffects,
-  onToggleExpand, onRefresh, onError, onSaved, voicesDir, onQuickAssign,
+  onToggleExpand, onRefresh, onError, onSaved, voicesDir, onQuickAssign, previewing = false, onSelect,
 }) => {
   const [menuOpen, setMenuOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -62,11 +66,16 @@ export const CharacterBar: React.FC<CharacterBarProps> = ({
   }, [character]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' || e.key === ' ') {
+    if (e.key === 'Enter') {
       e.preventDefault();
       onToggleExpand(character.name);
+    } else if (e.key === ' ' && !e.shiftKey) {
+      // Phase 11: Space selects the character (preview is handled at dialog
+      // level so the same key both selects and re-previews).
+      e.preventDefault();
+      onSelect?.(character.name);
     }
-  }, [character.name, onToggleExpand]);
+  }, [character.name, onToggleExpand, onSelect]);
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -234,6 +243,9 @@ export const CharacterBar: React.FC<CharacterBarProps> = ({
       onKeyDown={handleKeyDown}
       onContextMenu={handleContextMenu}
       aria-expanded={expanded}
+      aria-selected={selected || undefined}
+      aria-label={`${character.name} character row. ${expanded ? 'Expanded' : 'Collapsed'}. Enter to ${expanded ? 'collapse' : 'expand'}, Space to select.`}
+      data-previewing={previewing || undefined}
     >
       <div
         style={{ ...rowStyle, cursor: 'pointer' }}
@@ -302,6 +314,7 @@ export const CharacterBar: React.FC<CharacterBarProps> = ({
                     onClick={() => void handleRemoveDialogEffect(de)}
                     disabled={busy}
                     title={`Unlink '${de}' from this character`}
+                    aria-label={`Unlink dialog effect ${de} from ${character.name}`}
                   >
                     ✕
                   </button>
@@ -323,6 +336,7 @@ export const CharacterBar: React.FC<CharacterBarProps> = ({
               onClick={() => void handleClearVoiceSample()}
               disabled={busy}
               title="Remove the voice-sample reference from this character"
+              aria-label={`Clear voice sample for ${character.name}`}
             >
               Clear voice-sample: {character['voice-sample']}
             </button>
@@ -395,8 +409,8 @@ export const CharacterBar: React.FC<CharacterBarProps> = ({
                   placeholder="Emotion name…"
                   style={{ background: '#242424', color: '#ddd', border: '1px solid #444', borderRadius: 4, padding: '4px 8px', fontSize: 13, width: 140 }}
                 />
-                <button style={addEmotionButtonStyle} onClick={() => void handleCreateEmotion()} title="Create">✓</button>
-                <button style={addEmotionButtonStyle} onClick={() => { setShowEmotionInput(false); setNewEmotionName(''); }} title="Cancel">✕</button>
+                <button style={addEmotionButtonStyle} onClick={() => void handleCreateEmotion()} title="Create" aria-label={`Confirm new emotion for ${character.name}`}>✓</button>
+                <button style={addEmotionButtonStyle} onClick={() => { setShowEmotionInput(false); setNewEmotionName(''); }} title="Cancel" aria-label={`Cancel new emotion for ${character.name}`}>✕</button>
               </div>
             ) : (
               <button
@@ -404,6 +418,7 @@ export const CharacterBar: React.FC<CharacterBarProps> = ({
                 style={addEmotionButtonStyle}
                 onClick={() => void handleAddEmotion()}
                 disabled={busy}
+                aria-label={`Add emotion to ${character.name}`}
               >
                 ＋ Add Emotion
               </button>

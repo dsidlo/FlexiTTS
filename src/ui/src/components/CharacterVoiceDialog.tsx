@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, {useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import type { CharacterConfig } from '../models/types';
 import { PythonBridgeService } from '../services/pythonBridge';
 import { CharacterBar } from './CharacterBar';
@@ -30,6 +30,11 @@ export const CharacterVoiceDialog: React.FC<CharacterVoiceDialogProps> = ({
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
+  // Phase 11: selected character (keyboard-driven) and preview audio
+  const [selectedCharacterName, setSelectedCharacterName] = useState<string | null>(null);
+  const [previewingCharacter, setPreviewingCharacter] = useState<string | null>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const previewAudioRef = useRef<HTMLAudioElement | null>(null);
   const [filterLanguage, setFilterLanguage] = useState('');
   const [filterVoiceType, setFilterVoiceType] = useState('');
   const [filterMinEmotions, setFilterMinEmotions] = useState(0);
@@ -185,6 +190,90 @@ export const CharacterVoiceDialog: React.FC<CharacterVoiceDialogProps> = ({
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [open, handleUndo, handleRedo]);
+
+  // Phase 11: Ctrl+N (new character), Delete (delete selected), Ctrl+F
+  // (focus search), Space (preview selected character's voice sample).
+  const handleDeleteSelected = useCallback(async () => {
+    if (!selectedCharacterName || !storyDir) return;
+    if (!window.api?.showConfirmDialog) return;
+    const res = await window.api.showConfirmDialog(
+      'Delete Character',
+      `Delete character '${selectedCharacterName}'?`,
+      'This removes its voice configuration from story-config.yml.'
+    );
+    if (res !== 1) return;
+    try {
+      await PythonBridgeService.deleteCharacter(storyDir, selectedCharacterName);
+      setSelectedCharacterName(null);
+      alerts.success(`Deleted character '${selectedCharacterName}'`);
+      await refresh();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }, [selectedCharacterName, storyDir, refresh]);
+
+  const stopPreview = useCallback(() => {
+    if (previewAudioRef.current) {
+      previewAudioRef.current.pause();
+      previewAudioRef.current.currentTime = 0;
+      previewAudioRef.current = null;
+    }
+    setPreviewingCharacter(null);
+  }, []);
+
+  const previewSelectedCharacter = useCallback(async () => {
+    const character = characters.find((c) => c.name === selectedCharacterName);
+    const sample = character?.['voice-sample'] as string | undefined;
+    if (!sample || typeof window === 'undefined' || !window.api?.readAudioFile || !voicesDirPath) {
+      return;
+    }
+    stopPreview();
+    setPreviewingCharacter(selectedCharacterName ?? null);
+    try {
+      const dataUrl = await window.api.readAudioFile(`${voicesDirPath}/${sample}`);
+      const audio = new Audio(dataUrl);
+      previewAudioRef.current = audio;
+      audio.onended = () => setPreviewingCharacter(null);
+      await audio.play();
+    } catch {
+      setPreviewingCharacter(null);
+    }
+  }, [characters, selectedCharacterName, voicesDirPath, stopPreview]);
+
+  useEffect(() => {
+    if (!open || activeTab !== 'characters') return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.ctrlKey && !e.shiftKey && !e.altKey && (e.key === 'n' || e.key === 'N')) {
+        e.preventDefault();
+        setShowNewCharInput(true);
+      } else if (e.key === 'Delete' && selectedCharacterName && !showNewCharInput) {
+        // Only when not typing in an input
+        const el = document.activeElement as HTMLElement | null;
+        if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return;
+        e.preventDefault();
+        void handleDeleteSelected();
+      } else if (e.ctrlKey && (e.key === 'f' || e.key === 'F')) {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
+      } else if (e.key === ' ' && selectedCharacterName) {
+        const el = document.activeElement as HTMLElement | null;
+        if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'BUTTON' || el.isContentEditable)) return;
+        e.preventDefault();
+        void previewSelectedCharacter();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [open, activeTab, selectedCharacterName, showNewCharInput, handleDeleteSelected, previewSelectedCharacter]);
+
+  // Clear selection/preview when the dialog closes
+  useEffect(() => {
+    if (!open) {
+      setSelectedCharacterName(null);
+      stopPreview();
+    }
+  }, [open, stopPreview]);
 
   const handleTabKeyDown = useCallback((e: React.KeyboardEvent) => {
     const order: Array<'characters' | 'dialog-effects' | 'post-process'> = ['characters', 'dialog-effects', 'post-process'];
@@ -343,12 +432,15 @@ export const CharacterVoiceDialog: React.FC<CharacterVoiceDialogProps> = ({
         color: '#ddd',
       }}
       role="dialog"
+      aria-modal="true"
       aria-label="Character voices"
     >
       <div style={{ display: 'flex', alignItems: 'center', padding: '10px 12px', borderBottom: '1px solid #333', gap: 8 }}>
         <input
+          ref={searchInputRef}
           data-testid="character-search"
           type="text"
+          aria-label="Search characters"
           placeholder="Search characters…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -454,7 +546,7 @@ export const CharacterVoiceDialog: React.FC<CharacterVoiceDialogProps> = ({
       <div style={{ padding: '4px 12px', color: '#888', fontSize: 12, borderBottom: '1px solid #333' }}>
         <span data-testid="character-count">{characters.length} characters</span>
       </div>
-      <div style={{ display: 'flex', borderBottom: '2px solid #333', }} onKeyDown={handleTabKeyDown}>
+      <div role="tablist" aria-label="Character dialog sections" style={{ display: 'flex', borderBottom: '2px solid #333', }} onKeyDown={handleTabKeyDown}>
         {([
           ['characters', '🎭 Characters'],
           ['dialog-effects', '🔊 Dialog Effects'],
@@ -523,7 +615,9 @@ export const CharacterVoiceDialog: React.FC<CharacterVoiceDialogProps> = ({
             character={character}
             storyDir={storyDir}
             expanded={expanded.has(character.name)}
-            selected={false}
+            selected={selectedCharacterName === character.name}
+            previewing={previewingCharacter === character.name}
+            onSelect={(name) => setSelectedCharacterName((cur) => (cur === name ? null : name))}
             availableDialogEffects={availableDialogEffects}
             voicesDir={voicesDirPath}
             onQuickAssign={onQuickAssign ? () => onQuickAssign(character.name) : undefined}

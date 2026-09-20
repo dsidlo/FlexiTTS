@@ -167,6 +167,7 @@ export const VoiceSampleUploader: React.FC<VoiceSampleUploaderProps> = ({
         data-testid={`sample-browse-${characterId}${emotionId ? `-${emotionId}` : ''}`}
         style={browseStyle}
         onClick={() => void browseNative()}
+        aria-label={`Browse files for ${characterId}${emotionId ? ` emotion ${emotionId}` : ''} voice sample`}
       >
         Browse Files
       </button>

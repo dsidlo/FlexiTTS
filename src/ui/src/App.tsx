@@ -79,6 +79,10 @@ function App() {
   const renderStateRef = useRef<any>(null);
   renderStateRef.current = renderState;
 
+  // Latest handleSave for Phase 11 Ctrl+S (avoids effect dependency churn)
+  const handleSaveRef = useRef<(() => void | Promise<void>) | null>(null);
+  renderStateRef.current = renderState;
+
   // Markdown state from hook
   const {
     editorMode, setEditorMode, markdownContent, setMarkdownContent,
@@ -157,6 +161,31 @@ function App() {
         } else {
           setShowHelp((v) => !v);
         }
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
+
+  // Phase 11: Ctrl+S saves (editor text or chapter XML); Escape deselects
+  // dialog lines first, then closes the topmost open dialog.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey && (e.key === 's' || e.key === 'S')) {
+        const el = document.activeElement as HTMLElement | null;
+        if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) {
+          // Let inputs handle their own Ctrl+S (e.g. markdown editor) only if
+          // the app does not. We save globally either way.
+          e.preventDefault();
+          void handleSaveRef.current?.();
+          return;
+        }
+        e.preventDefault();
+        void handleSaveRef.current?.();
+      } else if (e.key === 'Escape' && !e.ctrlKey && !e.altKey) {
+        // Only intercept Escape when nothing else has already consumed it.
+        // Dialogs close themselves; here we just clear the dialog selection.
+        setSelectedDialogKeys((prev) => (prev.size > 0 ? new Set() : prev));
       }
     };
     window.addEventListener('keydown', handler);
@@ -644,6 +673,8 @@ function App() {
     setLoading(false);
   }, [hasUnsavedChangesRef, hasUnsavedMarkdownChangesRef, currentChapterFile,
       setLoading, setCurrentStory, setConfig, setChapterList, handleChapterSelect, handleSave]);
+  // Keep the Phase 11 Ctrl+S ref pointing at the latest handleSave
+  handleSaveRef.current = handleSave;
 
   // Toggle editor handler
   const handleToggleEditor = useCallback(async () => {
