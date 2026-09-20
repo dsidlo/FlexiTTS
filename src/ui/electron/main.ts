@@ -1,5 +1,12 @@
 import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import * as path from 'path';
+
+// On Linux/GNOME, Chromium routes file dialogs through xdg-desktop-portal,
+// whose OpenFile implementation ignores defaultPath (dialogs open at
+// 'Recents'). Force the native GTK dialog, which honors defaultPath.
+if (process.platform === 'linux' && !('GTK_USE_PORTAL' in process.env)) {
+  process.env.GTK_USE_PORTAL = '0';
+}
 import { spawn, ChildProcess, exec } from 'child_process';
 import * as fs from 'fs';
 import * as jsyaml from 'js-yaml';
@@ -629,6 +636,7 @@ ipcMain.handle('show-open-dialog', async (event, options: { defaultPath?: string
       resolvedPath = path.join(projectRoot, resolvedPath);
     }
   }
+  log.info(`[show-open-dialog] defaultPath=${options.defaultPath} resolved=${resolvedPath} exists=${resolvedPath ? fs.existsSync(resolvedPath) : 'n/a'}`);
   const result = await dialog.showOpenDialog({
     defaultPath: resolvedPath,
     filters: options.filters ?? [{ name: 'Audio', extensions: ['wav', 'mp3', 'ogg'] }],
