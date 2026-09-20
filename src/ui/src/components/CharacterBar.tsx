@@ -20,6 +20,7 @@ export interface CharacterBarProps {
   selected: boolean;
   /** Defined story-level dialog-effects names (dropdown choices). */
   availableDialogEffects: string[];
+  voicesDir?: string;
   onToggleExpand: (characterId: string) => void;
   onRefresh: () => void;
   onError: (message: string) => void;
@@ -44,7 +45,7 @@ const normalizeSpeaker = (character: CharacterConfig): string => {
 
 export const CharacterBar: React.FC<CharacterBarProps> = ({
   character, storyDir, expanded, selected, availableDialogEffects,
-  onToggleExpand, onRefresh, onError, onSaved,
+  onToggleExpand, onRefresh, onError, onSaved, voicesDir,
 }) => {
   const [menuOpen, setMenuOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -334,6 +335,7 @@ export const CharacterBar: React.FC<CharacterBarProps> = ({
                 storyDir={storyDir}
                 characterId={character.name}
                 emotionId={null}
+                voicesDir={voicesDir}
                 onUploaded={onRefresh}
                 onError={onError}
               />

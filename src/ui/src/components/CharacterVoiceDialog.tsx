@@ -54,6 +54,7 @@ export const CharacterVoiceDialog: React.FC<CharacterVoiceDialogProps> = ({
   const [postProcessDirty, setPostProcessDirty] = useState(false);
   const { unresolved } = useUnresolvedReferences(storyDir, reloadKey);
   const [availableDialogEffects, setAvailableDialogEffects] = useState<string[]>([]);
+  const [voicesDirPath, setVoicesDirPath] = useState<string>('');
 
   const refresh = useCallback(async () => {
     if (!open) return;
@@ -83,6 +84,7 @@ export const CharacterVoiceDialog: React.FC<CharacterVoiceDialogProps> = ({
         ((rawConfig as unknown as Record<string, unknown>)['dialog-effects'] as Array<Record<string, unknown>> ?? []).map((e) => String(e?.name ?? '')).filter(Boolean),
       );
       setPostProcessEffects(((rawConfig as unknown as Record<string, unknown>)['story-audio-post-process'] as Record<string, unknown>)?.['sox-effects'] as string[] ?? []);
+      setVoicesDirPath(`${dir}/${((rawConfig as unknown as Record<string, unknown>)['global'] as Record<string, unknown>)?.['voices'] ?? 'story-voice-refs'}`);
       setReloadKey((k) => k + 1);
       onConfigChanged?.();
     } catch (e) {
@@ -521,6 +523,7 @@ export const CharacterVoiceDialog: React.FC<CharacterVoiceDialogProps> = ({
             expanded={expanded.has(character.name)}
             selected={false}
             availableDialogEffects={availableDialogEffects}
+            voicesDir={voicesDirPath}
             onToggleExpand={toggleExpand}
             onRefresh={refresh}
             onError={setError}

@@ -608,6 +608,16 @@ ipcMain.handle('kill-process', async (event, matchString: string) => {
   return killed;
 });
 
+ipcMain.handle('show-open-dialog', async (event, options: { defaultPath?: string; filters?: { name: string; extensions: string[] }[] }) => {
+  const result = await dialog.showOpenDialog({
+    defaultPath: options.defaultPath,
+    filters: options.filters ?? [{ name: 'Audio', extensions: ['wav', 'mp3', 'ogg'] }],
+    properties: ['openFile'],
+  });
+  if (result.canceled || result.filePaths.length === 0) return null;
+  return result.filePaths[0];
+});
+
 ipcMain.handle('read-file', async (event, filePath: string) => {
   const resourceType = filePath.endsWith('.md') ? 'markdown' : filePath.endsWith('.xml') ? 'xml' : filePath.endsWith('.wav') ? 'audio' : 'unknown';
   log.info(`[IPC][RESOURCE-ACCESS] read-file requested`, { filePath, resourceType, operation: 'read' });

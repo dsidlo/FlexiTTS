@@ -25,12 +25,13 @@ export interface VoiceSampleUploaderProps {
   characterId: string;
   emotionId?: string | null;
   maxBytes?: number;
+  voicesDir?: string;
   onUploaded: (filename: string) => void;
   onError: (message: string) => void;
 }
 
 export const VoiceSampleUploader: React.FC<VoiceSampleUploaderProps> = ({
-  storyDir, characterId, emotionId, maxBytes = DEFAULT_MAX_BYTES, onUploaded, onError,
+  storyDir, characterId, emotionId, maxBytes = DEFAULT_MAX_BYTES, voicesDir, onUploaded, onError,
 }) => {
   const [dragOver, setDragOver] = useState(false);
   const [progress, setProgress] = useState<string | null>(null);
@@ -73,6 +74,58 @@ export const VoiceSampleUploader: React.FC<VoiceSampleUploaderProps> = ({
     }
   }, [storyDir, characterId, emotionId, maxBytes, onUploaded, onError]);
 
+  const browseNative = useCallback(async () => {
+    if (window.api?.showOpenDialog) {
+      const filePath = await window.api.showOpenDialog({
+        defaultPath: voicesDir || undefined,
+        filters: [{ name: 'Audio', extensions: ['wav', 'mp3', 'ogg'] }],
+      });
+      if (!filePath) return;
+      try {
+        const dataUrl = await window.api.readAudioFile(filePath);
+        const base64Data = dataUrl.split(',')[1] ?? '';
+        const binaryStr = atob(base64Data);
+        const bytes = new Uint8Array(binaryStr.length);
+        for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+        const filename = filePath.split(/[\\/]/).pop() ?? filePath;
+        void (async () => {
+          const name = filename.toLowerCase();
+          if (!ACCEPTED_EXTENSIONS.some((ext) => name.endsWith(ext))) {
+            onError(`Unsupported format. Accepted: ${ACCEPTED_EXTENSIONS.join(', ')}`);
+            return;
+          }
+          setProgress(`Uploading ${filename}…`);
+          try {
+            let binary = '';
+            const chunk = 0x8000;
+            for (let i = 0; i < bytes.length; i += chunk) {
+              binary += String.fromCharCode.apply(null, [
+                ...bytes.subarray(i, i + chunk),
+              ] as unknown as number[]);
+            }
+            const base64 = btoa(binary);
+            const result = await PythonBridgeService.runBridgeCommand([
+              'upload-sample', storyDir, characterId,
+              emotionId ?? '-', filename, base64,
+            ]);
+            if (!result.success) {
+              throw new Error(result.error || 'Upload failed');
+            }
+            setProgress(null);
+            onUploaded(result.sample?.filename ?? filename);
+          } catch (e) {
+            setProgress(null);
+            onError((e as Error).message);
+          }
+        })();
+      } catch (e) {
+        onError((e as Error).message || 'Cannot read selected file');
+      }
+    } else {
+      inputRef.current?.click();
+    }
+  }, [voicesDir, storyDir, characterId, emotionId, maxBytes, onUploaded, onError]);
+
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setDragOver(false);
@@ -106,7 +159,7 @@ export const VoiceSampleUploader: React.FC<VoiceSampleUploaderProps> = ({
       <button
         data-testid={`sample-browse-${characterId}${emotionId ? `-${emotionId}` : ''}`}
         style={browseStyle}
-        onClick={() => inputRef.current?.click()}
+        onClick={() => void browseNative()}
       >
         Browse Files
       </button>
