@@ -272,9 +272,10 @@ linux:
 ```
 
 Notes:
-- `--publish never` in CI: artifacts land on the run, not Releases. Flip to
-  `--publish always` + `GH_TOKEN` only on tagged releases, after signing keys
-  exist.
+- Main builds use `--publish never` (artifacts land on the run). Tag builds
+  (`v*`) publish to GitHub Releases via `--publish always` + `GH_TOKEN`;
+  implemented in `.github/workflows/ci.yml` (see the artifact-pipeline commit
+  2aa3103). Unsigned builds remain the default until signing keys exist.
 - macOS/Windows targets from the recommendations doc (NSIS, DMG) are added in
   a matrix job when those runners are validated with act (see limitations).
 
@@ -346,7 +347,8 @@ Practical notes for this repo:
 - [x] `act -j test-python` passes locally (549 passed, 1 skipped in 48s;
       Qwen3-TTS clone step works; sox+ffmpeg + repo-anchored FlexiTTS config added)
 - [x] `act` full pipeline produces a `flexitts-linux` artifact containing an
-      AppImage (FlexiTTS-0.0.0.AppImage, 114MB; extracted squashfs verified:
+      AppImage (FlexiTTS-0.1.0-574c335-x86_64.AppImage, 118MB; extracted
+      squashfs verified:
       python-scripts/, Qwen3-TTS/qwen_tts, config/, ui.desktop correct)
 - [ ] GitHub-hosted run (push to `electro-bun`) shows the same three jobs green
       (pending next push; workflow triggers on push/pull_request)
