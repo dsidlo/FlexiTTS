@@ -335,27 +335,6 @@ export const TopBar: React.FC<TopBarProps> = ({
             🎭 Characters
           </button>
         )}
-        {onOpenHelp && (
-          <button
-            data-testid="open-help"
-            onClick={onOpenHelp}
-            style={{
-              marginLeft: '8px',
-              padding: '4px 10px',
-              backgroundColor: '#e0e0e0',
-              color: '#333',
-              border: '1px solid #888',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              fontSize: '0.9em',
-              fontWeight: 'bold'
-            }}
-            title="Help (Ctrl+?)"
-            aria-label="Open help"
-          >
-            ❓
-          </button>
-        )}
       </div>
 
       <div className="characters">
@@ -386,6 +365,26 @@ export const TopBar: React.FC<TopBarProps> = ({
       </div>
 
       <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px', alignItems: 'center', position: 'relative' }}>
+        {onOpenHelp && (
+          <button
+            data-testid="open-help"
+            onClick={onOpenHelp}
+            style={{
+              padding: '5px 10px',
+              backgroundColor: '#f5f5f5',
+              color: '#333',
+              border: '1px solid #888',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontSize: '1rem',
+              lineHeight: 1,
+            }}
+            title="Help (Ctrl+?)"
+            aria-label="Open help"
+          >
+            ❓
+          </button>
+        )}
         <button
           onClick={() => setShowAlertHistory((prev) => !prev)}
           style={{

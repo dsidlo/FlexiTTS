@@ -131,8 +131,6 @@ describe('HelpDialog panel mode (floating window)', () => {
     expect(screen.queryByTestId('help-overlay')).toBeNull();
     await waitFor(() => expect(screen.getByTestId('help-content-index')).toBeInTheDocument());
     // Esc does not close in panel mode (parent window owns close)
-    const onClose = vi.fn();
-    // (re-render with handler already bound; assert no crash and still open)
     expect(screen.getByTestId('help-dialog')).toBeInTheDocument();
   });
 
