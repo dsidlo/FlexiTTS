@@ -609,8 +609,28 @@ ipcMain.handle('kill-process', async (event, matchString: string) => {
 });
 
 ipcMain.handle('show-open-dialog', async (event, options: { defaultPath?: string; filters?: { name: string; extensions: string[] }[] }) => {
+  // Resolve relative defaultPath against stories-dir from global config
+  let resolvedPath = options.defaultPath;
+  if (resolvedPath && !path.isAbsolute(resolvedPath)) {
+    try {
+      const configPath = getGlobalConfigPath();
+      if (fs.existsSync(configPath)) {
+        const configContent = fs.readFileSync(configPath, 'utf-8');
+        const config = jsyaml.load(configContent) as GlobalConfig;
+        const storiesDir = config?.FlexiTTS?.['stories-dir'];
+        if (storiesDir) {
+          resolvedPath = path.join(expandTilde(storiesDir), resolvedPath);
+        }
+      }
+    } catch (err) {
+      log.warn('[show-open-dialog] Failed to resolve defaultPath: ', err);
+    }
+    if (resolvedPath && !path.isAbsolute(resolvedPath)) {
+      resolvedPath = path.join(projectRoot, resolvedPath);
+    }
+  }
   const result = await dialog.showOpenDialog({
-    defaultPath: options.defaultPath,
+    defaultPath: resolvedPath,
     filters: options.filters ?? [{ name: 'Audio', extensions: ['wav', 'mp3', 'ogg'] }],
     properties: ['openFile'],
   });
