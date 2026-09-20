@@ -1,0 +1,149 @@
+name: CI
+
+on:
+  push:
+    branches: [main, electro-bun]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  UV_CACHE_DIR: /tmp/.uv-cache
+  PIP_ROOT_USER_ACTION: ignore
+
+jobs:
+  test-python:
+    name: Scripts + Integration tests (pytest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # qwen-tts is a path dependency (pyproject.toml -> Qwen3-TTS).
+      # It is NOT part of this repo; clone it into place before uv sync.
+      - name: Checkout Qwen3-TTS (path dependency)
+        run: |
+          git clone --depth 1 https://github.com/QwenLM/Qwen3-TTS.git Qwen3-TTS
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.13"
+
+      - name: Restore uv cache
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.uv-cache
+          key: uv-${{ runner.os }}-${{ hashFiles('uv.lock') }}
+          restore-keys: uv-
+
+      - name: Install system deps (sox, ffmpeg for audio probing)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends sox ffmpeg
+
+      # Phase 7 bridge tests resolve stories via ~/.config/FlexiTTS config.
+      # CI must point it at the checked-out repo (dev machines have this).
+      - name: Write FlexiTTS config pointing at repo Stories
+        run: |
+          mkdir -p ~/.config/FlexiTTS
+          cat > ~/.config/FlexiTTS/FlexiTTS.yaml <<CFG
+          FlexiTTS:
+            stories-dir: "${{ github.workspace }}/Stories"
+            story-dir-prefix: "Story-"
+            config-backup-count: 10
+          CFG
+
+      - name: Sync python env (locked)
+        run: uv sync --locked
+
+      - name: Run pytest (scripts + integration)
+        run: |
+          cd src/scripts
+          uv run --project ../.. pytest tests/ -p no:cacheprovider -o addopts= \
+            --junitxml=test-results/pytest-junit.xml
+
+      - name: Upload python test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-test-results
+          path: src/scripts/test-results/pytest-junit.xml
+          if-no-files-found: warn
+
+  test-ui:
+    name: UI tests (vitest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/ui
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: src/ui/package-lock.json
+
+      - name: Install UI deps
+        run: npm ci
+
+      - name: Run vitest
+        run: npx vitest run --reporter=basic
+
+      - name: Typecheck electron main/preload (must stay green)
+        run: npx tsc -p tsconfig.electron.json --noEmit
+
+      - name: Build renderer bundle (vite, no tsc -b gate until 67 errors fixed)
+        run: npx vite build
+
+      - name: Upload UI test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-test-results
+          path: src/ui/test-reports/
+          if-no-files-found: warn
+
+  package-electron:
+    name: Package with electron-builder
+    needs: [test-python, test-ui]
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/ui
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout Qwen3-TTS (sidecar extraResource)
+        run: |
+          cd ../..
+          git clone --depth 1 https://github.com/QwenLM/Qwen3-TTS.git Qwen3-TTS
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: src/ui/package-lock.json
+
+      - name: Install UI deps
+        run: npm ci
+
+      - name: Build renderer (vite)
+        run: npx vite build
+
+      - name: Build electron main + preload
+        run: npm run electron:build
+
+      - name: Package Linux AppImage (electron-builder)
+        run: npx electron-builder --linux AppImage --publish never
+        env:
+          # unsigned build: keep CI deterministic; signing wired later
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: flexitts-linux
+          path: |
+            src/ui/dist-packages/*.AppImage
+          if-no-files-found: error

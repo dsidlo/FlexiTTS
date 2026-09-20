@@ -54,6 +54,10 @@ def _setup_mocks():
     sf_mock = Mock()
     sf_mock.read = Mock(return_value=(np.zeros(1000), 24000))
     sf_mock.write = Mock()
+    # probe_audio() calls sf.info(); without this stub it falls back to
+    # ffprobe, which is not guaranteed in CI containers.
+    sf_mock.info = Mock(return_value=Mock(
+        duration=0.5, samplerate=24000, channels=1, format="WAV"))
     sys.modules['soundfile'] = sf_mock
     
     # Mock qwen_tts

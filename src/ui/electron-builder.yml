@@ -1,0 +1,41 @@
+appId: com.flexitts.app
+productName: FlexiTTS
+directories:
+  output: dist-packages
+  buildResources: build-resources
+
+files:
+  - dist/**/*
+  - dist-electron/electron/**/*
+  - "!**/*.map"
+
+# Python sidecar (Phase 1 scope): scripts + config shipped as real files
+# outside asar. The full CUDA python env bundle lands here too once
+# scripts/bundle-python-cuda.sh exists (packaging doc Phase 1).
+extraResources:
+  - from: ../../src/scripts
+    to: python-scripts
+    filter:
+      - "**/*.py"
+      - "!**/__pycache__/**"
+      - "!**/tests/**"
+  - from: ../../Qwen3-TTS/qwen_tts
+    to: python-scripts/Qwen3-TTS/qwen_tts
+    filter:
+      - "**/*.py"
+  - from: ../../config
+    to: config
+    filter:
+      - "**/*"
+
+linux:
+  category: AudioVideo
+  maintainer: FlexiTTS Team
+  target:
+    - AppImage
+  desktop:
+    entry:
+      Name: FlexiTTS
+      Comment: AI-Powered Text-to-Speech for Storytelling
+      Categories: AudioVideo;Audio;
+

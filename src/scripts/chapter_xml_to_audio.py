@@ -369,13 +369,16 @@ def main():
         tts_service=args.tts_service,
     )
 
-    # Lazy TTS import: --help and config/arg validation never need torch.
-    try:
-        (create_tts_provider, _TTSFactory, TTSError, TTSConnectionError,
-         TTSGenerationError, CharacterNotSupportedError) = _load_tts_module()
-    except ImportError as e:
-        print(f"WARNING: TTS provider imports failed: {e}", file=sys.stderr)
-        print("Audio generation will fail. Ensure GPU dependencies are installed.", file=sys.stderr)
+    # Lazy TTS import: --help, --dry-run, and config/arg validation never
+    # need torch. Loading it costs ~3.4s warm (torch import chain) and
+    # blows past the 5s timeout integration tests use for dry-runs.
+    if not args.dry_run:
+        try:
+            (create_tts_provider, _TTSFactory, TTSError, TTSConnectionError,
+             TTSGenerationError, CharacterNotSupportedError) = _load_tts_module()
+        except ImportError as e:
+            print(f"WARNING: TTS provider imports failed: {e}", file=sys.stderr)
+            print("Audio generation will fail. Ensure GPU dependencies are installed.", file=sys.stderr)
 
     # Determine XML path first (needed for auto-detect)
     xml_path = Path(args.xml_file) if args.xml_file else None
