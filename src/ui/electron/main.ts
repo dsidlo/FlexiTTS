@@ -1,11 +1,15 @@
 import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import * as path from 'path';
 
-// On Linux/GNOME, Chromium routes file dialogs through xdg-desktop-portal,
-// whose OpenFile implementation ignores defaultPath (dialogs open at
-// 'Recents'). Force the native GTK dialog, which honors defaultPath.
-if (process.platform === 'linux' && !('GTK_USE_PORTAL' in process.env)) {
-  process.env.GTK_USE_PORTAL = '0';
+// On Linux/GNOME, Chromium routes file dialogs through xdg-desktop-portal.
+// The system FileChooser portal reports interface version 3, which lacks
+// defaultPath/current_folder support for OpenFile (dialogs open at
+// 'Recents'). Chromium only falls back to the native GTK dialog (which
+// honors defaultPath) when the portal is OLDER than its required version,
+// so raise the bar via --xdg-portal-required-version to force that fallback.
+// Docs: https://www.electronjs.org/docs/latest/api/dialog
+if (process.platform === 'linux' && !app.commandLine.hasSwitch('xdg-portal-required-version')) {
+  app.commandLine.appendSwitch('xdg-portal-required-version', '99');
 }
 import { spawn, ChildProcess, exec } from 'child_process';
 import * as fs from 'fs';
