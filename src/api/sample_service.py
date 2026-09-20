@@ -225,20 +225,21 @@ class SampleService:
         with open(target_path, "wb") as f:
             f.write(content)
 
-        # Update the config entry to point at the new sample
         original_text = (self._story_path(story_id) / "story-config.yml").read_text(encoding="utf-8")
         config_path = self._story_path(story_id) / "story-config.yml"
-        data, ryaml = self.character_service._load_yaml_public(config_path)
-        try:
-            owner_fresh = self._resolve_character_and_emotion(
-                story_id, character_id, emotion_id, data=data)
-            owner_fresh["voice-sample"] = target_name
-            self.character_service._commit_yaml_public(config_path, data, ryaml, original_text)
-        except Exception:
-            # Roll the stored file back out if config update fails
-            if target_path.exists():
-                target_path.unlink()
-            raise
+        from src.api.character_service import _config_lock
+        with _config_lock(config_path):
+            data, ryaml = self.character_service._load_yaml_public(config_path)
+            try:
+                owner_fresh = self._resolve_character_and_emotion(
+                    story_id, character_id, emotion_id, data=data)
+                owner_fresh["voice-sample"] = target_name
+                self.character_service._commit_yaml_public(config_path, data, ryaml, original_text)
+            except Exception:
+                # Roll the stored file back out if config update fails
+                if target_path.exists():
+                    target_path.unlink()
+                raise
 
         return {
             "filename": target_name,

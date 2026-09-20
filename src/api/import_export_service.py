@@ -277,83 +277,85 @@ class ImportService:
         }
 
         config_path = self.character_service._config_path(story_id)
-        original_text = config_path.read_text(encoding="utf-8")
-        data, ryaml = self.character_service._load_yaml_public(config_path)
-        existing = data.get("characters", [])
-        existing_names = {str(c.get("name", "")).strip().lower(): idx
-                          for idx, c in enumerate(existing) if isinstance(c, dict)}
+        from src.api.character_service import _config_lock
+        with _config_lock(config_path):
+            original_text = config_path.read_text(encoding="utf-8")
+            data, ryaml = self.character_service._load_yaml_public(config_path)
+            existing = data.get("characters", [])
+            existing_names = {str(c.get("name", "")).strip().lower(): idx
+                              for idx, c in enumerate(existing) if isinstance(c, dict)}
 
-        voices_dir = self._voices_dir(story_id)
-        voices_dir.mkdir(parents=True, exist_ok=True)
-        imported, overwritten, skipped, renamed = [], [], [], []
-        samples_copied = 0
-        config_dirty = False
+            voices_dir = self._voices_dir(story_id)
+            voices_dir.mkdir(parents=True, exist_ok=True)
+            imported, overwritten, skipped, renamed = [], [], [], []
+            samples_copied = 0
+            config_dirty = False
 
-        for character in characters:
-            if not isinstance(character, dict):
-                raise ImportError_("Import list contains a non-mapping entry",
-                                   code="IMPORT_INVALID_CHARACTER")
-            self._validate_import_character(character)
-            name = character["name"]
-            norm = name.strip().lower()
-            idx = existing_names.get(norm)
+            for character in characters:
+                if not isinstance(character, dict):
+                    raise ImportError_("Import list contains a non-mapping entry",
+                                       code="IMPORT_INVALID_CHARACTER")
+                self._validate_import_character(character)
+                name = character["name"]
+                norm = name.strip().lower()
+                idx = existing_names.get(norm)
 
-            if idx is not None:
-                if conflict == "skip":
-                    skipped.append(name)
-                    continue
-                if conflict == "keep-both":
-                    new_name = name
-                    suffix = 2
-                    while new_name.strip().lower() in existing_names:
-                        new_name = f"{name} ({suffix})"
-                        suffix += 1
-                    character = dict(character, name=new_name)
-                    renamed.append({"from": name, "to": new_name})
-                    name = new_name
-                else:  # overwrite
-                    overwritten.append(name)
+                if idx is not None:
+                    if conflict == "skip":
+                        skipped.append(name)
+                        continue
+                    if conflict == "keep-both":
+                        new_name = name
+                        suffix = 2
+                        while new_name.strip().lower() in existing_names:
+                            new_name = f"{name} ({suffix})"
+                            suffix += 1
+                        character = dict(character, name=new_name)
+                        renamed.append({"from": name, "to": new_name})
+                        name = new_name
+                    else:  # overwrite
+                        overwritten.append(name)
 
-            # Copy sample files from the bundle or inline base64
-            sample_docs = {}
-            for s in document.get("samples", []):
-                if isinstance(s, dict) and s.get("name") and s.get("data"):
-                    sample_docs[s["name"]] = s
-            inline_mode = bool(sample_docs)
+                # Copy sample files from the bundle or inline base64
+                sample_docs = {}
+                for s in document.get("samples", []):
+                    if isinstance(s, dict) and s.get("name") and s.get("data"):
+                        sample_docs[s["name"]] = s
+                inline_mode = bool(sample_docs)
 
-            for ref in self._collect_sample_refs(character):
-                sample_name = ref["sample"]
-                sample_path = Path(sample_name)
-                if sample_path.is_absolute():
-                    continue  # absolute refs are not portable; left untouched
-                target = voices_dir / Path(sample_name).name
-                if target.exists():
-                    samples_copied += 0  # already present; keep existing file
-                    continue
-                if sample_name in sample_docs:
-                    payload_b64 = sample_docs[sample_name].get("data")
-                    if payload_b64:
-                        target.write_bytes(base64.b64decode(payload_b64))
-                        samples_copied += 1
-                elif imported_samples:
-                    # ZIP bundle mode: match by original name
-                    match = bundle_samples.get(sample_name)
-                    if match and match.get("data"):
-                        target.write_bytes(base64.b64decode(match["data"]))
-                        samples_copied += 1
+                for ref in self._collect_sample_refs(character):
+                    sample_name = ref["sample"]
+                    sample_path = Path(sample_name)
+                    if sample_path.is_absolute():
+                        continue  # absolute refs are not portable; left untouched
+                    target = voices_dir / Path(sample_name).name
+                    if target.exists():
+                        samples_copied += 0  # already present; keep existing file
+                        continue
+                    if sample_name in sample_docs:
+                        payload_b64 = sample_docs[sample_name].get("data")
+                        if payload_b64:
+                            target.write_bytes(base64.b64decode(payload_b64))
+                            samples_copied += 1
+                    elif imported_samples:
+                        # ZIP bundle mode: match by original name
+                        match = bundle_samples.get(sample_name)
+                        if match and match.get("data"):
+                            target.write_bytes(base64.b64decode(match["data"]))
+                            samples_copied += 1
 
-            existing.append(character)
-            existing_names[norm if norm != norm else name.strip().lower()] = len(existing) - 1
-            existing_names[name.strip().lower()] = len(existing) - 1
-            imported.append(name)
-            config_dirty = True
+                existing.append(character)
+                existing_names[norm if norm != norm else name.strip().lower()] = len(existing) - 1
+                existing_names[name.strip().lower()] = len(existing) - 1
+                imported.append(name)
+                config_dirty = True
 
-        if config_dirty:
-            self.character_service._commit_yaml_public(
-                config_path, data, ryaml, original_text)
-        else:
-            # Still validate the untouched file to mirror prior behavior
-            pass
+            if config_dirty:
+                self.character_service._commit_yaml_public(
+                    config_path, data, ryaml, original_text)
+            else:
+                # Still validate the untouched file to mirror prior behavior
+                pass
 
         return {
             "imported": imported,
