@@ -1,5 +1,8 @@
 appId: com.flexitts.app
 productName: FlexiTTS
+# CI injects the app version via --config.extraMetadata.version=$APP_VERSION
+# (see .github/workflows/ci.yml). Local builds use package.json version.
+artifactName: "${productName}-${version}-${arch}.${ext}"
 directories:
   output: dist-packages
   buildResources: build-resources

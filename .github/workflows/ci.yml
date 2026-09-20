@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [main, electro-bun]
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
 
@@ -67,6 +68,7 @@ jobs:
         with:
           name: python-test-results
           path: src/scripts/test-results/pytest-junit.xml
+          retention-days: 30
           if-no-files-found: warn
 
   test-ui:
@@ -102,11 +104,18 @@ jobs:
         with:
           name: ui-test-results
           path: src/ui/test-reports/
+          retention-days: 30
           if-no-files-found: warn
 
   package-electron:
     name: Package with electron-builder
     needs: [test-python, test-ui]
+    # Artifacts are produced for main pushes and tag pushes only.
+    # Branch pushes (e.g. electro-bun) run tests without packaging churn.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -134,16 +143,44 @@ jobs:
       - name: Build electron main + preload
         run: npm run electron:build
 
+      # Tag builds (v*) publish to GitHub Releases; main pushes produce
+      # run artifacts only. GH_TOKEN is only referenced on tag builds.
+      # Version: tag name on v* builds, 0.1.0-<shortsha> otherwise.
+      - name: Compute version
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            echo "APP_VERSION=$GITHUB_REF_NAME" >> "$GITHUB_ENV"
+          else
+            echo "APP_VERSION=0.1.0-$(git rev-parse --short HEAD)" >> "$GITHUB_ENV"
+          fi
+
       - name: Package Linux AppImage (electron-builder)
-        run: npx electron-builder --linux AppImage --publish never
+        if: github.ref_type != 'tag'
+        run: >-
+          npx electron-builder --linux AppImage --publish never
+          --config.extraMetadata.version="$APP_VERSION"
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+      - name: Publish AppImage to GitHub Release (tag builds)
+        if: github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/v')
+        run: >-
+          npx electron-builder --linux AppImage --publish always
+          --config.extraMetadata.version="$APP_VERSION"
         env:
           # unsigned build: keep CI deterministic; signing wired later
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload artifacts
+        if: github.ref_type != 'tag'
         uses: actions/upload-artifact@v4
         with:
           name: flexitts-linux
+          retention-days: 30
           path: |
             src/ui/dist-packages/*.AppImage
           if-no-files-found: error
+
+
