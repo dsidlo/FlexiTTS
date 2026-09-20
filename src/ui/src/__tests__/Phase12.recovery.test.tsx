@@ -3,7 +3,6 @@ import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import { saveRecoveryCheckpoint, loadRecoveryCheckpoint, clearRecoveryCheckpoint, hasRecoveryData } from '../utils/sessionRecovery';
 import type { RecoveryCheckpoint } from '../utils/sessionRecovery';
 import { CharacterVoiceDialog } from '../components/CharacterVoiceDialog';
-import type { CharacterConfig } from '../models/types';
 import { PythonBridgeService } from '../services/pythonBridge';
 
 describe('sessionRecovery (Phase 12.2)', () => {
