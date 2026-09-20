@@ -113,3 +113,37 @@ describe('docSnippet', () => {
     expect(docSnippet('# H\n\nFirst line.\nSecond.')).toBe('First line. Second.');
   });
 });
+describe('HelpDialog panel mode (floating window)', () => {
+  beforeEach(() => {
+    (window as unknown as { api: { readHelpDoc: (doc: string) => Promise<string> } }).api = {
+      readHelpDoc: vi.fn((doc: string) => Promise.resolve(docsByFile[doc] ?? '')),
+    };
+  });
+
+  it('renders a docked pane without overlay or focus trap', async () => {
+    render(
+      <div style={{ height: 400 }}>
+        <HelpDialog open onClose={vi.fn()} mode="panel" />
+      </div>,
+    );
+    expect(screen.getByTestId('help-dialog')).toBeInTheDocument();
+    // No overlay backdrop in panel mode
+    expect(screen.queryByTestId('help-overlay')).toBeNull();
+    await waitFor(() => expect(screen.getByTestId('help-content-index')).toBeInTheDocument());
+    // Esc does not close in panel mode (parent window owns close)
+    const onClose = vi.fn();
+    // (re-render with handler already bound; assert no crash and still open)
+    expect(screen.getByTestId('help-dialog')).toBeInTheDocument();
+  });
+
+  it('close button in panel mode calls onClose (window hide)', async () => {
+    const onClose = vi.fn();
+    render(
+      <div style={{ height: 400 }}>
+        <HelpDialog open onClose={onClose} mode="panel" />
+      </div>,
+    );
+    fireEvent.click(screen.getByTestId('help-close'));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});

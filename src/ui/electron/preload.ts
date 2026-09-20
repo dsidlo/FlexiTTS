@@ -29,4 +29,10 @@ contextBridge.exposeInMainWorld('api', {
   checkStoryFileExists: (storyDir: string, relativePath: string) => ipcRenderer.invoke('check-story-file-exists', storyDir, relativePath),
   showOpenDialog: (options: { defaultPath?: string; filters?: { name: string; extensions: string[] }[] }) => ipcRenderer.invoke('show-open-dialog', options),
   readHelpDoc: (docName: string) => ipcRenderer.invoke('app-help-read', docName),
+  toggleHelpWindow: () => ipcRenderer.invoke('toggle-help-window'),
+  onHelpWindowState: (callback: (visible: boolean) => void) => {
+    const listener = (_event: unknown, visible: boolean) => callback(visible);
+    ipcRenderer.on('help-window-state', listener);
+    return () => ipcRenderer.removeListener('help-window-state', listener);
+  },
 });

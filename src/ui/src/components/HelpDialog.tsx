@@ -37,6 +37,12 @@ export interface HelpDialogProps {
   shortcutOverrides?: Record<string, string>;
   /** Optional initial subject to open (by doc file name). */
   initialSubject?: string;
+  /**
+   * 'overlay' renders the in-app modal (default).
+   * 'panel' renders an inline pane suitable for docking beside the app
+   * content (no fixed positioning, no focus trap, no overlay click-close).
+   */
+  mode?: 'overlay' | 'panel';
 }
 
 /** Render a minimal, safe subset of Markdown: headings, tables, code spans,
@@ -145,7 +151,8 @@ export const HelpDialog: React.FC<{
   onClose: () => void;
   shortcutOverrides?: Record<string, string>;
   initialSubject?: string;
-}> = ({ open, onClose, shortcutOverrides, initialSubject }) => {
+  mode?: 'overlay' | 'panel';
+}> = ({ open, onClose, shortcutOverrides, initialSubject, mode = 'overlay' }) => {
   const [activeDoc, setActiveDoc] = useState<string>(initialSubject ?? 'index.md');
   const [contents, setContents] = useState<Record<string, string>>({});
   const [query, setQuery] = useState('');
@@ -197,9 +204,9 @@ export const HelpDialog: React.FC<{
     return () => window.removeEventListener('keydown', handler);
   }, [open, onClose]);
 
-  // Focus trap
+  // Focus trap (overlay mode only; a docked pane shares the app's tab order)
   useEffect(() => {
-    if (!open) return;
+    if (!open || mode !== 'overlay') return;
     const handler = (e: KeyboardEvent) => {
       if (e.key !== 'Tab') return;
       const dialog = document.getElementById('help-dialog');
@@ -215,7 +222,7 @@ export const HelpDialog: React.FC<{
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [open]);
+  }, [open, mode]);
 
   // Apply configured shortcut overrides to the displayed key tables
   const applyShortcuts = useCallback((md: string): string => {
@@ -245,6 +252,84 @@ export const HelpDialog: React.FC<{
   const activeContent = contents[activeDoc];
 
   if (!open) return null;
+
+  const isOverlay = mode === 'overlay';
+
+  if (!isOverlay) {
+    // Docked pane: fills its parent (parent controls size via flexbox)
+    return (
+      <div
+        id="help-dialog"
+        role="complementary"
+        aria-label="FlexiTTS Help"
+        data-testid="help-dialog"
+        style={{
+          display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0,
+          background: '#fff', color: '#222', borderLeft: '1px solid #aaa', overflow: 'hidden',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderBottom: '1px solid #ddd', background: '#f7f7f7' }}>
+          <span style={{ fontSize: 15, fontWeight: 700 }}>❓ Help</span>
+          <input
+            type="text"
+            value={query}
+            placeholder="Search help…"
+            aria-label="Search help topics"
+            data-testid="help-search"
+            onChange={(e) => setQuery(e.target.value)}
+            style={{ flex: 1, maxWidth: 260, padding: '4px 9px', borderRadius: 5, border: '1px solid #bbb', fontSize: 12.5 }}
+          />
+          <div style={{ flex: 1 }} />
+          <button
+            type="button"
+            aria-label="Close help pane"
+            data-testid="help-close"
+            onClick={onClose}
+            style={{ background: 'transparent', border: 'none', fontSize: 18, cursor: 'pointer', lineHeight: 1 }}
+          >
+            ✕
+          </button>
+        </div>
+        <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
+          <nav
+            aria-label="Help subjects"
+            data-testid="help-subjects"
+            style={{ width: 190, borderRight: '1px solid #e2e2e2', overflowY: 'auto', background: '#fcfcfc', padding: '8px 6px' }}
+          >
+            {filteredSubjects.map((s) => (
+              <button
+                key={s.doc}
+                type="button"
+                data-testid={`help-subject-${s.doc.replace('.md', '')}`}
+                onClick={() => setActiveDoc(s.doc)}
+                style={{
+                  display: 'block', width: '100%', textAlign: 'left', padding: '7px 10px', marginBottom: 4,
+                  borderRadius: 6, border: 'none', cursor: 'pointer', background: activeDoc === s.doc ? '#e3ecff' : 'transparent',
+                  fontWeight: activeDoc === s.doc ? 700 : 500,
+                }}
+              >
+                <div style={{ fontSize: 13 }}>{s.title}</div>
+                <div style={{ fontSize: 11, color: '#777' }}>{s.summary}</div>
+              </button>
+            ))}
+          </nav>
+          <section
+            aria-label="Help details"
+            data-testid="help-details"
+            style={{ flex: 1, overflowY: 'auto', padding: '12px 18px', minWidth: 0 }}
+          >
+            {error && <div data-testid="help-error" style={{ color: '#b71c1c', padding: 12 }}>{error}</div>}
+            {!error && !activeContent && <div style={{ color: '#888', padding: 12 }}>Loading…</div>}
+            {!error && activeContent && (
+              <div data-testid={`help-content-${activeDoc.replace('.md', '')}`}>
+                {renderMarkdownToElements(applyShortcuts(activeContent))}
+              </div>
+            )}
+          </section>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div

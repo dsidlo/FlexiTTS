@@ -462,6 +462,72 @@ async function warmupTTSService() {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Floating help window (Ctrl+?)
+// A separate frameless-ish BrowserWindow that floats beside/over the main
+// window. The renderer sends 'toggle-help-window'; the main process creates
+// or focuses/closes it and notifies the renderer of visibility changes.
+// The help page is the same Vite app with ?view=help, which App.tsx turns
+// into a standalone full-window help pane.
+let helpWindow: BrowserWindow | null = null;
+
+function notifyHelpVisibility() {
+  const visible = !!(helpWindow && !helpWindow.isDestroyed());
+  const mainWin = BrowserWindow.getAllWindows().find((w) => w !== helpWindow);
+  if (mainWin && !mainWin.isDestroyed()) {
+    mainWin.webContents.send('help-window-state', visible);
+  }
+}
+
+function toggleHelpWindow() {
+  if (helpWindow && !helpWindow.isDestroyed()) {
+    if (helpWindow.isFocused()) {
+      helpWindow.close();
+    } else {
+      helpWindow.show();
+      helpWindow.focus();
+    }
+    return;
+  }
+  const mainWin = BrowserWindow.getAllWindows()[0];
+  const { x: mx = 100, y: my = 100, width: mw = 1200 } = mainWin?.getBounds() ?? {};
+  helpWindow = new BrowserWindow({
+    width: 720,
+    height: 640,
+    x: mx + Math.max(mw - 720, 0) + 12,
+    y: my,
+    minWidth: 420,
+    minHeight: 320,
+    title: 'FlexiTTS Help',
+    autoHideMenuBar: true,
+    alwaysOnTop: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+      nodeIntegration: false,
+      contextIsolation: true,
+    },
+  });
+  const isDev = !app.isPackaged;
+  if (isDev) {
+    helpWindow.loadURL('http://localhost:5173/?standalone=help');
+  } else {
+    helpWindow.loadFile(path.join(__dirname, '../dist/index.html'), { query: { view: 'help' } });
+  }
+  helpWindow.on('closed', () => {
+    helpWindow = null;
+    notifyHelpVisibility();
+  });
+  helpWindow.on('close', () => {
+    helpWindow = null;
+  });
+  notifyHelpVisibility();
+}
+
+ipcMain.handle('toggle-help-window', async () => {
+  toggleHelpWindow();
+  return !!(helpWindow && !helpWindow.isDestroyed());
+});
+
 app.whenReady().then(async () => {
   // Initialize current story from global config
   try {
@@ -508,6 +574,15 @@ app.on('activate', () => {
     createWindow();
   }
 });
+
+// Keep the floating help above the main window whenever any window is focused
+app.on('browser-window-focus', (_event, window) => {
+  if (helpWindow && !helpWindow.isDestroyed() && window !== helpWindow) {
+    helpWindow.moveTop();
+  }
+});
+
+
 
 // IPC Handlers for Python Scripts
 // SECURITY: All handlers validate paths before file operations

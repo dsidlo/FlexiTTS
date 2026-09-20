@@ -41,6 +41,23 @@ const testSafeConsole = {
 
 function App() {
   const logId = 'App';
+
+  // Standalone help view: the floating help window loads the same Vite app
+  // with ?view=help (prod) or ?standalone=help (dev) and renders only the
+  // help pane, full-window, no app chrome.
+  const isStandaloneHelp = (() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      return params.get('view') === 'help' || params.get('standalone') === 'help';
+    } catch {
+      return false;
+    }
+  })();
+
+  if (isStandaloneHelp) {
+    return <StandaloneHelp />;
+  }
+
   // Story management state - MUST be declared before hooks that use it
   const [currentStory, setCurrentStory] = useState<StoryInfo | null>(null);
 
@@ -128,13 +145,18 @@ function App() {
     return () => window.removeEventListener('keydown', handler);
   }, []);
 
-  // Ctrl+? (Ctrl+Shift+/) toggles the help dialog. On US layouts '?' needs
-  // Shift, so accept both 'Ctrl+?' and 'Ctrl+/'.
+  // Ctrl+? (Ctrl+Shift+/) toggles help. On US layouts '?' needs Shift, so
+  // accept both 'Ctrl+?' and 'Ctrl+/'. When the desktop shell exposes the
+  // floating help window, toggle that instead of the in-app overlay.
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.ctrlKey && !e.altKey && !e.metaKey && (e.key === '?' || (e.shiftKey && e.key === '/'))) {
         e.preventDefault();
-        setShowHelp((v) => !v);
+        if (typeof window !== 'undefined' && window.api?.toggleHelpWindow) {
+          void window.api.toggleHelpWindow();
+        } else {
+          setShowHelp((v) => !v);
+        }
       }
     };
     window.addEventListener('keydown', handler);
@@ -748,7 +770,10 @@ function App() {
           editorMode={editorMode}
           onToggleEditor={handleToggleEditor}
           onToggleCharacterVoices={() => setShowCharacterVoices((v) => !v)}
-          onOpenHelp={() => setShowHelp(true)}
+          onOpenHelp={() => {
+            if (window.api?.toggleHelpWindow) void window.api.toggleHelpWindow();
+            else setShowHelp(true);
+          }}
           alertHistory={alertHistory}
           onRemoveAlertHistoryItem={removeAlertHistoryItem}
           onClearAlertHistory={() => {
@@ -929,5 +954,32 @@ function App() {
     </div>
   );
 }
+
+/** Full-window help pane for the floating help window (?view=help). */
+const StandaloneHelp: React.FC = () => {
+  const [shortcuts, setShortcuts] = useState<Record<string, string> | undefined>(undefined);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const globalConfig = await PythonBridgeService.loadGlobalConfig();
+        const s = (globalConfig as { FlexiTTS?: { shortcuts?: Record<string, string> } })?.FlexiTTS?.shortcuts;
+        if (!cancelled && s && Object.keys(s).length > 0) setShortcuts(s);
+      } catch {
+        // defaults are fine
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+  // In the floating window 'close' asks main to toggle (hide) the window.
+  const handleClose = useCallback(() => {
+    void window.api?.toggleHelpWindow?.();
+  }, []);
+  return (
+    <div style={{ height: '100vh' }}>
+      <HelpDialog open onClose={handleClose} shortcutOverrides={shortcuts} mode="panel" />
+    </div>
+  );
+};
 
 export default App;
