@@ -1,5 +1,6 @@
 import React, { useCallback, useRef, useState } from 'react';
 import { PythonBridgeService } from '../services/pythonBridge';
+import { debugLog } from '../utils/debugLogger';
 
 /**
  * Phase 6.4: VoiceSampleUploader - drag-drop zone with file picker fallback
@@ -76,9 +77,15 @@ export const VoiceSampleUploader: React.FC<VoiceSampleUploaderProps> = ({
 
   const browseNative = useCallback(async () => {
     if (window.api?.showOpenDialog) {
+      debugLog.info('VoiceSampleUploader:browseNative', 'IPC showOpenDialog requested', {
+        voicesDir,
+      });
       const filePath = await window.api.showOpenDialog({
         defaultPath: voicesDir || undefined,
         filters: [{ name: 'Audio', extensions: ['wav', 'mp3', 'ogg'] }],
+      });
+      debugLog.info('VoiceSampleUploader:browseNative', 'IPC showOpenDialog returned', {
+        filePath,
       });
       if (!filePath) return;
       try {
