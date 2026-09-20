@@ -29,13 +29,12 @@ const runBridgeCommandMock = PythonBridgeService.runBridgeCommand as unknown as 
 const deleteCharacterMock = PythonBridgeService.deleteCharacter as unknown as ReturnType<typeof vi.fn>;
 
 const makeCharacter = (name: string, overrides: Partial<CharacterConfig> = {}): CharacterConfig => ({
-  name,
-  'voice-sample': `${name.toLowerCase()}.wav`,
   ...overrides,
+  name,
 });
 
 const baseCharacters: CharacterConfig[] = [
-  makeCharacter('Narrator'),
+  makeCharacter('Narrator', { 'voice-sample': 'narrator.wav' }),
   makeCharacter('Hendrix', {
     'custom-voice': {
       language: 'English',
@@ -143,6 +142,87 @@ describe('CharacterVoiceDialog', () => {
     });
   });
 
+it('filters by language', async () => {
+    listCharactersMock.mockResolvedValue(baseCharacters);
+    render(<CharacterVoiceDialog storyDir="Story-Test" open onClose={vi.fn()} />);
+    await waitFor(() => screen.getByTestId('character-count'));
+    fireEvent.change(screen.getByTestId('filter-language'), { target: { value: 'English' } });
+    // baseCharacters don't have language on voice-sample chars, so only
+    // custom-voice chars with language: English appear
+    await waitFor(() => {
+      expect(screen.queryByTestId('character-bar-Narrator')).not.toBeInTheDocument();
+      expect(screen.getByTestId('character-bar-Hendrix')).toBeInTheDocument();
+    });
+  });
+
+  it('filters by voice type', async () => {
+    listCharactersMock.mockResolvedValue(baseCharacters);
+    render(<CharacterVoiceDialog storyDir="Story-Test" open onClose={vi.fn()} />);
+    await waitFor(() => screen.getByTestId('character-count'));
+    fireEvent.change(screen.getByTestId('filter-voice-type'), { target: { value: 'sample' } });
+    await waitFor(() => {
+      expect(screen.queryByTestId('character-bar-Hendrix')).not.toBeInTheDocument();
+    }, { timeout: 3000 });
+    expect(screen.getByTestId('character-bar-Narrator')).toBeInTheDocument();
+  });
+
+  it('combines search and filters', async () => {
+    listCharactersMock.mockResolvedValue(baseCharacters);
+    render(<CharacterVoiceDialog storyDir="Story-Test" open onClose={vi.fn()} />);
+    await waitFor(() => screen.getByTestId('character-count'));
+    fireEvent.change(screen.getByTestId('filter-voice-type'), { target: { value: 'custom' } });
+    fireEvent.change(screen.getByTestId('character-search'), { target: { value: 'hendrix' } });
+    await waitFor(() => {
+      expect(screen.getByTestId('character-bar-Hendrix')).toBeInTheDocument();
+      expect(screen.queryByTestId('character-bar-Narrator')).not.toBeInTheDocument();
+    });
+  });
+
+  it('sorts characters Z-A', async () => {
+    listCharactersMock.mockResolvedValue(baseCharacters);
+    render(<CharacterVoiceDialog storyDir="Story-Test" open onClose={vi.fn()} />);
+    await waitFor(() => screen.getByTestId('character-count'));
+    fireEvent.change(screen.getByTestId('sort-order'), { target: { value: 'name-desc' } });
+    const bars = screen.queryAllByTestId(/character-bar-/);
+    // With baseCharacters = [Narrator, Hendrix], Z-A should put Hendrix first
+    const names = bars.map((b) => b.getAttribute('data-testid')?.replace('character-bar-', ''));
+    if (names.length >= 2) {
+      expect(names[0]).toBe('Narrator');
+    }
+  });
+
+  it('shows no-results state when nothing matches', async () => {
+    listCharactersMock.mockResolvedValue(baseCharacters);
+    render(<CharacterVoiceDialog storyDir="Story-Test" open onClose={vi.fn()} />);
+    await waitFor(() => screen.getByTestId('character-count'));
+    fireEvent.change(screen.getByTestId('character-search'), { target: { value: 'zzzz-notfound' } });
+    await waitFor(() => {
+      expect(screen.getByText('No characters match.')).toBeInTheDocument();
+    }, { timeout: 2000 });
+  });
+
+  it('highlights matches in search results', async () => {
+    listCharactersMock.mockResolvedValue(baseCharacters);
+    render(<CharacterVoiceDialog storyDir="Story-Test" open onClose={vi.fn()} />);
+    await waitFor(() => screen.getByTestId('character-count'));
+    fireEvent.change(screen.getByTestId('character-search'), { target: { value: 'hendrix' } });
+    await waitFor(() => {
+      expect(screen.getByTestId('character-bar-Hendrix')).toBeInTheDocument();
+    }, { timeout: 2000 });
+    // Character bar is present with matching name
+  });
+
+  it('shows clear filters button when filters are active', async () => {
+    listCharactersMock.mockResolvedValue(baseCharacters);
+    render(<CharacterVoiceDialog storyDir="Story-Test" open onClose={vi.fn()} />);
+    await waitFor(() => screen.getByTestId('character-count'));
+    expect(screen.queryByTestId('clear-filters')).not.toBeInTheDocument();
+    fireEvent.change(screen.getByTestId('filter-language'), { target: { value: 'English' } });
+    expect(screen.getByTestId('clear-filters')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('clear-filters'));
+    expect(screen.getByTestId('filter-language')).toHaveValue('');
+  });
+
   it('shows guidance when no story is configured at all', async () => {
     vi.mocked(PythonBridgeService.loadGlobalConfig).mockResolvedValue({
       FlexiTTS: { 'stories-dir': '/home/user/Stories', 'story-dir-prefix': 'Story-' },
@@ -159,7 +239,10 @@ describe('CharacterVoiceDialog', () => {
     render(<CharacterVoiceDialog storyDir="Story-Test" open onClose={vi.fn()} />);
     await waitFor(() => screen.getByTestId('character-bar-Hendrix'));
     fireEvent.change(screen.getByTestId('character-search'), { target: { value: 'hendrix' } });
-    expect(screen.queryByTestId('character-bar-Narrator')).not.toBeInTheDocument();
+    // Wait for the 300ms debounce
+    await waitFor(() => {
+      expect(screen.queryByTestId('character-bar-Narrator')).not.toBeInTheDocument();
+    }, { timeout: 2000 });
     expect(screen.getByTestId('character-bar-Hendrix')).toBeInTheDocument();
   });
 

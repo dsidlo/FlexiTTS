@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import type { CharacterConfig } from '../models/types';
 import { PythonBridgeService } from '../services/pythonBridge';
 import { CharacterBar } from './CharacterBar';
@@ -27,6 +27,11 @@ export const CharacterVoiceDialog: React.FC<CharacterVoiceDialogProps> = ({
   const [characters, setCharacters] = useState<CharacterConfig[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [filterLanguage, setFilterLanguage] = useState('');
+  const [filterVoiceType, setFilterVoiceType] = useState('');
+  const [filterMinEmotions, setFilterMinEmotions] = useState(0);
+  const [sortOrder, setSortOrder] = useState<'name-asc' | 'name-desc'>('name-asc');
   const [undoStack, setUndoStack] = useState<string[]>([]);
   const [redoStack, setRedoStack] = useState<string[]>([]);
   const [expanded, setExpanded] = useState<Set<string>>(() => {
@@ -271,9 +276,48 @@ export const CharacterVoiceDialog: React.FC<CharacterVoiceDialogProps> = ({
     }
   }, [refresh]);
 
-  const filtered = characters.filter((c) =>
-    c.name.toLowerCase().includes(search.toLowerCase()),
-  );
+  // Debounce search input (300ms)
+  useEffect(() => {
+    const handle = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(handle);
+  }, [search]);
+
+  const filtered = useMemo(() => {
+    let result = characters.filter((c) =>
+      c.name.toLowerCase().includes(debouncedSearch.toLowerCase()),
+    );
+    // Filter by language
+    if (filterLanguage) {
+      result = result.filter((c) => {
+        const cv = c['custom-voice'] ?? (c as unknown as Record<string, unknown>)['qwen3-tts-custom-voice'];
+        if (cv && typeof cv === 'object' && 'language' in cv) {
+          return String((cv as Record<string, unknown>).language || '').toLowerCase() === filterLanguage.toLowerCase();
+        }
+        return filterLanguage === '';
+      });
+    }
+    // Filter by voice type
+    if (filterVoiceType === 'custom') {
+      result = result.filter((c) => Boolean(c['custom-voice']));
+    } else if (filterVoiceType === 'sample') {
+      result = result.filter((c) => Boolean(c['voice-sample']));
+    }
+    // Filter by minimum emotion count
+    if (filterMinEmotions > 0) {
+      result = result.filter((c) => {
+        const cv = c['custom-voice'];
+        const emotions = (cv && typeof cv === 'object' && Array.isArray(cv.emotions)) ? cv.emotions.length : 0;
+        const cloned = Array.isArray(c['cloned-emotion']) ? c['cloned-emotion'].length : 0;
+        return (emotions + cloned) >= filterMinEmotions;
+      });
+    }
+    // Sort
+    result = [...result].sort((a, b) => {
+      const cmp = a.name.localeCompare(b.name);
+      return sortOrder === 'name-asc' ? cmp : -cmp;
+    });
+    return result;
+  }, [characters, debouncedSearch, filterLanguage, filterVoiceType, filterMinEmotions, sortOrder]);
 
   if (!open) return null;
 
@@ -346,6 +390,63 @@ export const CharacterVoiceDialog: React.FC<CharacterVoiceDialogProps> = ({
         <button data-testid="character-redo" style={toolbarButtonStyle} onClick={() => void handleRedo()} disabled={redoStack.length === 0} title="Redo (Ctrl+Shift+Z)">↪</button>
         <button data-testid="character-close" style={toolbarButtonStyle} onClick={onClose} title="Close">✕</button>
       </div>
+      <div style={{ display: 'flex', gap: 6, padding: '4px 12px', borderBottom: '1px solid #333', alignItems: 'center', flexWrap: 'wrap' }}>
+        <select
+          data-testid="filter-language"
+          value={filterLanguage}
+          onChange={(e) => setFilterLanguage(e.target.value)}
+          style={filterSelectStyle}
+          title="Filter by language"
+        >
+          <option value="">Language: All</option>
+          <option value="English">English</option>
+          <option value="Chinese">Chinese</option>
+          <option value="Japanese">Japanese</option>
+          <option value="Korean">Korean</option>
+        </select>
+        <select
+          data-testid="filter-voice-type"
+          value={filterVoiceType}
+          onChange={(e) => setFilterVoiceType(e.target.value)}
+          style={filterSelectStyle}
+          title="Filter by voice type"
+        >
+          <option value="">Voice: All</option>
+          <option value="custom">Custom Voice</option>
+          <option value="sample">Sample-Based</option>
+        </select>
+        <select
+          data-testid="filter-emotions"
+          value={filterMinEmotions}
+          onChange={(e) => setFilterMinEmotions(Number(e.target.value))}
+          style={filterSelectStyle}
+          title="Filter by emotion count"
+        >
+          <option value={0}>Emotions: Any</option>
+          <option value={1}>1+ emotions</option>
+          <option value={3}>3+ emotions</option>
+          <option value={5}>5+ emotions</option>
+        </select>
+        <select
+          data-testid="sort-order"
+          value={sortOrder}
+          onChange={(e) => setSortOrder(e.target.value as 'name-asc' | 'name-desc')}
+          style={filterSelectStyle}
+          title="Sort order"
+        >
+          <option value="name-asc">Sort: A-Z</option>
+          <option value="name-desc">Sort: Z-A</option>
+        </select>
+        {(filterLanguage || filterVoiceType || filterMinEmotions > 0) && (
+          <button
+            data-testid="clear-filters"
+            style={{ ...filterSelectStyle, border: 'none', color: '#8ab4f8', cursor: 'pointer', fontSize: 11 }}
+            onClick={() => { setFilterLanguage(''); setFilterVoiceType(''); setFilterMinEmotions(0); }}
+          >
+            Clear filters
+          </button>
+        )}
+      </div>
       <div style={{ padding: '4px 12px', color: '#888', fontSize: 12, borderBottom: '1px solid #333' }}>
         <span data-testid="character-count">{characters.length} characters</span>
       </div>
@@ -412,7 +513,7 @@ export const CharacterVoiceDialog: React.FC<CharacterVoiceDialogProps> = ({
         {activeTab === 'characters' && !loading && filtered.length === 0 && (
           <div style={{ color: '#666', padding: 12 }}>No characters match.</div>
         )}
-        {activeTab === 'characters' && filtered.map((character) => (
+        {activeTab === 'characters' && filtered.map((character: CharacterConfig) => (
           <CharacterBar
             key={character.name}
             character={character}
@@ -439,3 +540,13 @@ const toolbarButtonStyle: React.CSSProperties = {
   cursor: 'pointer',
   padding: '4px 8px',
 };
+const filterSelectStyle: React.CSSProperties = {
+  background: '#242424',
+  color: '#ddd',
+  border: '1px solid #444',
+  borderRadius: 4,
+  padding: '3px 6px',
+  fontSize: 11,
+  cursor: 'pointer',
+};
+
