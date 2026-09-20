@@ -10,6 +10,7 @@ const appQuit = vi.fn();
 const appExit = vi.fn();
 const appWhenReady = vi.fn(() => Promise.resolve());
 const appCommandLineAppendSwitch = vi.fn();
+const appCommandLineHasSwitch = vi.fn(() => true);
 const browserWindowGetAllWindows = vi.fn(() => []);
 const showMessageBox = vi.fn(() => Promise.resolve({ response: 0 }));
 
@@ -45,6 +46,7 @@ vi.mock('electron', () => ({
     isPackaged: false,
     commandLine: {
       appendSwitch: appCommandLineAppendSwitch,
+      hasSwitch: appCommandLineHasSwitch,
     },
   },
   BrowserWindow: Object.assign(
