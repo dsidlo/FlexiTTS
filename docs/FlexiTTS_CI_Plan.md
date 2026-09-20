@@ -341,8 +341,14 @@ Practical notes for this repo:
 
 ## 7. Acceptance criteria
 
-- [ ] `.github/workflows/ci.yml` committed and `act -j test-ui` passes locally
-- [ ] `act -j test-python` passes locally (Qwen3-TTS clone step works)
-- [ ] `act` full pipeline produces a `flexitts-linux` artifact containing an AppImage
+- [x] `.github/workflows/ci.yml` committed and `act -j test-ui` passes locally
+      (372/372 vitest + electron typecheck + vite build, 30s warm)
+- [x] `act -j test-python` passes locally (549 passed, 1 skipped in 48s;
+      Qwen3-TTS clone step works; sox+ffmpeg + repo-anchored FlexiTTS config added)
+- [x] `act` full pipeline produces a `flexitts-linux` artifact containing an
+      AppImage (FlexiTTS-0.0.0.AppImage, 114MB; extracted squashfs verified:
+      python-scripts/, Qwen3-TTS/qwen_tts, config/, ui.desktop correct)
 - [ ] GitHub-hosted run (push to `electro-bun`) shows the same three jobs green
-- [ ] No workflow step publishes to GitHub Releases without explicit dispatch
+      (pending next push; workflow triggers on push/pull_request)
+- [x] No workflow step publishes to GitHub Releases without explicit dispatch
+      (`--publish never` hardcoded; publish flip documented as follow-up)

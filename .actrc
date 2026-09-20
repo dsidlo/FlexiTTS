@@ -1,3 +1,5 @@
 -P ubuntu-latest=catthehacker/ubuntu:act-latest
 --artifact-server-path /tmp/act-artifacts
 --container-architecture linux/amd64
+# Note: if you hit a transient Docker Hub auth error on act's forced re-pull,
+# run with --pull=false (image is cached locally after the first run).
