@@ -36,11 +36,11 @@ vi.mock('../services/pythonBridge', async () => {
       }),
       addEmotion: vi.fn(async (dir: string, characterId: string, entry: { emotion: string }) => {
         const list = store.get(dir) ?? [];
-        const c = list.find((x) => x.name === characterId);
+        const c = list.find((x) => x.name === characterId) as Record<string, unknown> | undefined;
         if (!c) throw new Error('Character not found');
-        c['custom-voice'] = c['custom-voice'] ?? { speaker: 'ryan', instruct: '' };
-        c['custom-voice'].emotions = c['custom-voice'].emotions ?? [];
-        c['custom-voice'].emotions.push(entry);
+        const cv = ((c['custom-voice'] ??= {}) as Record<string, unknown>);
+        cv.emotions = ((cv.emotions as unknown[]) ?? []);
+        (cv.emotions as unknown[]).push(entry);
         return { success: true };
       }),
       deleteCharacter: vi.fn(),
