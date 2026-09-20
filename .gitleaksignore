@@ -1,0 +1,13 @@
+# gitleaks allowlist: entries confirmed during the 2026-09-20 scan
+# (gitleaks 8.28.0 / trufflehog 3.90.8). Vendor dirs are excluded via the
+# workflow's scan path, not here; these are repo-tracked false positives.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "False positives confirmed and triaged 2026-09-20: BMAD manifest checksums (sha256 of referenced template files) and pydeck vendor source-map JS identifiers (.venv only, untracked)"
+paths = [
+  '''(^|/)_bmad/''',
+  '''(^|/)\.venv/share/jupyter/nbextensions/pydeck/''',
+]

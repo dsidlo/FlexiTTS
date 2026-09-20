@@ -16,6 +16,25 @@ permissions:
   contents: read
 
 jobs:
+  secrets-scan:
+    name: Secrets scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # gitleaks needs full history to scan all commits
+
+      # Plain gitleaks binary (not gitleaks-action, which requires the
+      # GitHub context that act does not populate). Reads .gitleaksignore
+      # from the repo root for triaged false positives.
+      - name: Run gitleaks (full git history)
+        run: |
+          curl -sSL --max-time 120 \
+            https://github.com/gitleaks/gitleaks/releases/download/v8.28.0/gitleaks_8.28.0_linux_x64.tar.gz \
+            -o /tmp/gitleaks.tar.gz
+          tar xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
+          /tmp/gitleaks git --config .gitleaksignore --verbose --redact -v .
+
   test-python:
     name: Scripts + Integration tests (pytest)
     runs-on: ubuntu-latest
@@ -113,7 +132,7 @@ jobs:
 
   package-electron:
     name: Package with electron-builder
-    needs: [test-python, test-ui]
+    needs: [secrets-scan, test-python, test-ui]
     # Release publishing on tag builds needs contents:write; job-level grant
     # overrides the read-only workflow default.
     permissions:
@@ -190,6 +209,8 @@ jobs:
           path: |
             src/ui/dist-packages/*.AppImage
           if-no-files-found: error
+
+
 
 
 
