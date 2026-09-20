@@ -353,6 +353,29 @@ class CharacterService:
             else:
                 raise CharacterError("sox-effects must be a list of strings", code="INVALID_SOX_EFFECTS")
 
+        if "voiceSample" in payload:
+            # Explicit removal or replacement of voice-sample
+            if payload["voiceSample"] is None or not str(payload["voiceSample"] or "").strip():
+                character.pop("voice-sample", None)
+            else:
+                character["voice-sample"] = str(payload["voiceSample"]).strip()
+
+        if "removeDialogEffect" in payload:
+            effect_to_remove = str(payload["removeDialogEffect"] or "").strip()
+            if effect_to_remove:
+                de = character.get("dialog-effects")
+                if isinstance(de, list):
+                    character["dialog-effects"] = [
+                        x for x in de if str(x).strip().lower() != effect_to_remove.lower()
+                    ]
+                    if not character["dialog-effects"]:
+                        character.pop("dialog-effects", None)
+                elif isinstance(de, str) and de.strip().lower() == effect_to_remove.lower():
+                    character.pop("dialog-effects", None)
+
+        if "removeCustomVoice" in payload and payload["removeCustomVoice"]:
+            character.pop("custom-voice", None)
+
         if "customVoice" in payload and payload["customVoice"] is not None:
             cv = character.get("custom-voice")
             if not isinstance(cv, dict):

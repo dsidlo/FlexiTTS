@@ -186,6 +186,39 @@ class TestPhase7TabState:
         run_bridge(["characters", "delete-dialog-effect", "Story-Default", effect_name])
 
 
+    def test_remove_voice_sample_from_character(self, _backup_restore):
+            # Wire a voice-sample first
+            update, _ = run_bridge(["characters", "update", "Story-Default", "Narrator",
+                                 json.dumps({"voiceSample": "test.wav"})])
+            assert update["success"]
+            cfg = yaml.safe_load(self.config_src.read_text())
+            narrator = next(c for c in cfg["characters"] if c["name"] == "Narrator")
+            assert narrator["voice-sample"] == "test.wav"
+            # Now remove it
+            remove, _ = run_bridge(["characters", "update", "Story-Default", "Narrator",
+                                 json.dumps({"voiceSample": None})])
+            assert remove["success"]
+            cfg = yaml.safe_load(self.config_src.read_text())
+            narrator = next(c for c in cfg["characters"] if c["name"] == "Narrator")
+            assert "voice-sample" not in narrator or narrator["voice-sample"] != "test.wav"
+
+    def test_remove_dialog_effect_from_character(self, _backup_restore):
+        # Wire a dialog-effect reference first
+        run_bridge(["characters", "create-dialog-effect-stub", "Story-Default", "test-unlink"])
+        run_bridge(["characters", "update", "Story-Default", "Narrator",
+                    json.dumps({"dialogEffects": ["test-unlink"]})])
+        cfg = yaml.safe_load(self.config_src.read_text())
+        narrator = next(c for c in cfg["characters"] if c["name"] == "Narrator")
+        assert "test-unlink" in (narrator.get("dialog-effects") or [])
+        # Now remove it
+        remove, _ = run_bridge(["characters", "update", "Story-Default", "Narrator",
+                             json.dumps({"removeDialogEffect": "test-unlink"})])
+        assert remove["success"]
+        cfg = yaml.safe_load(self.config_src.read_text())
+        narrator = next(c for c in cfg["characters"] if c["name"] == "Narrator")
+        assert "test-unlink" not in (narrator.get("dialog-effects") or [])
+
+
 def test_validate_sox_via_bridge():
     payload, code = run_bridge(["characters", "validate-sox", '["gain +3"]'])
     assert code == 0

@@ -120,6 +120,34 @@ export const CharacterBar: React.FC<CharacterBarProps> = ({
 
   const qwen3Speakers = ['aiden', 'dylan', 'eric', 'ono_anna', 'ryan', 'serena', 'sohee', 'uncle_fu', 'vivian'];
 
+  const handleClearVoiceSample = useCallback(async () => {
+    setBusy(true);
+    try {
+      await PythonBridgeService.updateCharacter(storyDir, character.name, {
+        voiceSample: null,
+      });
+      onRefresh();
+    } catch (e) {
+      onError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }, [storyDir, character.name, onRefresh, onError]);
+
+  const handleRemoveDialogEffect = useCallback(async (effectName: string) => {
+    setBusy(true);
+    try {
+      await PythonBridgeService.updateCharacter(storyDir, character.name, {
+        removeDialogEffect: effectName,
+      });
+      onRefresh();
+    } catch (e) {
+      onError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }, [storyDir, character.name, onRefresh, onError]);
+
   const handleCommitDialogEffect = useCallback(async (value: string) => {
     if (!value.trim()) return;
     setBusy(true);
@@ -241,10 +269,42 @@ export const CharacterBar: React.FC<CharacterBarProps> = ({
           {character.description && (
             <div style={{ color: '#aaa', fontSize: 12, marginBottom: 6 }}>{character.description}</div>
           )}
+          {Array.isArray(character['dialog-effects']) && character['dialog-effects'].length > 0 && (
+            <div style={{ marginBottom: 6, display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
+              <span style={{ color: '#888', fontSize: 11 }}>Dialog effects:</span>
+              {character['dialog-effects'].map((de) => (
+                <span key={de} style={effectChipStyle}>
+                  {de}
+                  <button
+                    data-testid={`dialog-effect-unlink-${character.name}-${de}`}
+                    style={unlinkButtonStyle}
+                    onClick={() => void handleRemoveDialogEffect(de)}
+                    disabled={busy}
+                    title={`Unlink '${de}' from this character`}
+                  >
+                    ✕
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+
           {Array.isArray(character['sox-effects']) && character['sox-effects'].length > 0 && (
             <div style={{ color: '#888', fontSize: 12, fontFamily: 'monospace', marginBottom: 6 }}>
               SoX: {character['sox-effects'].join(' | ')}
             </div>
+          )}
+
+          {character['voice-sample'] && !character['custom-voice'] && (
+            <button
+              data-testid={`clear-voice-sample-${character.name}`}
+              style={unlinkButtonStyle}
+              onClick={() => void handleClearVoiceSample()}
+              disabled={busy}
+              title="Remove the voice-sample reference from this character"
+            >
+              Clear voice-sample: {character['voice-sample']}
+            </button>
           )}
 
           {/* Phase 6b: reference fields for consistent cross-references */}
@@ -371,4 +431,25 @@ const addEmotionButtonStyle: React.CSSProperties = {
   cursor: 'pointer',
   padding: '3px 10px',
   fontSize: 12,
+};
+
+const effectChipStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 2,
+  background: '#2a3a2a',
+  border: '1px solid #3a5a3a',
+  borderRadius: 4,
+  padding: '1px 6px',
+  fontSize: 11,
+  color: '#8ac48a',
+};
+
+const unlinkButtonStyle: React.CSSProperties = {
+  background: 'transparent',
+  border: 'none',
+  color: '#f66',
+  cursor: 'pointer',
+  fontSize: 10,
+  padding: '0 2px',
 };
