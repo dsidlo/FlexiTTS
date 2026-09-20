@@ -31,6 +31,7 @@ vi.mock('../services/pythonBridge', () => ({
     startAndConnectTtsService: vi.fn(),
   },
   setTtsWsStatus: vi.fn(),
+  getTtsWsStatus: vi.fn(() => ({ isConnected: false, isReady: false, lastConnectedAt: null })),
 }));
 
 // Mock components

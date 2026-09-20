@@ -8,10 +8,11 @@ import { CharacterVoiceDialog } from './components/CharacterVoiceDialog';
 import { CharacterAssignPicker } from './components/CharacterAssignPicker';
 import { HelpDialog } from './components/HelpDialog';
 import { AlertContainer } from './components/AlertContainer';
-import { useChapter, useMarkdown, useAlerts, useTtsAlerts, type AlertType } from './hooks';
+import { useChapter, useMarkdown, useAlerts, useTtsAlerts, useTtsConnectivity, type AlertType } from './hooks';
 import { alertService, alerts } from './services/alertService';
 import { generateXMLFromChapter } from './services/chapterService';
 import { debugLog } from './utils/debugLogger';
+import { saveRecoveryCheckpoint, loadRecoveryCheckpoint, clearRecoveryCheckpoint, hasRecoveryData, type RecoveryCheckpoint } from './utils/sessionRecovery';
 
 const isTestEnvironment = (): boolean => {
   try {
@@ -67,8 +68,8 @@ function App() {
     currentChapterFile, setCurrentChapterFile, selectedCharacterFilter, setSelectedCharacterFilter,
     availableClips, setAvailableClips, hasChapterAudio, setHasChapterAudio,
     isGeneratingStructure, setIsGeneratingStructure, generateAttempt, setGenerateAttempt,
-    xmlContentRef, hasUnsavedChangesRef,
-    setLastSavedXmlValue, setHasUnsavedChangesValue,
+    xmlContentRef, hasUnsavedChangesRef, setXmlContent, setLastSavedXmlValue,
+    setHasUnsavedChangesValue,
     loadChapter, handleUpdateDialog, getIsStaleClip, checkRenderState, renderState, applyRenderResults,
     bulkAssignCharacter,
   } = useChapter(currentStory?.directory_name);
@@ -105,6 +106,9 @@ function App() {
   const [assignPickerOpen, setAssignPickerOpen] = useState(false);
   // Help dialog (Ctrl+?): independent, always available.
   const [showHelp, setShowHelp] = useState(false);
+  // Phase 12.2: unsaved-session recovery dialog on startup
+  const [recoveryData, setRecoveryData] = useState<RecoveryCheckpoint | null>(null);
+  const [showRecoveryDialog, setShowRecoveryDialog] = useState(false);
   const [helpShortcuts, setHelpShortcuts] = useState<Record<string, string> | undefined>(undefined);
 
   // Load shortcut overrides for the help docs from the global config.
@@ -329,6 +333,9 @@ function App() {
     onDisconnect: handleTtsDisconnect,
   });
 
+  // Phase 12.1: TTS connectivity state drives the offline banner + retry.
+  const ttsConnectivity = useTtsConnectivity({ enabled: true });
+
   // Window resize handler
   useEffect(() => {
     const handleResize = () => setWindowWidth(window.innerWidth);
@@ -449,6 +456,15 @@ function App() {
         setChapterList(list);
 
         if (list.length > 0) await handleChapterSelect(list[0], cfg, selectedStory?.directory_name);
+
+        // Phase 12.2: offer to restore an unsaved session checkpoint
+        if (selectedStory) {
+          const checkpoint = loadRecoveryCheckpoint(selectedStory.directory_name);
+          if (hasRecoveryData(checkpoint)) {
+            setRecoveryData(checkpoint);
+            setShowRecoveryDialog(true);
+          }
+        }
 
         // Start TTS service - service will broadcast warmup alerts via WebSocket
         alerts.info('Starting TTS Service...', 5000);
@@ -602,6 +618,7 @@ function App() {
         setLastSavedMarkdownValue(markdownContent);
         setHasUnsavedMarkdownChangesValue(false);
         alerts.success(`Saved chapter markdown to ${mdPath}`, 5000);
+        if (currentStory?.directory_name) clearRecoveryCheckpoint(currentStory.directory_name);
         alerts.info(`Regenerating XML for ${stem}...`, 5000);
         debugLog.info(`${logId}:handleSave`, 'Saved markdown, regenerating XML from chapter editor content', { mdPath, xmlPath, stem, storyDir });
 
@@ -675,6 +692,60 @@ function App() {
       setLoading, setCurrentStory, setConfig, setChapterList, handleChapterSelect, handleSave]);
   // Keep the Phase 11 Ctrl+S ref pointing at the latest handleSave
   handleSaveRef.current = handleSave;
+
+  // Phase 12.2: debounced recovery checkpoint of unsaved content
+  useEffect(() => {
+    const storyDir = currentStory?.directory_name;
+    if (!storyDir || !currentChapterFile) return;
+    const unsavedMd = hasUnsavedMarkdownChangesRef.current;
+    const unsavedXml = hasUnsavedChangesRef.current;
+    if (!unsavedMd && !unsavedXml) return;
+    const timer = window.setTimeout(() => {
+      saveRecoveryCheckpoint({
+        storyDir,
+        chapterFile: currentChapterFile,
+        stem: currentChapterFile.split('/').pop()?.replace(/\.(md|xml)$/, '') || 'unknown',
+        markdown: unsavedMd ? markdownContent : null,
+        xml: unsavedXml ? xmlContentRef.current : null,
+        savedAt: new Date().toISOString(),
+      });
+    }, 1500);
+    return () => window.clearTimeout(timer);
+  }, [currentStory?.directory_name, currentChapterFile, markdownContent]);
+
+  // Phase 12.2: recovery dialog actions
+  const handleRecoveryRestore = useCallback(() => {
+    if (!recoveryData) { setShowRecoveryDialog(false); return; }
+    try {
+      if (recoveryData.markdown !== null) {
+        setMarkdownContent(recoveryData.markdown);
+        setLastSavedMarkdownValue(recoveryData.markdown);
+        setHasUnsavedMarkdownChangesValue(true);
+      }
+      if (recoveryData.xml !== null) {
+        // XML restore: write into state so the save flow picks it up
+        xmlContentRef.current = recoveryData.xml;
+        setXmlContent(recoveryData.xml);
+        setLastSavedXmlValue(recoveryData.xml);
+        setHasUnsavedChangesValue(true);
+      }
+      setEditorMode(recoveryData.markdown !== null);
+      clearRecoveryCheckpoint(recoveryData.storyDir);
+      alerts.success('Unsaved session restored.', 5000);
+    } catch (e) {
+      alerts.error(`Recovery failed: ${(e as Error).message}`);
+    } finally {
+      setShowRecoveryDialog(false);
+      setRecoveryData(null);
+    }
+  }, [recoveryData, xmlContentRef, setXmlContent, setLastSavedXmlValue, setHasUnsavedChangesValue]);
+
+  const handleRecoveryDiscard = useCallback(() => {
+    if (recoveryData) clearRecoveryCheckpoint(recoveryData.storyDir);
+    setShowRecoveryDialog(false);
+    setRecoveryData(null);
+    alerts.info('Recovered changes discarded.');
+  }, [recoveryData]);
 
   // Toggle editor handler
   const handleToggleEditor = useCallback(async () => {
@@ -817,6 +888,39 @@ function App() {
           // This ensures TopBar reflects the authoritative computed state
           renderState={renderState}
         />
+      )}
+
+      {/* Phase 12.1: offline indicator with retry + backoff status */}
+      {!ttsConnectivity.online && (
+        <div
+          role="status"
+          aria-live="polite"
+          data-testid="tts-offline-banner"
+          style={{
+            display: 'flex', alignItems: 'center', gap: 10, padding: '6px 14px',
+            background: '#4a1d1d', color: '#ffd7d7', borderBottom: '1px solid #a33',
+            fontSize: 13,
+          }}
+        >
+          <span aria-hidden="true">⚠️</span>
+          <span>
+            TTS service offline
+            {ttsConnectivity.retrying ? ' — reconnecting…' : ttsConnectivity.nextRetryInMs !== null ? ` — next retry in ${Math.round(ttsConnectivity.nextRetryInMs / 1000)}s (attempt ${ttsConnectivity.attempt})` : ''}
+          </span>
+          <button
+            type="button"
+            data-testid="tts-retry"
+            onClick={ttsConnectivity.retryNow}
+            disabled={ttsConnectivity.retrying}
+            style={{
+              marginLeft: 'auto', padding: '3px 12px', borderRadius: 4, cursor: 'pointer',
+              border: '1px solid #d88', background: '#5a2a2a', color: '#ffe', fontWeight: 600,
+              opacity: ttsConnectivity.retrying ? 0.6 : 1,
+            }}
+          >
+            {ttsConnectivity.retrying ? 'Retrying…' : 'Retry'}
+          </button>
+        </div>
       )}
 
       <div style={{ display: 'flex', height: 'calc(100vh - 60px)', overflow: 'hidden' }}>
@@ -975,6 +1079,51 @@ function App() {
         onCancel={() => setAssignPickerOpen(false)}
         onAssign={handleAssignFromPicker}
       />
+      {/* Phase 12.2: unsaved-session recovery dialog */}
+      {showRecoveryDialog && recoveryData && (
+        <div
+          role="presentation"
+          data-testid="recovery-overlay"
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 5000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Recover unsaved session"
+            data-testid="recovery-dialog"
+            onClick={(e) => e.stopPropagation()}
+            style={{ background: '#fff', color: '#222', borderRadius: 8, padding: 20, minWidth: 420, maxWidth: 560, boxShadow: '0 8px 30px rgba(0,0,0,0.35)' }}
+          >
+            <h3 style={{ margin: '0 0 8px', fontSize: 16 }}>Recover unsaved changes?</h3>
+            <p style={{ margin: '0 0 6px', fontSize: 13.5 }}>
+              A previous FlexiTTS session ended with unsaved edits to
+              {' '}<strong>{recoveryData.stem}</strong> in <strong>{recoveryData.storyDir}</strong>
+              {' '}(saved {new Date(recoveryData.savedAt).toLocaleString()}).
+            </p>
+            <p style={{ margin: '0 0 14px', fontSize: 13, color: '#666' }}>
+              Restore loads the checkpoint into the editor and flags it as unsaved so you can review and save. Discard removes the checkpoint permanently.
+            </p>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                data-testid="recovery-discard"
+                onClick={handleRecoveryDiscard}
+                style={{ padding: '6px 14px', borderRadius: 4, cursor: 'pointer', border: '1px solid #c66', background: '#fdd' }}
+              >
+                Discard
+              </button>
+              <button
+                type="button"
+                data-testid="recovery-restore"
+                onClick={handleRecoveryRestore}
+                style={{ padding: '6px 14px', borderRadius: 4, cursor: 'pointer', border: '1px solid #4a90d9', background: '#e3ecff', fontWeight: 600 }}
+              >
+                Restore
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Help dialog: Ctrl+? — subjects left, details right, search on top */}
       <HelpDialog
         open={showHelp}

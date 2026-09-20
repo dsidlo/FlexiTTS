@@ -32,6 +32,8 @@ export const CharacterVoiceDialog: React.FC<CharacterVoiceDialogProps> = ({
   const [debouncedSearch, setDebouncedSearch] = useState('');
   // Phase 11: selected character (keyboard-driven) and preview audio
   const [selectedCharacterName, setSelectedCharacterName] = useState<string | null>(null);
+  // Phase 12.3: import conflict resolution
+  const [pendingImport, setPendingImport] = useState<{ payloadB64: string; conflicts: string[] } | null>(null);
   const [previewingCharacter, setPreviewingCharacter] = useState<string | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const previewAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -322,39 +324,81 @@ export const CharacterVoiceDialog: React.FC<CharacterVoiceDialogProps> = ({
     }
   }, [newCharName, storyDir, refresh]);
 
+  // Phase 12.3: run the import with the chosen conflict mode
+  const runImport = useCallback(async (payloadB64: string, conflict: string) => {
+    try {
+      const result = await PythonBridgeService.runBridgeCommand([
+        'import-characters', storyDir, payloadB64, conflict,
+      ]);
+      if (!result.success) {
+        setError(result.error || 'Import failed');
+        return;
+      }
+      const summary = result as { imported?: string[]; overwritten?: string[]; skipped?: string[]; renamed?: string[] };
+      const parts: string[] = [];
+      if (summary.imported?.length) parts.push(`imported: ${summary.imported.join(', ')}`);
+      if (summary.overwritten?.length) parts.push(`overwritten: ${summary.overwritten.join(', ')}`);
+      if (summary.renamed?.length) parts.push(`renamed: ${summary.renamed.join(', ')}`);
+      if (summary.skipped?.length) parts.push(`skipped: ${summary.skipped.join(', ')}`);
+      alerts.success(parts.length ? `Import complete — ${parts.join('; ')}` : 'Import complete');
+      await refresh();
+    } finally {
+      setPendingImport(null);
+    }
+  }, [storyDir, refresh]);
+
   const handleImport = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     e.target.value = '';
     try {
       const content = await file.text();
-      const blob = new Blob([content], { type: file.type || 'application/octet-stream' });
-      const dataFile = new File([blob], file.name);
-      // The bridge import command needs a file path; use the bridge with base64
-      const buffer = await new Promise<ArrayBuffer>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as ArrayBuffer);
-        reader.onerror = () => reject(new Error('Cannot read import file'));
-        reader.readAsArrayBuffer(dataFile);
-      });
+      // Phase 12.3: peek into the payload to detect name conflicts before import
+      let incomingNames: string[] = [];
+      try {
+        const jsyaml = (await import('js-yaml')).default ?? (await import('js-yaml'));
+        let parsed: unknown = null;
+        try {
+          parsed = jsyaml.load(content);
+        } catch {
+          parsed = JSON.parse(content);
+        }
+        if (Array.isArray(parsed)) parsed = { characters: parsed };
+        if (parsed && typeof parsed === 'object' && 'character' in (parsed as Record<string, unknown>)) {
+          parsed = { characters: [(parsed as Record<string, unknown>)['character']] };
+        }
+        incomingNames = ((parsed as { characters?: Array<{ name?: string }> })?.characters ?? [])
+          .map((c) => String(c?.name ?? '').trim().toLowerCase())
+          .filter(Boolean);
+      } catch {
+        // Cannot pre-detect conflicts; fall through and let the bridge decide
+        incomingNames = [];
+      }
+      const existingNames = characters.map((c) => c.name.toLowerCase());
+      const conflicts = incomingNames.filter((n) => existingNames.includes(n));
+      if (conflicts.length === 0) {
+        const buf = await file.arrayBuffer();
+        const arr = new Uint8Array(buf);
+        let bin = '';
+        for (let i = 0; i < arr.length; i += 0x8000) {
+          bin += String.fromCharCode.apply(null, [...arr.subarray(i, i + 0x8000)] as unknown as number[]);
+        }
+        await runImport(btoa(bin), 'keep-both');
+        return;
+      }
+      // Stash base64 for the pending import; user picks a conflict mode
+      const buffer = await file.arrayBuffer();
       const bytes = new Uint8Array(buffer);
       let binary = '';
       const chunkSize = 0x8000;
       for (let i = 0; i < bytes.length; i += chunkSize) {
         binary += String.fromCharCode.apply(null, [...bytes.subarray(i, i + chunkSize)] as unknown as number[]);
       }
-      const result = await PythonBridgeService.runBridgeCommand([
-        'import-characters', storyDir, btoa(binary), 'keep-both',
-      ]);
-      if (!result.success) {
-        setError(result.error || 'Import failed');
-        return;
-      }
-      await refresh();
+      setPendingImport({ payloadB64: btoa(binary), conflicts });
     } catch (err) {
       setError((err as Error).message);
     }
-  }, [storyDir, refresh]);
+  }, [storyDir, refresh, characters, runImport]);
 
   const handleCreateStub = useCallback(async (type: string, value: string) => {
     try {
@@ -628,6 +672,68 @@ export const CharacterVoiceDialog: React.FC<CharacterVoiceDialogProps> = ({
           />
         ))}
       </div>
+      {/* Phase 12.3: import conflict resolution modal */}
+      {pendingImport && (
+        <div
+          role="presentation"
+          data-testid="import-conflict-overlay"
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 5000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Import conflict"
+            data-testid="import-conflict-dialog"
+            onClick={(e) => e.stopPropagation()}
+            style={{ background: '#fff', color: '#222', borderRadius: 8, padding: 20, minWidth: 420, maxWidth: 560, boxShadow: '0 8px 30px rgba(0,0,0,0.35)' }}
+          >
+            <h3 style={{ margin: '0 0 8px', fontSize: 16 }}>Characters already exist</h3>
+            <p style={{ margin: '0 0 10px', fontSize: 13.5 }}>
+              {pendingImport.conflicts.length} character{pendingImport.conflicts.length === 1 ? '' : 's'} in this file
+              {' '}already exist in the story: <strong>{pendingImport.conflicts.join(', ')}</strong>
+            </p>
+            <ul style={{ margin: '0 0 12px', paddingLeft: 20, fontSize: 12.5, color: '#555' }}>
+              <li><strong>Overwrite</strong> — replace existing definitions with the imported ones.</li>
+              <li><strong>Keep Both</strong> — import under a new name (e.g. 'Yamato (2)').</li>
+              <li><strong>Skip</strong> — keep existing definitions, import only new characters.</li>
+            </ul>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                data-testid="import-conflict-cancel"
+                onClick={() => setPendingImport(null)}
+                style={{ padding: '6px 14px', borderRadius: 4, cursor: 'pointer', border: '1px solid #bbb', background: '#f5f5f5' }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                data-testid="import-conflict-overwrite"
+                onClick={() => void runImport(pendingImport.payloadB64, 'overwrite')}
+                style={{ padding: '6px 14px', borderRadius: 4, cursor: 'pointer', border: '1px solid #c66', background: '#fdd', fontWeight: 600 }}
+              >
+                Overwrite
+              </button>
+              <button
+                type="button"
+                data-testid="import-conflict-keep-both"
+                onClick={() => void runImport(pendingImport.payloadB64, 'keep-both')}
+                style={{ padding: '6px 14px', borderRadius: 4, cursor: 'pointer', border: '1px solid #4a90d9', background: '#e3ecff', fontWeight: 600 }}
+              >
+                Keep Both
+              </button>
+              <button
+                type="button"
+                data-testid="import-conflict-skip"
+                onClick={() => void runImport(pendingImport.payloadB64, 'skip')}
+                style={{ padding: '6px 14px', borderRadius: 4, cursor: 'pointer', border: '1px solid #4a90d9', background: '#e3ecff', fontWeight: 600 }}
+              >
+                Skip
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

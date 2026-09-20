@@ -14,6 +14,10 @@ const wsConnectionStatus: { isConnected: boolean; isReady: boolean; lastConnecte
  * Set WebSocket connection status from useTtsAlerts hook
  * This allows the bridge to check service status via WebSocket when Python check fails
  */
+export function getTtsWsStatus(): { isConnected: boolean; isReady: boolean; lastConnectedAt: number | null } {
+  return { ...wsConnectionStatus };
+}
+
 export function setTtsWsStatus(connected: boolean, ready: boolean = false) {
   debugLog.info(`${LOG_ID}:setTtsWsStatus`, 'Updating WebSocket status', { connected, ready, previous: { ...wsConnectionStatus } });
   wsConnectionStatus.isConnected = connected;
