@@ -6,6 +6,7 @@ import { TopBar } from './components/TopBar';
 import { DialogBar } from './components/DialogBar';
 import { CharacterVoiceDialog } from './components/CharacterVoiceDialog';
 import { CharacterAssignPicker } from './components/CharacterAssignPicker';
+import { HelpDialog } from './components/HelpDialog';
 import { AlertContainer } from './components/AlertContainer';
 import { useChapter, useMarkdown, useAlerts, useTtsAlerts, type AlertType } from './hooks';
 import { alertService, alerts } from './services/alertService';
@@ -81,6 +82,24 @@ function App() {
   // opened by Ctrl+Shift+A, context menu, or the CharacterBar quick-assign.
   const [selectedDialogKeys, setSelectedDialogKeys] = useState<Set<string>>(new Set());
   const [assignPickerOpen, setAssignPickerOpen] = useState(false);
+  // Help dialog (Ctrl+?): independent, always available.
+  const [showHelp, setShowHelp] = useState(false);
+  const [helpShortcuts, setHelpShortcuts] = useState<Record<string, string> | undefined>(undefined);
+
+  // Load shortcut overrides for the help docs from the global config.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const globalConfig = await PythonBridgeService.loadGlobalConfig();
+        const shortcuts = (globalConfig as { FlexiTTS?: { shortcuts?: Record<string, string> } })?.FlexiTTS?.shortcuts;
+        if (!cancelled && shortcuts && Object.keys(shortcuts).length > 0) setHelpShortcuts(shortcuts);
+      } catch {
+        // Help works without overrides; defaults are shown.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   const dialogKeyOf = useCallback((dlgseq: string, sectionId: string, _index?: number) =>
     _index !== undefined ? `i:${_index}` : `s:${sectionId || '0'}:${dlgseq}`, []);
@@ -103,6 +122,19 @@ function App() {
       if (e.ctrlKey && e.shiftKey && (e.key === 'A' || e.key === 'a')) {
         e.preventDefault();
         setAssignPickerOpen((open) => !open);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
+
+  // Ctrl+? (Ctrl+Shift+/) toggles the help dialog. On US layouts '?' needs
+  // Shift, so accept both 'Ctrl+?' and 'Ctrl+/'.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.ctrlKey && !e.altKey && !e.metaKey && (e.key === '?' || (e.shiftKey && e.key === '/'))) {
+        e.preventDefault();
+        setShowHelp((v) => !v);
       }
     };
     window.addEventListener('keydown', handler);
@@ -716,6 +748,7 @@ function App() {
           editorMode={editorMode}
           onToggleEditor={handleToggleEditor}
           onToggleCharacterVoices={() => setShowCharacterVoices((v) => !v)}
+          onOpenHelp={() => setShowHelp(true)}
           alertHistory={alertHistory}
           onRemoveAlertHistoryItem={removeAlertHistoryItem}
           onClearAlertHistory={() => {
@@ -885,6 +918,12 @@ function App() {
         allowCompare
         onCancel={() => setAssignPickerOpen(false)}
         onAssign={handleAssignFromPicker}
+      />
+      {/* Help dialog: Ctrl+? — subjects left, details right, search on top */}
+      <HelpDialog
+        open={showHelp}
+        onClose={() => setShowHelp(false)}
+        shortcutOverrides={helpShortcuts}
       />
       <AlertContainer alerts={alertList} onDismiss={removeAlert} />
     </div>

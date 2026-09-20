@@ -650,6 +650,32 @@ ipcMain.handle('show-open-dialog', async (event, options: { defaultPath?: string
   return result.filePaths[0];
 });
 
+// App help docs: read markdown files from src/app-docs/ (project root only).
+// The subject list is derived from the files present, so adding a doc file
+// extends the help dialog without code changes.
+const APP_DOCS_DIR = path.join(projectRoot, 'src', 'app-docs');
+ipcMain.handle('app-help-read', async (event, docName: string) => {
+  log.info(`[IPC][RESOURCE-ACCESS] app-help-read requested`, { docName });
+  try {
+    const sanitized = sanitizePath(docName);
+    if (!sanitized.endsWith('.md') || sanitized.includes('/') || sanitized.includes('\\')) {
+      throw new Error('Invalid help document name');
+    }
+    const fullPath = path.normalize(path.join(APP_DOCS_DIR, sanitized));
+    if (!isPathWithinParent(fullPath, APP_DOCS_DIR)) {
+      throw new Error('Security: help path outside app-docs directory');
+    }
+    if (!fs.existsSync(fullPath)) {
+      throw new Error(`Help document not found: ${docName}`);
+    }
+    return fs.readFileSync(fullPath, 'utf-8');
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    log.error(`[IPC][RESOURCE-ACCESS] app-help-read failed: ${message}`, { docName });
+    throw new Error(`Failed to read help doc ${docName}: ${message}`);
+  }
+});
+
 ipcMain.handle('read-file', async (event, filePath: string) => {
   const resourceType = filePath.endsWith('.md') ? 'markdown' : filePath.endsWith('.xml') ? 'xml' : filePath.endsWith('.wav') ? 'audio' : 'unknown';
   log.info(`[IPC][RESOURCE-ACCESS] read-file requested`, { filePath, resourceType, operation: 'read' });

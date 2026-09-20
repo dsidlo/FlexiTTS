@@ -28,4 +28,5 @@ contextBridge.exposeInMainWorld('api', {
   checkXmlExistsForStory: (chapterStem: string, storyDir: string) => ipcRenderer.invoke('check-xml-exists-for-story', chapterStem, storyDir),
   checkStoryFileExists: (storyDir: string, relativePath: string) => ipcRenderer.invoke('check-story-file-exists', storyDir, relativePath),
   showOpenDialog: (options: { defaultPath?: string; filters?: { name: string; extensions: string[] }[] }) => ipcRenderer.invoke('show-open-dialog', options),
+  readHelpDoc: (docName: string) => ipcRenderer.invoke('app-help-read', docName),
 });

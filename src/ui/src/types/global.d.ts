@@ -50,6 +50,7 @@ declare global {
       checkXmlExistsForStory: (chapterStem: string, storyDir: string) => Promise<boolean>;
       checkStoryFileExists: (storyDir: string, relativePath: string) => Promise<boolean>;
       showOpenDialog: (options: { defaultPath?: string; filters?: { name: string; extensions: string[] }[] }) => Promise<string | null>;
+      readHelpDoc: (docName: string) => Promise<string>;
     };
   }
 }

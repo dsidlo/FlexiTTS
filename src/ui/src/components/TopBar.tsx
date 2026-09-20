@@ -19,6 +19,8 @@ interface TopBarProps {
   editorMode?: boolean;
   onToggleEditor?: () => void;
   onToggleCharacterVoices?: () => void;
+  /** Open the help dialog (Ctrl+?). */
+  onOpenHelp?: () => void;
   alertHistory?: AlertHistoryItem[];
   onRemoveAlertHistoryItem?: (id: string) => void;
   onClearAlertHistory?: () => void;
@@ -32,7 +34,7 @@ interface TopBarProps {
 export const TopBar: React.FC<TopBarProps> = ({
   config, chapter, filePath, chapterList, hasChapterAudio,
   selectedCharacter, onChapterSelect, onCharacterSelect, onSave, onRenderComplete,
-  hasUnsavedChanges, editorMode, onToggleEditor, onToggleCharacterVoices,
+  hasUnsavedChanges, editorMode, onToggleEditor, onToggleCharacterVoices, onOpenHelp,
   alertHistory = [], onRemoveAlertHistoryItem, onClearAlertHistory,
   currentStory, onStorySelect, renderState
 }) => {
@@ -331,6 +333,27 @@ export const TopBar: React.FC<TopBarProps> = ({
             aria-label="Toggle character voices dialog"
           >
             🎭 Characters
+          </button>
+        )}
+        {onOpenHelp && (
+          <button
+            data-testid="open-help"
+            onClick={onOpenHelp}
+            style={{
+              marginLeft: '8px',
+              padding: '4px 10px',
+              backgroundColor: '#e0e0e0',
+              color: '#333',
+              border: '1px solid #888',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontSize: '0.9em',
+              fontWeight: 'bold'
+            }}
+            title="Help (Ctrl+?)"
+            aria-label="Open help"
+          >
+            ❓
           </button>
         )}
       </div>
