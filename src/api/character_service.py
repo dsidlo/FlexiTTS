@@ -15,11 +15,18 @@ docs/FlexiTTS Create Character UI-Plan.md. All operations:
 from __future__ import annotations
 
 import shutil
+import threading
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, Dict, List
 
 import yaml
+
+try:  # pragma: no cover - optional dependency guard
+    from filelock import FileLock
+    _HAS_FILELOCK = True
+except ImportError:  # pragma: no cover
+    _HAS_FILELOCK = False
 
 try:
     from ruamel.yaml import YAML
@@ -102,6 +109,26 @@ def _save_yaml(path: Path, data: Any, ryaml) -> None:
             ryaml.dump(data, f)
         else:
             yaml.safe_dump(data, f, sort_keys=False, allow_unicode=True)
+
+
+_config_locks: Dict[str, Any] = {}
+
+
+def _config_lock(path: Path) -> Any:
+    """Process-spanning lock for one story-config.yml.
+
+    Phase 14: concurrent bridge subprocesses doing read-modify-write on the
+    same config lose updates without this. The lock file lives next to the
+    config so it is sandboxed with the story.
+    """
+    key = str(path)
+    if key not in _config_locks:
+        if _HAS_FILELOCK:
+            _config_locks[key] = FileLock(f"{path}.lock", timeout=30)
+        else:  # pragma: no cover - filelock is in requirements
+            import threading
+            _config_locks[key] = threading.Lock()
+    return _config_locks[key]
 
 
 def _emotion_name(em: Dict[str, Any]) -> str:
@@ -265,45 +292,46 @@ class CharacterService:
         self._validate_language(language)
 
         path = self._config_path(story_id)
-        original_text = path.read_text(encoding="utf-8")
-        data, ryaml = _load_yaml(path)
+        with _config_lock(path):
+            original_text = path.read_text(encoding="utf-8")
+            data, ryaml = _load_yaml(path)
 
-        self._validate_unique_name(data, name)
-        if not isinstance(data.get("characters"), list):
-            data["characters"] = []
+            self._validate_unique_name(data, name)
+            if not isinstance(data.get("characters"), list):
+                data["characters"] = []
 
-        character: Dict[str, Any] = {"name": name}
-        voice = payload.get("voice") or {}
-        voice_type = str(payload.get("voiceType") or "").strip().lower()
+            character: Dict[str, Any] = {"name": name}
+            voice = payload.get("voice") or {}
+            voice_type = str(payload.get("voiceType") or "").strip().lower()
 
-        if voice_type in ("custom", "custom-voice", "qwen3-tts-custom-voice"):
-            speaker = str(voice.get("speaker", "")).strip()
-            if not speaker:
-                raise CharacterError("custom-voice requires a speaker", code="SPEAKER_REQUIRED")
-            character["custom-voice"] = {
-                "language": language,
-                "speaker": speaker,
-                "instruct": str(voice.get("instruct", "") or ""),
-            }
-            emotions = voice.get("emotions")
-            if isinstance(emotions, list) and emotions:
-                character["custom-voice"]["emotions"] = emotions
-            else:
-                # Default Neutral emotion so the character has a usable baseline
-                instruct = character["custom-voice"]["instruct"]
-                neutral = {"emotion": "Neutral"}
-                if instruct:
-                    neutral["instruct"] = instruct
-                character["custom-voice"]["emotions"] = [neutral]
-        elif voice_type in ("sample", "voice-sample", "qwen3-tts-voice-design"):
-            sample = str(voice.get("voiceSample", voice.get("voice-sample", "")) or "").strip()
-            if not sample:
-                raise CharacterError("sample voice requires a voice-sample", code="SAMPLE_REQUIRED")
-            character["voice-sample"] = sample
-        # voiceType absent: minimal character (name + language via voice later)
+            if voice_type in ("custom", "custom-voice", "qwen3-tts-custom-voice"):
+                speaker = str(voice.get("speaker", "")).strip()
+                if not speaker:
+                    raise CharacterError("custom-voice requires a speaker", code="SPEAKER_REQUIRED")
+                character["custom-voice"] = {
+                    "language": language,
+                    "speaker": speaker,
+                    "instruct": str(voice.get("instruct", "") or ""),
+                }
+                emotions = voice.get("emotions")
+                if isinstance(emotions, list) and emotions:
+                    character["custom-voice"]["emotions"] = emotions
+                else:
+                    # Default Neutral emotion so the character has a usable baseline
+                    instruct = character["custom-voice"]["instruct"]
+                    neutral = {"emotion": "Neutral"}
+                    if instruct:
+                        neutral["instruct"] = instruct
+                    character["custom-voice"]["emotions"] = [neutral]
+            elif voice_type in ("sample", "voice-sample", "qwen3-tts-voice-design"):
+                sample = str(voice.get("voiceSample", voice.get("voice-sample", "")) or "").strip()
+                if not sample:
+                    raise CharacterError("sample voice requires a voice-sample", code="SAMPLE_REQUIRED")
+                character["voice-sample"] = sample
+            # voiceType absent: minimal character (name + language via voice later)
 
-        data["characters"].append(character)
-        self._commit(path, data, ryaml, original_text)
+            data["characters"].append(character)
+            self._commit(path, data, ryaml, original_text)
         return deepcopy(character)
 
     def get_character(self, story_id: str, character_id: str) -> Dict[str, Any]:
@@ -321,87 +349,88 @@ class CharacterService:
                          payload: Dict[str, Any]) -> Dict[str, Any]:
         """PUT /api/characters/{id} - basic info and sox-effects updates."""
         path = self._config_path(story_id)
-        original_text = path.read_text(encoding="utf-8")
-        data, ryaml = _load_yaml(path)
-        character = self._find_character(data, character_id)
+        with _config_lock(path):
+            original_text = path.read_text(encoding="utf-8")
+            data, ryaml = _load_yaml(path)
+            character = self._find_character(data, character_id)
 
-        if "name" in payload:
-            new_name = str(payload["name"]).strip()
-            if not new_name:
-                raise CharacterError("Character name cannot be empty", code="NAME_REQUIRED")
-            self._validate_unique_name(data, new_name, exclude=character.get("name", ""))
-            character["name"] = new_name
+            if "name" in payload:
+                new_name = str(payload["name"]).strip()
+                if not new_name:
+                    raise CharacterError("Character name cannot be empty", code="NAME_REQUIRED")
+                self._validate_unique_name(data, new_name, exclude=character.get("name", ""))
+                character["name"] = new_name
 
-        if "description" in payload:
-            character["description"] = str(payload["description"] or "")
+            if "description" in payload:
+                character["description"] = str(payload["description"] or "")
 
-        if "soxEffects" in payload:
-            effects = payload["soxEffects"]
-            if effects is None:
-                character.pop("sox-effects", None)
-            elif isinstance(effects, list):
-                character["sox-effects"] = [str(e) for e in effects]
-            else:
-                raise CharacterError("soxEffects must be a list of strings", code="INVALID_SOX_EFFECTS")
+            if "soxEffects" in payload:
+                effects = payload["soxEffects"]
+                if effects is None:
+                    character.pop("sox-effects", None)
+                elif isinstance(effects, list):
+                    character["sox-effects"] = [str(e) for e in effects]
+                else:
+                    raise CharacterError("soxEffects must be a list of strings", code="INVALID_SOX_EFFECTS")
 
-        if "sox-effects" in payload:
-            effects = payload["sox-effects"]
-            if effects is None:
-                character.pop("sox-effects", None)
-            elif isinstance(effects, list):
-                character["sox-effects"] = [str(e) for e in effects]
-            else:
-                raise CharacterError("sox-effects must be a list of strings", code="INVALID_SOX_EFFECTS")
+            if "sox-effects" in payload:
+                effects = payload["sox-effects"]
+                if effects is None:
+                    character.pop("sox-effects", None)
+                elif isinstance(effects, list):
+                    character["sox-effects"] = [str(e) for e in effects]
+                else:
+                    raise CharacterError("sox-effects must be a list of strings", code="INVALID_SOX_EFFECTS")
 
-        if "voiceSample" in payload:
-            # Explicit removal or replacement of voice-sample
-            if payload["voiceSample"] is None or not str(payload["voiceSample"] or "").strip():
-                character.pop("voice-sample", None)
-            else:
-                character["voice-sample"] = str(payload["voiceSample"]).strip()
+            if "voiceSample" in payload:
+                # Explicit removal or replacement of voice-sample
+                if payload["voiceSample"] is None or not str(payload["voiceSample"] or "").strip():
+                    character.pop("voice-sample", None)
+                else:
+                    character["voice-sample"] = str(payload["voiceSample"]).strip()
 
-        if "removeDialogEffect" in payload:
-            effect_to_remove = str(payload["removeDialogEffect"] or "").strip()
-            if effect_to_remove:
-                de = character.get("dialog-effects")
-                if isinstance(de, list):
-                    character["dialog-effects"] = [
-                        x for x in de if str(x).strip().lower() != effect_to_remove.lower()
-                    ]
-                    if not character["dialog-effects"]:
+            if "removeDialogEffect" in payload:
+                effect_to_remove = str(payload["removeDialogEffect"] or "").strip()
+                if effect_to_remove:
+                    de = character.get("dialog-effects")
+                    if isinstance(de, list):
+                        character["dialog-effects"] = [
+                            x for x in de if str(x).strip().lower() != effect_to_remove.lower()
+                        ]
+                        if not character["dialog-effects"]:
+                            character.pop("dialog-effects", None)
+                    elif isinstance(de, str) and de.strip().lower() == effect_to_remove.lower():
                         character.pop("dialog-effects", None)
-                elif isinstance(de, str) and de.strip().lower() == effect_to_remove.lower():
+
+            if "removeCustomVoice" in payload and payload["removeCustomVoice"]:
+                character.pop("custom-voice", None)
+
+            if "customVoice" in payload and payload["customVoice"] is not None:
+                cv = character.get("custom-voice")
+                if not isinstance(cv, dict):
+                    language = str(payload.get("language", "English") or "English")
+                    self._validate_language(language)
+                    cv = {"language": language, "speaker": "", "instruct": ""}
+                    character["custom-voice"] = cv
+                cv_payload = payload["customVoice"]
+                if "language" in cv_payload:
+                    self._validate_language(str(cv_payload["language"]))
+                    cv["language"] = str(cv_payload["language"])
+                if "speaker" in cv_payload:
+                    cv["speaker"] = str(cv_payload["speaker"] or "").strip()
+                if "instruct" in cv_payload:
+                    cv["instruct"] = str(cv_payload["instruct"] or "")
+
+            if "dialogEffects" in payload:
+                effects = payload["dialogEffects"]
+                if effects is None:
                     character.pop("dialog-effects", None)
+                elif isinstance(effects, list):
+                    character["dialog-effects"] = [str(e) for e in effects]
+                else:
+                    raise CharacterError("dialogEffects must be a list of names", code="INVALID_DIALOG_EFFECTS")
 
-        if "removeCustomVoice" in payload and payload["removeCustomVoice"]:
-            character.pop("custom-voice", None)
-
-        if "customVoice" in payload and payload["customVoice"] is not None:
-            cv = character.get("custom-voice")
-            if not isinstance(cv, dict):
-                language = str(payload.get("language", "English") or "English")
-                self._validate_language(language)
-                cv = {"language": language, "speaker": "", "instruct": ""}
-                character["custom-voice"] = cv
-            cv_payload = payload["customVoice"]
-            if "language" in cv_payload:
-                self._validate_language(str(cv_payload["language"]))
-                cv["language"] = str(cv_payload["language"])
-            if "speaker" in cv_payload:
-                cv["speaker"] = str(cv_payload["speaker"] or "").strip()
-            if "instruct" in cv_payload:
-                cv["instruct"] = str(cv_payload["instruct"] or "")
-
-        if "dialogEffects" in payload:
-            effects = payload["dialogEffects"]
-            if effects is None:
-                character.pop("dialog-effects", None)
-            elif isinstance(effects, list):
-                character["dialog-effects"] = [str(e) for e in effects]
-            else:
-                raise CharacterError("dialogEffects must be a list of names", code="INVALID_DIALOG_EFFECTS")
-
-        self._commit(path, data, ryaml, original_text)
+            self._commit(path, data, ryaml, original_text)
         return deepcopy(character)
 
     def delete_character(self, story_id: str, character_id: str,
@@ -410,21 +439,22 @@ class CharacterService:
         payload = payload or {}
         dependent_dialogs = int(payload.get("dependentDialogs", 0) or 0)
         path = self._config_path(story_id)
-        original_text = path.read_text(encoding="utf-8")
-        data, ryaml = _load_yaml(path)
-        characters = data.get("characters", [])
+        with _config_lock(path):
+            original_text = path.read_text(encoding="utf-8")
+            data, ryaml = _load_yaml(path)
+            characters = data.get("characters", [])
 
-        target = None
-        for char in characters:
-            if str(char.get("name", "")).strip().lower() == character_id.strip().lower():
-                target = char
-                break
-        if target is None:
-            raise CharacterNotFoundError(f"Character not found: {character_id}")
+            target = None
+            for char in characters:
+                if str(char.get("name", "")).strip().lower() == character_id.strip().lower():
+                    target = char
+                    break
+            if target is None:
+                raise CharacterNotFoundError(f"Character not found: {character_id}")
 
-        affected = dependent_dialogs
-        characters.remove(target)
-        self._commit(path, data, ryaml, original_text)
+            affected = dependent_dialogs
+            characters.remove(target)
+            self._commit(path, data, ryaml, original_text)
         return {"deleted": deepcopy(target), "affectedDialogs": affected}
 
     # ------------------------------------------------------------------ #
@@ -460,82 +490,85 @@ class CharacterService:
             raise CharacterError("Emotion name is required", code="EMOTION_NAME_REQUIRED")
 
         path = self._config_path(story_id)
-        original_text = path.read_text(encoding="utf-8")
-        data, ryaml = _load_yaml(path)
-        character = self._find_character(data, character_id)
+        with _config_lock(path):
+            original_text = path.read_text(encoding="utf-8")
+            data, ryaml = _load_yaml(path)
+            character = self._find_character(data, character_id)
 
-        # Emotions live under custom-voice for custom voices; for sample-based
-        # characters they live in cloned-emotion (one sample per emotion).
-        list_key = "custom-voice" if character.get("custom-voice") else "cloned-emotion"
-        emotions = _emotion_list(character, list_key)
-        self._check_emotion_unique(emotions, name)
+            # Emotions live under custom-voice for custom voices; for sample-based
+            # characters they live in cloned-emotion (one sample per emotion).
+            list_key = "custom-voice" if character.get("custom-voice") else "cloned-emotion"
+            emotions = _emotion_list(character, list_key)
+            self._check_emotion_unique(emotions, name)
 
-        entry: Dict[str, Any] = {"emotion": name}
-        if "instruct" in payload:
-            entry["instruct"] = str(payload["instruct"] or "")
-        if "soxEffects" in payload and payload["soxEffects"] is not None:
-            if not isinstance(payload["soxEffects"], list):
-                raise CharacterError("soxEffects must be a list", code="INVALID_SOX_EFFECTS")
-            entry["sox-effects"] = [str(e) for e in payload["soxEffects"]]
+            entry: Dict[str, Any] = {"emotion": name}
+            if "instruct" in payload:
+                entry["instruct"] = str(payload["instruct"] or "")
+            if "soxEffects" in payload and payload["soxEffects"] is not None:
+                if not isinstance(payload["soxEffects"], list):
+                    raise CharacterError("soxEffects must be a list", code="INVALID_SOX_EFFECTS")
+                entry["sox-effects"] = [str(e) for e in payload["soxEffects"]]
 
-        emotions.append(entry)
-        self._commit(path, data, ryaml, original_text)
+            emotions.append(entry)
+            self._commit(path, data, ryaml, original_text)
         return deepcopy(entry)
 
     def update_emotion(self, story_id: str, character_id: str, emotion_id: str,
                        payload: Dict[str, Any]) -> Dict[str, Any]:
         """PUT /api/characters/{id}/emotions/{emotion_id}"""
         path = self._config_path(story_id)
-        original_text = path.read_text(encoding="utf-8")
-        data, ryaml = _load_yaml(path)
-        character = self._find_character(data, character_id)
-        key = "custom-voice" if character.get("custom-voice") else "cloned-emotion"
-        key = "custom-voice" if character.get("custom-voice") else "cloned-emotion"
-        emotions = _emotion_list(character, key)
-        idx, entry = self._find_emotion(emotions, emotion_id)
+        with _config_lock(path):
+            original_text = path.read_text(encoding="utf-8")
+            data, ryaml = _load_yaml(path)
+            character = self._find_character(data, character_id)
+            key = "custom-voice" if character.get("custom-voice") else "cloned-emotion"
+            key = "custom-voice" if character.get("custom-voice") else "cloned-emotion"
+            emotions = _emotion_list(character, key)
+            idx, entry = self._find_emotion(emotions, emotion_id)
 
-        if "instruct" in payload:
-            entry["instruct"] = str(payload["instruct"] or "")
-        if "soxEffects" in payload:
-            if payload["soxEffects"] is None:
-                entry.pop("sox-effects", None)
-            elif isinstance(payload["soxEffects"], list):
-                entry["sox-effects"] = [str(e) for e in payload["soxEffects"]]
-            else:
-                raise CharacterError("soxEffects must be a list", code="INVALID_SOX_EFFECTS")
+            if "instruct" in payload:
+                entry["instruct"] = str(payload["instruct"] or "")
+            if "soxEffects" in payload:
+                if payload["soxEffects"] is None:
+                    entry.pop("sox-effects", None)
+                elif isinstance(payload["soxEffects"], list):
+                    entry["sox-effects"] = [str(e) for e in payload["soxEffects"]]
+                else:
+                    raise CharacterError("soxEffects must be a list", code="INVALID_SOX_EFFECTS")
 
-        if "emotion" in payload or "name" in payload:
-            new_name = str(payload.get("emotion") or payload.get("name") or "").strip()
-            if not new_name:
-                raise CharacterError("Emotion name cannot be empty", code="EMOTION_NAME_REQUIRED")
-            self._check_emotion_unique(emotions, new_name, exclude_idx=idx)
-            if "emotion" in entry:
-                entry["emotion"] = new_name
-            else:
-                entry["name"] = new_name
+            if "emotion" in payload or "name" in payload:
+                new_name = str(payload.get("emotion") or payload.get("name") or "").strip()
+                if not new_name:
+                    raise CharacterError("Emotion name cannot be empty", code="EMOTION_NAME_REQUIRED")
+                self._check_emotion_unique(emotions, new_name, exclude_idx=idx)
+                if "emotion" in entry:
+                    entry["emotion"] = new_name
+                else:
+                    entry["name"] = new_name
 
-        self._commit(path, data, ryaml, original_text)
+            self._commit(path, data, ryaml, original_text)
         return deepcopy(entry)
 
     def delete_emotion(self, story_id: str, character_id: str, emotion_id: str,
                        allow_delete_last: bool = False) -> Dict[str, Any]:
         """DELETE /api/characters/{id}/emotions/{emotion_id}"""
         path = self._config_path(story_id)
-        original_text = path.read_text(encoding="utf-8")
-        data, ryaml = _load_yaml(path)
-        character = self._find_character(data, character_id)
-        key = "custom-voice" if character.get("custom-voice") else "cloned-emotion"
-        emotions = _emotion_list(character, key)
-        idx, entry = self._find_emotion(emotions, emotion_id)
+        with _config_lock(path):
+            original_text = path.read_text(encoding="utf-8")
+            data, ryaml = _load_yaml(path)
+            character = self._find_character(data, character_id)
+            key = "custom-voice" if character.get("custom-voice") else "cloned-emotion"
+            emotions = _emotion_list(character, key)
+            idx, entry = self._find_emotion(emotions, emotion_id)
 
-        if len(emotions) == 1 and not allow_delete_last:
-            raise CharacterError(
-                "Cannot delete the last emotion (set allowDeleteLast to override)",
-                code="LAST_EMOTION_PROTECTED",
-            )
+            if len(emotions) == 1 and not allow_delete_last:
+                raise CharacterError(
+                    "Cannot delete the last emotion (set allowDeleteLast to override)",
+                    code="LAST_EMOTION_PROTECTED",
+                )
 
-        emotions.pop(idx)
-        self._commit(path, data, ryaml, original_text)
+            emotions.pop(idx)
+            self._commit(path, data, ryaml, original_text)
         return {"deleted": deepcopy(entry), "remainingCount": len(emotions)}
 
     def reorder_emotions(self, story_id: str, character_id: str,
@@ -546,25 +579,26 @@ class CharacterService:
                                  code="INVALID_ORDER")
 
         path = self._config_path(story_id)
-        original_text = path.read_text(encoding="utf-8")
-        data, ryaml = _load_yaml(path)
-        character = self._find_character(data, character_id)
-        key = "custom-voice" if character.get("custom-voice") else "cloned-emotion"
-        emotions = _emotion_list(character, key)
-        norm = self._norm
-        requested = [norm(n) for n in ordered_names]
-        existing = [norm(str(em.get("emotion") or em.get("name") or "")) for em in emotions]
+        with _config_lock(path):
+            original_text = path.read_text(encoding="utf-8")
+            data, ryaml = _load_yaml(path)
+            character = self._find_character(data, character_id)
+            key = "custom-voice" if character.get("custom-voice") else "cloned-emotion"
+            emotions = _emotion_list(character, key)
+            norm = self._norm
+            requested = [norm(n) for n in ordered_names]
+            existing = [norm(str(em.get("emotion") or em.get("name") or "")) for em in emotions]
 
-        if sorted(requested) != sorted(existing):
-            raise CharacterError(
-                "orderedEmotions must be a permutation of the character's emotions",
-                code="INVALID_ORDER",
-            )
+            if sorted(requested) != sorted(existing):
+                raise CharacterError(
+                    "orderedEmotions must be a permutation of the character's emotions",
+                    code="INVALID_ORDER",
+                )
 
-        by_name = {norm(str(em.get("emotion") or em.get("name") or "")): em for em in emotions}
-        reordered = [by_name[n] for n in requested]
-        emotions[:] = reordered
-        self._commit(path, data, ryaml, original_text)
+            by_name = {norm(str(em.get("emotion") or em.get("name") or "")): em for em in emotions}
+            reordered = [by_name[n] for n in requested]
+            emotions[:] = reordered
+            self._commit(path, data, ryaml, original_text)
         return deepcopy(reordered)
 
     def set_default_emotion(self, story_id: str, character_id: str,
@@ -576,16 +610,17 @@ class CharacterService:
         the schema forbids unknown keys.
         """
         path = self._config_path(story_id)
-        original_text = path.read_text(encoding="utf-8")
-        data, ryaml = _load_yaml(path)
-        character = self._find_character(data, character_id)
-        key = "custom-voice" if character.get("custom-voice") else "cloned-emotion"
-        emotions = _emotion_list(character, key)
-        idx, entry = self._find_emotion(emotions, emotion_id)
+        with _config_lock(path):
+            original_text = path.read_text(encoding="utf-8")
+            data, ryaml = _load_yaml(path)
+            character = self._find_character(data, character_id)
+            key = "custom-voice" if character.get("custom-voice") else "cloned-emotion"
+            emotions = _emotion_list(character, key)
+            idx, entry = self._find_emotion(emotions, emotion_id)
 
-        emotions.pop(idx)
-        emotions.insert(0, entry)
-        self._commit(path, data, ryaml, original_text)
+            emotions.pop(idx)
+            emotions.insert(0, entry)
+            self._commit(path, data, ryaml, original_text)
         return deepcopy(entry)
 
 
