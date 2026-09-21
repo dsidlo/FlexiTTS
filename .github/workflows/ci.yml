@@ -118,6 +118,13 @@ jobs:
           if summary_lines:
               with open('$GITHUB_STEP_SUMMARY', 'a') as s:
                   s.write('### pytest results\n```\n' + '\n'.join(summary_lines + failed_block) + '\n```\n')
+          # Emit each failure as a check-run annotation (public API readable)
+          for i in range(0, len(failed_block), 2):
+              name = failed_block[i]
+              detail = failed_block[i + 1] if i + 1 < len(failed_block) else ''
+              first = (detail.splitlines() or [''])[:6]
+              msg = ' '.join(name.split('::')[-1:]).replace('%', '')
+              print('::error title=pytest failure::' + name + ' | ' + ' / '.join(l.strip() for l in detail.splitlines()[:6])[:600])
           PY
 
       - name: Upload python test results
