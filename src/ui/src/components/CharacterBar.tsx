@@ -259,8 +259,8 @@ export const CharacterBar: React.FC<CharacterBarProps> = ({
           <button
             type="button"
             data-testid={`quick-assign-${character.name}`}
-            aria-label={`Assign ${character.name} to selected dialog lines`}
-            title="Assign this character to selected dialog lines (Ctrl+Click lines to select)"
+            aria-label={`Assign ${character.name} to the selected or last-opened dialog line`}
+            title="Assign this character to the selected dialog lines, or to the last-opened dialog line"
             onClick={(e) => {
               e.stopPropagation();
               onQuickAssign();

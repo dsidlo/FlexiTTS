@@ -860,12 +860,9 @@ function App() {
           open={showCharacterVoices}
           onClose={() => setShowCharacterVoices(false)}
           onQuickAssign={(characterName) => {
-            // Phase 10.1: quick assign from the Characters tab. Requires an
-            // existing dialog selection; hints otherwise.
-            if (selectedDialogKeys.size === 0) {
-              alerts.warning('No dialog lines selected. Ctrl+Click dialog headers, then use Assign.');
-              return;
-            }
+            // Phase 10.1: quick assign from the Characters tab. Targets the
+            // multi-selection when present, otherwise the last-opened
+            // dialog (handleAssignFromPicker's fallback logic).
             setAssignPickerOpen(false);
             void handleAssignFromPicker(characterName);
           }}
