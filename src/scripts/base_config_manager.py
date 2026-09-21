@@ -208,13 +208,10 @@ class ConfigManager:
             return self.main_config
 
         try:
-            # Verify config path is within expected XDG location.
-            # test_mode whitelist (triaged test sandboxes) bypasses this
-            # boundary check; production paths still enforce it.
-            if not self._test_mode:
-                xdg_home = Path.home() / '.config'
-                if not self._is_path_within_parent(self._main_config_path, xdg_home):
-                    raise PathTraversalError("Config path escapes XDG config directory")
+            # Verify config path is within expected XDG location
+            xdg_home = Path.home() / '.config'
+            if not self._is_path_within_parent(self._main_config_path, xdg_home):
+                raise PathTraversalError("Config path escapes XDG config directory")
 
             if self._main_config_path.exists():
                 try:
