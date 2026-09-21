@@ -373,3 +373,5 @@ docs/electrobun-migration/
 docs/FlexiTTS Create Character UI-Plan.md
 story-config.*.lock
 story-config.*.bak
+Stories/Story-LegacyStory/
+pytest-junit.xml
