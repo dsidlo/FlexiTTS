@@ -82,9 +82,10 @@ jobs:
       - name: Run pytest (scripts + integration)
         run: |
           cd src/scripts
+          set -o pipefail
           uv run --project ../.. pytest tests/ -p no:cacheprovider -o addopts= \
             --junitxml=test-results/pytest-junit.xml \
-            -ra --tb=short
+            -ra --tb=short 2>&1 | tee test-results/pytest-stdout.log
       # Surface failing tests + junit summary in the job log itself so the
       # failure is diagnosable without downloading artifacts.
       - name: Summarize pytest results
@@ -98,13 +99,25 @@ jobs:
           except Exception as e:
               print('no junit:', e); raise SystemExit(0)
           suites = root.findall('testsuite') or [root]
+          total_failed = 0
+          summary_lines = []
           for t in suites:
-              print(f"junit tests={t.get('tests')} failures={t.get('failures')} errors={t.get('errors')} skipped={t.get('skipped')}")
+              line = f"junit tests={t.get('tests')} failures={t.get('failures')} errors={t.get('errors')} skipped={t.get('skipped')}"
+              print(line)
+              summary_lines.append(line)
+              total_failed += int(t.get('failures') or 0) + int(t.get('errors') or 0)
+          failed_block = []
           for tc in root.iter('testcase'):
               f = tc.find('failure')
               if f is not None:
-                  print('FAILED:', tc.get('classname'), '::', tc.get('name'))
-                  print((f.text or '')[:1500])
+                  failed_block.append('FAILED: %s :: %s' % (tc.get('classname'), tc.get('name')))
+                  failed_block.append((f.text or '')[:1500])
+          for line in failed_block:
+              print(line)
+          # Mirror the summary into the run's job summary page for 1-click reading
+          if summary_lines:
+              with open('$GITHUB_STEP_SUMMARY', 'a') as s:
+                  s.write('### pytest results\n```\n' + '\n'.join(summary_lines + failed_block) + '\n```\n')
           PY
 
       - name: Upload python test results
@@ -231,6 +244,7 @@ jobs:
           path: |
             src/ui/dist-packages/*.AppImage
           if-no-files-found: error
+
 
 
 
