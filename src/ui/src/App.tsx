@@ -104,6 +104,8 @@ function App() {
   // Selected lines are identified by their stable composite key; picker is
   // opened by Ctrl+Shift+A, context menu, or the CharacterBar quick-assign.
   const [selectedDialogKeys, setSelectedDialogKeys] = useState<Set<string>>(new Set());
+  /** The last-opened dialog line; the default assign target. */
+  const [currentDialogKey, setCurrentDialogKey] = useState<string | null>(null);
   const [assignPickerOpen, setAssignPickerOpen] = useState(false);
   // Help dialog (Ctrl+?): independent, always available.
   const [showHelp, setShowHelp] = useState(false);
@@ -129,6 +131,10 @@ function App() {
 
   const dialogKeyOf = useCallback((dlgseq: string, sectionId: string, _index?: number) =>
     _index !== undefined ? `i:${_index}` : `s:${sectionId || '0'}:${dlgseq}`, []);
+
+  const handleDialogOpened = useCallback((dlgseq: string, sectionId: string, _index: number | undefined) => {
+    setCurrentDialogKey(dialogKeyOf(dlgseq, sectionId, _index));
+  }, [dialogKeyOf]);
 
   const handleToggleDialogSelect = useCallback((dlgseq: string, sectionId: string, _index: number | undefined, _additive: boolean) => {
     const key = dialogKeyOf(dlgseq, sectionId, _index);
@@ -200,16 +206,25 @@ function App() {
   // Clear stale selection keys when the chapter changes
   useEffect(() => {
     setSelectedDialogKeys(new Set());
+    setCurrentDialogKey(null);
   }, [chapter?.fileName]);
 
   const handleAssignFromPicker = useCallback(async (characterName: string) => {
     setAssignPickerOpen(false);
     if (selectedDialogKeys.size === 0) {
-      alerts.warning('No dialog lines selected. Ctrl+Click dialog headers to select lines for assignment.');
-      return;
+      // No multi-selection: fall back to the currently opened dialog (the
+      // last line the user clicked). If none was opened either, warn.
+      if (!currentDialogKey) {
+        alerts.warning('No dialog open. Click a dialog line to open it, then use Assign.');
+        return;
+      }
+      setSelectedDialogKeys(new Set([currentDialogKey]));
     }
     const targets = chapter?.dialogs
-      .filter((d) => selectedDialogKeys.has(dialogKeyOf(d.dlgseq, d.sectionId || '0', d._index)))
+      .filter((d) => {
+        const key = dialogKeyOf(d.dlgseq, d.sectionId || '0', d._index);
+        return selectedDialogKeys.has(key) || key === currentDialogKey;
+      })
       .map((d) => ({ dlgseq: d.dlgseq, sectionId: d.sectionId || '0', _index: d._index })) ?? [];
     const result = await bulkAssignCharacter(targets, characterName);
     if (result.assigned > 0) {
@@ -219,7 +234,7 @@ function App() {
       alerts.error(`Failed to assign ${result.failed} line${result.failed === 1 ? '' : 's'}.`);
     }
     setSelectedDialogKeys(new Set());
-  }, [selectedDialogKeys, chapter, dialogKeyOf, bulkAssignCharacter]);
+  }, [selectedDialogKeys, currentDialogKey, chapter, dialogKeyOf, bulkAssignCharacter]);
 
   const handleAssignCharacterRequest = useCallback((dlgseq: string, sectionId: string, _index?: number) => {
     // Context menu on a line: if the line is not in the selection, make it
@@ -1037,6 +1052,8 @@ function App() {
                   availableCharacters={config?.characters?.map(c => c.name) || []}
                   availableEmotions={getAvailableEmotions(dialog.character)}
                   isSelected={selectedDialogKeys.has(dialogKeyOf(dialog.dlgseq, dialog.sectionId || '0', dialog._index))}
+                  isCurrentDialog={currentDialogKey === dialogKeyOf(dialog.dlgseq, dialog.sectionId || '0', dialog._index)}
+                  onOpened={handleDialogOpened}
                   onToggleSelect={handleToggleDialogSelect}
                   onAssignCharacter={handleAssignCharacterRequest}
                 />

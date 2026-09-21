@@ -23,6 +23,10 @@ interface DialogBarProps {
   isSelected?: boolean;
   /** Phase 10: toggle this line's membership in the multi-selection (Ctrl+Click). */
   onToggleSelect?: (dlgseq: string, sectionId: string, _index: number | undefined, additive: boolean) => void;
+  /** Whether this line is the currently opened (last-interacted) dialog. */
+  isCurrentDialog?: boolean;
+  /** Notify the app that this line was opened (plain click); the app marks it current. */
+  onOpened?: (dlgseq: string, sectionId: string, _index: number | undefined) => void;
   /** Phase 10: open the character picker to assign this line (or the whole selection). */
   onAssignCharacter?: (dlgseq: string, sectionId: string, _index: number | undefined) => void;
   onSaveRequest?: () => Promise<void>;
@@ -31,7 +35,7 @@ interface DialogBarProps {
 }
 
 export const DialogBar: React.FC<DialogBarProps> = ({
-  dialog, displayId, chapterFileName, storyDirectory, isFilteredOut, hasAudioClip, isStaleClip = false, isTimestampStale = false, availableCharacters = [], availableEmotions = [], isSelected = false, onToggleSelect, onAssignCharacter,
+  dialog, displayId, chapterFileName, storyDirectory, isFilteredOut, hasAudioClip, isStaleClip = false, isTimestampStale = false, availableCharacters = [], availableEmotions = [], isSelected = false, isCurrentDialog = false, onToggleSelect, onOpened, onAssignCharacter,
   onSaveRequest, onUpdateDialog, onRefreshClips
 }) => {
   const validationIssues = dialog.validationIssues || [];
@@ -161,14 +165,15 @@ export const DialogBar: React.FC<DialogBarProps> = ({
     setContextMenuPos({ x: e.pageX, y: e.pageY });
   };
 
-  // Phase 10.1: Ctrl/Cmd+Click toggles this line in the multi-selection.
-  // Plain clicks keep the existing expand/collapse behavior.
+  // Plain click: open (expand) this line and mark it as the currently
+  // selected dialog. Ctrl/Cmd+Click adds/removes from the multi-selection.
   const handleHeaderClick = (e: React.MouseEvent) => {
     e.stopPropagation();
     if ((e.ctrlKey || e.metaKey) && onToggleSelect) {
       onToggleSelect(dialog.dlgseq, dialog.sectionId || '0', dialog._index, e.shiftKey);
       return;
     }
+    onOpened?.(dialog.dlgseq, dialog.sectionId || '0', dialog._index);
     setIsExpanded(!isExpanded);
   };
 
@@ -358,6 +363,16 @@ export const DialogBar: React.FC<DialogBarProps> = ({
         data-selected={isSelected || undefined}
       >
         <div className="dialog-character" style={{ display: 'flex', alignItems: 'center' }}>
+          {isCurrentDialog && (
+            <span
+              data-testid={`dialog-current-check-${dialog.dlgseq}`}
+              aria-label="Currently selected dialog"
+              title="Currently selected dialog"
+              style={{ marginRight: 8, color: '#7fff9f', fontWeight: 700, fontSize: '1em' }}
+            >
+              ✓
+            </span>
+          )}
           <span style={{ marginRight: '10px', opacity: 0.8, fontSize: '0.9em' }}>#{displayId || dialog.dlgseq}</span>
           {hasValidationIssues && (
             <button
