@@ -208,9 +208,17 @@ class ConfigManager:
             return self.main_config
 
         try:
-            # Verify config path is within expected XDG location
+            # Verify config path is within the XDG config root it was
+            # anchored to. Anchoring: XDG_CONFIG_HOME when set (CI runners
+            # set it to the runner-home .config), else HOME/.config.
+            # test_mode whitelist (triaged test sandboxes) also bypasses.
             xdg_home = Path.home() / '.config'
-            if not self._is_path_within_parent(self._main_config_path, xdg_home):
+            xdg_env = os.environ.get('XDG_CONFIG_HOME')
+            allowed_roots = [xdg_home]
+            if xdg_env:
+                allowed_roots.append(Path(xdg_env))
+            if not any(self._is_path_within_parent(self._main_config_path, r) for r in allowed_roots) \
+                    and not self._is_path_whitelisted(self._main_config_path):
                 raise PathTraversalError("Config path escapes XDG config directory")
 
             if self._main_config_path.exists():
