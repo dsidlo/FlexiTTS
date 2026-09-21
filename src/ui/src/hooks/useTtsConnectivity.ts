@@ -30,10 +30,20 @@ export interface TtsConnectivity {
   attempt: number;
   /** Manually trigger a reconnect attempt now. */
   retryNow: () => void;
+  /**
+   * True during the initial startup window: the app has just launched and is
+   * still within the grace period before the offline banner shows. The UI
+   * renders a green "Connecting to TTS service…" bar during this phase.
+   */
+  connecting: boolean;
 }
 
 const BASE_DELAY_MS = 1000;
 const MAX_DELAY_MS = 30000;
+/** Startup grace period: show green "connecting" instead of the offline
+ * banner for this long after app launch before declaring the service
+ * offline. Matches the TTS service warmup budget. */
+const STARTUP_GRACE_MS = 30000;
 
 export const useTtsConnectivity = (options: UseTtsConnectivityOptions = {}): TtsConnectivity => {
   const { pollMs = 3000, enabled = true } = options;
@@ -43,6 +53,10 @@ export const useTtsConnectivity = (options: UseTtsConnectivityOptions = {}): Tts
   const [attempt, setAttempt] = useState(0);
   const attemptRef = useRef(0);
   const retryTimerRef = useRef<number | null>(null);
+  // Startup grace: green "connecting" phase before the offline banner shows
+  const mountedAtRef = useRef<number>(Date.now());
+  const [connecting, setConnecting] = useState<boolean>(true);
+  const autoRetryRef = useRef<number | null>(null);
 
   // Poll the shared status (set by useTtsAlerts)
   useEffect(() => {
@@ -50,6 +64,7 @@ export const useTtsConnectivity = (options: UseTtsConnectivityOptions = {}): Tts
     const interval = window.setInterval(() => {
       const st = getTtsWsStatus();
       const up = st.isConnected && st.isReady;
+      if (up) setConnecting(false);
       setOnline((prev) => {
         if (prev && !up) {
           // Just went offline: reset retry bookkeeping
@@ -63,6 +78,27 @@ export const useTtsConnectivity = (options: UseTtsConnectivityOptions = {}): Tts
     }, pollMs);
     return () => window.clearInterval(interval);
   }, [pollMs, enabled]);
+
+  // Startup grace: stay in green "connecting" phase until online or the
+  // grace window elapses; then hand over to the offline banner + backoff.
+  useEffect(() => {
+    if (!enabled) return;
+    const elapsed = Date.now() - mountedAtRef.current;
+    const remaining = STARTUP_GRACE_MS - elapsed;
+    if (remaining <= 0) {
+      setConnecting(false);
+      return;
+    }
+    const t = window.setTimeout(() => {
+      setConnecting(false);
+      // Grace expired while still offline: kick the automatic retry chain.
+      const st = getTtsWsStatus();
+      if (!(st.isConnected && st.isReady) && !retryingRef.current) {
+        retryNowRef.current();
+      }
+    }, remaining);
+    return () => window.clearTimeout(t);
+  }, [enabled, online]);
 
   const retryNow = useCallback(() => {
     void (async () => {
@@ -97,13 +133,34 @@ export const useTtsConnectivity = (options: UseTtsConnectivityOptions = {}): Tts
   // Stable self-reference for the backoff timer
   const retryNowRef = useRef<() => void>(retryNow);
   retryNowRef.current = retryNow;
+  const retryingRef = useRef(retrying);
+  retryingRef.current = retrying;
 
   // Clear backoff timers on unmount
   useEffect(() => () => {
     if (retryTimerRef.current) window.clearTimeout(retryTimerRef.current);
   }, []);
 
-  return { online, retrying, nextRetryInMs, attempt, retryNow };
+  // While in the startup connecting phase, auto-retry each poll cycle so a
+  // slow warmup still gets connection attempts without user interaction.
+  useEffect(() => {
+    if (!enabled || !connecting || online || retrying) return;
+    const t = window.setTimeout(() => {
+      if (!retryingRef.current) {
+        debugLog.info('useTtsConnectivity', 'auto-retry during startup connecting phase');
+        retryNowRef.current();
+      }
+    }, 3000);
+    autoRetryRef.current = t;
+    return () => window.clearTimeout(t);
+  }, [enabled, connecting, online, retrying]);
+
+  // Clear auto-retry timer on unmount
+  useEffect(() => () => {
+    if (autoRetryRef.current) window.clearTimeout(autoRetryRef.current);
+  }, []);
+
+  return { online, retrying, nextRetryInMs, attempt, retryNow, connecting };
 };
 
 // Keep MAX_DELAY_MS referenced (documents the cap for readers)

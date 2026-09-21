@@ -9,6 +9,7 @@ import { CharacterAssignPicker } from './components/CharacterAssignPicker';
 import { HelpDialog } from './components/HelpDialog';
 import { AlertContainer } from './components/AlertContainer';
 import { useChapter, useMarkdown, useAlerts, useTtsAlerts, useTtsConnectivity, type AlertType } from './hooks';
+import { TtsConnectingBanner } from './components/TtsConnectingBanner';
 import { alertService, alerts } from './services/alertService';
 import { generateXMLFromChapter } from './services/chapterService';
 import { debugLog } from './utils/debugLogger';
@@ -890,8 +891,11 @@ function App() {
         />
       )}
 
+      {/* Startup: green "connecting" bar during initial TTS warmup grace */}
+      <TtsConnectingBanner connecting={ttsConnectivity.connecting} online={ttsConnectivity.online} />
+
       {/* Phase 12.1: offline indicator with retry + backoff status */}
-      {!ttsConnectivity.online && (
+      {!ttsConnectivity.connecting && !ttsConnectivity.online && (
         <div
           role="status"
           aria-live="polite"
