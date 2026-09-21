@@ -83,7 +83,29 @@ jobs:
         run: |
           cd src/scripts
           uv run --project ../.. pytest tests/ -p no:cacheprovider -o addopts= \
-            --junitxml=test-results/pytest-junit.xml
+            --junitxml=test-results/pytest-junit.xml \
+            -ra --tb=short
+      # Surface failing tests + junit summary in the job log itself so the
+      # failure is diagnosable without downloading artifacts.
+      - name: Summarize pytest results
+        if: always()
+        run: |
+          cd src/scripts
+          python3 - <<'PY'
+          import xml.etree.ElementTree as ET
+          try:
+              root = ET.parse('test-results/pytest-junit.xml').getroot()
+          except Exception as e:
+              print('no junit:', e); raise SystemExit(0)
+          suites = root.findall('testsuite') or [root]
+          for t in suites:
+              print(f"junit tests={t.get('tests')} failures={t.get('failures')} errors={t.get('errors')} skipped={t.get('skipped')}")
+          for tc in root.iter('testcase'):
+              f = tc.find('failure')
+              if f is not None:
+                  print('FAILED:', tc.get('classname'), '::', tc.get('name'))
+                  print((f.text or '')[:1500])
+          PY
 
       - name: Upload python test results
         if: always()
@@ -209,6 +231,7 @@ jobs:
           path: |
             src/ui/dist-packages/*.AppImage
           if-no-files-found: error
+
 
 
 
