@@ -254,7 +254,7 @@ export const CharacterBar: React.FC<CharacterBarProps> = ({
         <span style={{ marginRight: 8, display: 'inline-block', width: 12 }}>
           {expanded ? '▾' : '▸'}
         </span>
-        <strong style={{ flex: 1 }}>{character.name}</strong>
+        <strong style={{ flex: 1, marginRight: 10 }}>{character.name}</strong>
         {onQuickAssign && (
           <button
             type="button"
@@ -266,8 +266,9 @@ export const CharacterBar: React.FC<CharacterBarProps> = ({
               onQuickAssign();
             }}
             style={{
-              marginRight: 8, padding: '2px 8px', borderRadius: 4, cursor: 'pointer',
-              border: '1px solid #99c', background: '#eef4ff', fontSize: 12,
+              marginRight: 8, padding: '2px 10px', borderRadius: 4, cursor: 'pointer',
+              border: '1px solid #7aa5e0', background: '#eef4ff', color: '#1a3a6b',
+              fontSize: 12, fontWeight: 600,
             }}
           >
             ⇥ Assign
