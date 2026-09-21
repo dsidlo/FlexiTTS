@@ -32,6 +32,7 @@
 
 - `sox` + `ffmpeg`: `sudo apt-get install sox ffmpeg` (also installs `libsndfile1` which `soundfile` needs)
 - GPU: NVIDIA driver + CUDA userland matching the torch build; verify `nvidia-smi` works and `python -c "import torch; print(torch.cuda.is_available())"` is True
+- AMD GPU (ROCm): install a ROCm torch build for Linux (different wheel index); detection works via the `torch.cuda` shim over HIP — see `GPU_Architectures_Linux_Windows_Mac.md`
 - Audio system: PipeWire/PulseAudio present for any local playback paths (packaged Electron handles its own audio)
 - Port availability: default ports free or reconfigured
 
@@ -40,6 +41,7 @@
 - `sox`: no winget package parity — ship `sox.exe` via `extraResources` and prepend its dir to PATH in the main process, or require a manual install step documented in the installer's README
 - `ffmpeg`: same approach — bundle a static `ffmpeg`/`ffprobe` build via `extraResources` (avoids users installing anything)
 - CUDA: NVIDIA driver + matching CUDA runtime; torch wheels bundle the CUDA runtime on Windows, but the **driver** must be new enough — check `torch.cuda.is_available()` at startup and warn
+- AMD GPU: `torch-directml` (separate package) on consumer RDNA cards, or CPU fallback; not a primary path (see `GPU_Architectures_Linux_Windows_Mac.md`)
 - Long-path support: model cache paths can exceed 260 chars; enable long paths or keep cache under a short root
 - Antivirus/SmartScreen: first-run blocking on unsigned binaries; document or sign
 - `uv`: ship as sidecar or detect and instruct
@@ -49,7 +51,7 @@
 - `sox` + `ffmpeg`: `brew install sox ffmpeg` (brew is the least-surprise path; or bundle static binaries via `extraResources`)
 - Gatekeeper/notarization: unsigned DMGs are blocked; sign + notarize before distributing, or document right-click bypass
 - Case-sensitivity: default APFS is case-insensitive (fine); if a user opts into case-sensitive APFS, path checks still work (code resolves paths case-sensitively via `Path.resolve()`)
-- GPU: Apple Silicon has no CUDA — the app falls back to `cpu` (bf16 unavailable; `torch.cuda.is_available()` returns False). Expect materially slower generation; surface a warning
+- GPU: Apple Silicon has no CUDA. With the three-way selector, MPS acceleration is available on M1-M5 (`torch.backends.mps.is_available()` → `mps` device, float16). Requires an arm64 macOS torch wheel (the dev CUDA wheel ships no MPS runtime). Set `PYTORCH_ENABLE_MPS_FALLBACK=1` for unsupported ops. See `GPU_Architectures_Linux_Windows_Mac.md`
 - Xcode Command Line Tools: needed if any wheel must compile (avoid by using prebuilt wheels)
 
 ---
@@ -66,7 +68,7 @@ Add a `StartupChecks` module invoked from `main.ts` before warmup and from `star
 | 4 | `sox` on PATH | `shutil.which("sox")` | Disable effects + warn (non-fatal) |
 | 5 | `ffprobe` on PATH | `shutil.which("ffprobe")` | Restrict uploads to WAV (non-fatal) |
 | 6 | Model cache present | stat `~/.cache/huggingface/hub/models--Qwen--Qwen3-TTS-12Hz-1.7B-{Base,CustomVoice}` (Linux/macOS), `%USERPROFILE%\.cache\huggingface\hub` (Windows) | Show "Downloading models (~8GB, one-time)" progress; require HF reachable |
-| 7 | GPU availability + dtype | `torch.cuda.is_available()` | Log + warn "CPU mode: generation will be slow"; never fatal |
+| 7 | Accelerator detection + device/dtype selection (see `GPU_Architectures_Linux_Windows_Mac.md`) | Probe in priority order: `torch.cuda.is_available()` (NVIDIA CUDA / AMD ROCm via HIP shim) → `torch.backends.mps.is_available()` (Apple M1-M5) → `torch.xpu.is_available()` (Intel/AMD NPU) → CPU | Log selected backend + dtype (CUDA/bf16, MPS/fp16, XPU/fp16, CPU/fp32); warn "CPU mode: generation will be slow" when falling to CPU; never fatal |
 | 8 | Disk space | `shutil.disk_usage` on cache dir and stories dir; warn < 10 GB free | Warn (non-fatal) |
 | 9 | Stories dir exists/writable | `base_config_manager` bootstrap; test-write a temp file | Auto-create; fail only if permission denied |
 | 10 | Main config valid | `load_main_config()` returns dict with `FlexiTTS` key | Auto-create default config |
