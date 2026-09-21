@@ -122,9 +122,9 @@ jobs:
           for i in range(0, len(failed_block), 2):
               name = failed_block[i]
               detail = failed_block[i + 1] if i + 1 < len(failed_block) else ''
-              first = (detail.splitlines() or [''])[:6]
-              msg = ' '.join(name.split('::')[-1:]).replace('%', '')
-              print('::error title=pytest failure::' + name + ' | ' + ' / '.join(l.strip() for l in detail.splitlines()[:6])[:600])
+              lines = [l for l in detail.splitlines() if l.strip()]
+              tail = lines[-8:]
+              print('::error title=pytest failure::' + name + ' ||| ' + ' / '.join(tail)[:800])
           PY
 
       - name: Upload python test results
@@ -251,6 +251,7 @@ jobs:
           path: |
             src/ui/dist-packages/*.AppImage
           if-no-files-found: error
+
 
 
 
