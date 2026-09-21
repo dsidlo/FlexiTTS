@@ -68,6 +68,8 @@ jobs:
       # CI must point it at the checked-out repo (dev machines have this).
       - name: Write FlexiTTS config pointing at repo Stories
         run: |
+          # Ensure the config lookup is HOME-anchored for the test run
+          unset XDG_CONFIG_HOME
           mkdir -p ~/.config/FlexiTTS
           cat > ~/.config/FlexiTTS/FlexiTTS.yaml <<CFG
           FlexiTTS:
@@ -251,6 +253,7 @@ jobs:
           path: |
             src/ui/dist-packages/*.AppImage
           if-no-files-found: error
+
 
 
 

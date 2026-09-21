@@ -107,7 +107,7 @@ class TestConfigManagerIntegration:
 
     def test_hierarchical_config_loading(self, temp_config_env):
         """Test complete configuration hierarchy loading."""
-        with patch.dict('os.environ', {'HOME': str(temp_config_env['temp_dir'])}):
+        with patch.dict('os.environ', {'HOME': str(temp_config_env['temp_dir']), 'XDG_CONFIG_HOME': str(Path(temp_config_env['temp_dir']) / '.config')}):
             config_manager = ConfigManager()
             
             # Test main config loading
@@ -154,7 +154,7 @@ class TestConfigManagerIntegration:
             with open(story_dir / "story-config.yml", 'w') as f:
                 yaml.dump(story_config, f)
         
-        with patch.dict('os.environ', {'HOME': str(temp_config_env['temp_dir'])}):
+        with patch.dict('os.environ', {'HOME': str(temp_config_env['temp_dir']), 'XDG_CONFIG_HOME': str(Path(temp_config_env['temp_dir']) / '.config')}):
             config_manager = ConfigManager()
             
             # Measure discovery time
@@ -170,7 +170,7 @@ class TestConfigManagerIntegration:
 
     def test_config_validation_comprehensive(self, temp_config_env):
         """End-to-end configuration validation."""
-        with patch.dict('os.environ', {'HOME': str(temp_config_env['temp_dir'])}):
+        with patch.dict('os.environ', {'HOME': str(temp_config_env['temp_dir']), 'XDG_CONFIG_HOME': str(Path(temp_config_env['temp_dir']) / '.config')}):
             config_manager = ConfigManager()
             
             # Test valid story validation
@@ -217,7 +217,7 @@ class TestConfigManagerIntegration:
         with open(old_config_path, 'w') as f:
             yaml.dump(old_config, f)
         
-        with patch.dict('os.environ', {'HOME': str(temp_config_env['temp_dir'])}):
+        with patch.dict('os.environ', {'HOME': str(temp_config_env['temp_dir']), 'XDG_CONFIG_HOME': str(Path(temp_config_env['temp_dir']) / '.config')}):
             config_manager = ConfigManager(test_mode=True)
             config_manager.add_test_whitelist(str(temp_config_env['temp_dir']))
             
@@ -239,7 +239,7 @@ class TestConfigManagerIntegration:
         import threading
         import concurrent.futures
         
-        with patch.dict('os.environ', {'HOME': str(temp_config_env['temp_dir'])}):
+        with patch.dict('os.environ', {'HOME': str(temp_config_env['temp_dir']), 'XDG_CONFIG_HOME': str(Path(temp_config_env['temp_dir']) / '.config')}):
             config_manager = ConfigManager()
             stories = config_manager.discover_stories()
             
@@ -276,7 +276,7 @@ class TestConfigManagerIntegration:
 
     def test_error_recovery_mechanisms(self, temp_config_env):
         """Test error recovery during configuration operations."""
-        with patch.dict('os.environ', {'HOME': str(temp_config_env['temp_dir'])}):
+        with patch.dict('os.environ', {'HOME': str(temp_config_env['temp_dir']), 'XDG_CONFIG_HOME': str(Path(temp_config_env['temp_dir']) / '.config')}):
             config_manager = ConfigManager(test_mode=True)
             
             # Test recovery from corrupted main config
@@ -335,7 +335,7 @@ class TestConfigManagerIntegration:
             with open(story_dir / "story-config.yml", 'w') as f:
                 yaml.dump(story_config, f)
         
-        with patch.dict('os.environ', {'HOME': str(temp_config_env['temp_dir'])}):
+        with patch.dict('os.environ', {'HOME': str(temp_config_env['temp_dir']), 'XDG_CONFIG_HOME': str(Path(temp_config_env['temp_dir']) / '.config')}):
             config_manager = ConfigManager()
             
             # Test discovery performance with large collection
@@ -367,7 +367,7 @@ class TestConfigManagerEdgeCases:
     def test_missing_directories(self):
         """Test handling of missing configuration directories."""
         with tempfile.TemporaryDirectory() as temp_dir:
-            with patch.dict('os.environ', {'HOME': str(temp_dir)}):
+            with patch.dict('os.environ', {'HOME': str(temp_dir), 'XDG_CONFIG_HOME': str(Path(temp_dir) / '.config')}):
                 config_manager = ConfigManager(test_mode=True)
                 config_manager.add_test_whitelist(str(temp_dir))
                 
@@ -392,7 +392,7 @@ class TestConfigManagerEdgeCases:
             main_config_path.chmod(0o000)  # No permissions
             
             try:
-                with patch.dict('os.environ', {'HOME': str(temp_dir)}):
+                with patch.dict('os.environ', {'HOME': str(temp_dir), 'XDG_CONFIG_HOME': str(Path(temp_dir) / '.config')}):
                     # Create test mode config manager to bypass XDG path validation
                     config_manager = ConfigManager(test_mode=True)
                     config_manager.add_test_whitelist(str(config_dir.parent))
@@ -423,7 +423,7 @@ class TestConfigManagerEdgeCases:
                 main_config_path = config_dir / "FlexiTTS.yaml"
                 main_config_path.write_text(invalid_yaml)
                 
-                with patch.dict('os.environ', {'HOME': str(Path(temp_dir) / f"test{i}")}):
+                with patch.dict('os.environ', {'HOME': str(Path(temp_dir) / f"test{i}"), 'XDG_CONFIG_HOME': str(Path(temp_dir) / f"test{i}" / '.config')}):
                     # Create test mode config manager to bypass XDG path validation
                     config_manager = ConfigManager(test_mode=True)
                     config_manager.add_test_whitelist(str(config_dir.parent))

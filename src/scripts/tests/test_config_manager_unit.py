@@ -47,7 +47,7 @@ class TestConfigManagerPrefixStripping:
                 with open(story_dir / "story-config.yml", 'w') as f:
                     yaml.dump({'global': {'story-dir': '.'}}, f)
             
-            with patch.dict('os.environ', {'HOME': str(temp_dir)}):
+            with patch.dict('os.environ', {'HOME': str(temp_dir), 'XDG_CONFIG_HOME': str(Path(temp_dir) / '.config')}):
                 cm = ConfigManager()
                 stories = cm.discover_stories()
                 
@@ -86,7 +86,7 @@ class TestConfigManagerPrefixStripping:
                 with open(story_dir / "story-config.yml", 'w') as f:
                     yaml.dump({'global': {'story-dir': '.'}}, f)
             
-            with patch.dict('os.environ', {'HOME': str(temp_dir)}):
+            with patch.dict('os.environ', {'HOME': str(temp_dir), 'XDG_CONFIG_HOME': str(Path(temp_dir) / '.config')}):
                 cm = ConfigManager()
                 stories = cm.discover_stories()
                 
@@ -120,7 +120,7 @@ class TestConfigManagerPrefixStripping:
             with open(story_dir / "story-config.yml", 'w') as f:
                 yaml.dump({'global': {'story-dir': '.'}}, f)
             
-            with patch.dict('os.environ', {'HOME': str(temp_dir)}):
+            with patch.dict('os.environ', {'HOME': str(temp_dir), 'XDG_CONFIG_HOME': str(Path(temp_dir) / '.config')}):
                 cm = ConfigManager()
                 stories = cm.discover_stories()
                 
@@ -154,7 +154,7 @@ class TestConfigManagerPrefixStripping:
             another_dir = stories_dir / "AnotherStory"
             another_dir.mkdir()
             
-            with patch.dict('os.environ', {'HOME': str(temp_dir)}):
+            with patch.dict('os.environ', {'HOME': str(temp_dir), 'XDG_CONFIG_HOME': str(Path(temp_dir) / '.config')}):
                 cm = ConfigManager()
                 stories = cm.discover_stories()
                 
@@ -185,7 +185,7 @@ class TestConfigManagerPrefixStripping:
             with open(story_dir / "story-config.yml", 'w') as f:
                 yaml.dump({'global': {'story-dir': '.'}}, f)
             
-            with patch.dict('os.environ', {'HOME': str(temp_dir)}):
+            with patch.dict('os.environ', {'HOME': str(temp_dir), 'XDG_CONFIG_HOME': str(Path(temp_dir) / '.config')}):
                 cm = ConfigManager()
                 stories = cm.discover_stories()
                 
@@ -221,7 +221,7 @@ class TestConfigManagerLoadGlobalConfig:
             with open(main_config_path, 'w') as f:
                 yaml.dump(main_config, f)
             
-            with patch.dict('os.environ', {'HOME': str(temp_dir)}):
+            with patch.dict('os.environ', {'HOME': str(temp_dir), 'XDG_CONFIG_HOME': str(Path(temp_dir) / '.config')}):
                 cm = ConfigManager()
                 config = cm.load_main_config()
                 
@@ -233,7 +233,7 @@ class TestConfigManagerLoadGlobalConfig:
     def test_load_global_config_creates_default(self):
         """Test that default config is created when file doesn't exist."""
         with tempfile.TemporaryDirectory() as temp_dir:
-            with patch.dict('os.environ', {'HOME': str(temp_dir)}):
+            with patch.dict('os.environ', {'HOME': str(temp_dir), 'XDG_CONFIG_HOME': str(Path(temp_dir) / '.config')}):
                 cm = ConfigManager()
                 config = cm.load_main_config()
                 
@@ -265,7 +265,7 @@ class TestConfigManagerLoadGlobalConfig:
             with open(main_config_path, 'w') as f:
                 yaml.dump(main_config, f)
             
-            with patch.dict('os.environ', {'HOME': str(temp_dir)}):
+            with patch.dict('os.environ', {'HOME': str(temp_dir), 'XDG_CONFIG_HOME': str(Path(temp_dir) / '.config')}):
                 cm = ConfigManager()
                 cm.load_main_config()
                 
@@ -284,7 +284,7 @@ class TestConfigManagerLoadGlobalConfig:
             # Write invalid YAML
             main_config_path.write_text("invalid: yaml: [: ]")
             
-            with patch.dict('os.environ', {'HOME': str(temp_dir)}):
+            with patch.dict('os.environ', {'HOME': str(temp_dir), 'XDG_CONFIG_HOME': str(Path(temp_dir) / '.config')}):
                 cm = ConfigManager()
                 
                 # Current behavior: creates default config instead of raising
@@ -323,7 +323,7 @@ class TestConfigManagerDiscoverStories:
                 with open(story_dir / "story-config.yml", 'w') as f:
                     yaml.dump({'global': {'story-dir': '.'}}, f)
             
-            with patch.dict('os.environ', {'HOME': str(temp_dir)}):
+            with patch.dict('os.environ', {'HOME': str(temp_dir), 'XDG_CONFIG_HOME': str(Path(temp_dir) / '.config')}):
                 cm = ConfigManager()
                 stories = cm.discover_stories()
                 
@@ -350,7 +350,7 @@ class TestConfigManagerDiscoverStories:
             with open(main_config_path, 'w') as f:
                 yaml.dump(main_config, f)
             
-            with patch.dict('os.environ', {'HOME': str(temp_dir)}):
+            with patch.dict('os.environ', {'HOME': str(temp_dir), 'XDG_CONFIG_HOME': str(Path(temp_dir) / '.config')}):
                 cm = ConfigManager()
                 stories = cm.discover_stories()
                 
@@ -376,7 +376,7 @@ class TestConfigManagerDiscoverStories:
             with open(main_config_path, 'w') as f:
                 yaml.dump(main_config, f)
             
-            with patch.dict('os.environ', {'HOME': str(temp_dir)}):
+            with patch.dict('os.environ', {'HOME': str(temp_dir), 'XDG_CONFIG_HOME': str(Path(temp_dir) / '.config')}):
                 cm = ConfigManager()
                 stories = cm.discover_stories()
                 
@@ -412,7 +412,7 @@ class TestConfigManagerDiscoverStories:
             (stories_dir / "Story-File.txt").write_text("not a story")
             (stories_dir / "Story-AnotherFile.md").write_text("also not a story")
             
-            with patch.dict('os.environ', {'HOME': str(temp_dir)}):
+            with patch.dict('os.environ', {'HOME': str(temp_dir), 'XDG_CONFIG_HOME': str(Path(temp_dir) / '.config')}):
                 cm = ConfigManager()
                 stories = cm.discover_stories()
                 
@@ -445,7 +445,7 @@ class TestConfigManagerDiscoverStories:
             story_dir.mkdir()
             (story_dir / "story-config.yml").write_text(yaml.dump({'global': {'story-dir': '.'}}))
             
-            with patch.dict('os.environ', {'HOME': str(temp_dir)}):
+            with patch.dict('os.environ', {'HOME': str(temp_dir), 'XDG_CONFIG_HOME': str(Path(temp_dir) / '.config')}):
                 cm = ConfigManager()
                 stories = cm.discover_stories()
                 
@@ -473,7 +473,7 @@ class TestConfigManagerDiscoverStories:
             story_dir.mkdir()
             (story_dir / "story-config.yml").write_text(yaml.dump({'global': {'story-dir': '.'}}))
             
-            with patch.dict('os.environ', {'HOME': str(temp_dir)}):
+            with patch.dict('os.environ', {'HOME': str(temp_dir), 'XDG_CONFIG_HOME': str(Path(temp_dir) / '.config')}):
                 cm = ConfigManager()
                 stories = cm.discover_stories()
                 
@@ -514,7 +514,7 @@ class TestConfigManagerGetStoriesDirectory:
             
             (config_dir / "FlexiTTS.yaml").write_text(yaml.dump(main_config))
             
-            with patch.dict('os.environ', {'HOME': str(temp_dir)}):
+            with patch.dict('os.environ', {'HOME': str(temp_dir), 'XDG_CONFIG_HOME': str(Path(temp_dir) / '.config')}):
                 cm = ConfigManager()
                 stories_dir = cm.get_stories_directory()
                 
@@ -536,7 +536,7 @@ class TestConfigManagerGetStoriesDirectory:
             
             (config_dir / "FlexiTTS.yaml").write_text(yaml.dump(main_config))
             
-            with patch.dict('os.environ', {'HOME': str(temp_dir)}):
+            with patch.dict('os.environ', {'HOME': str(temp_dir), 'XDG_CONFIG_HOME': str(Path(temp_dir) / '.config')}):
                 cm = ConfigManager()
                 stories_dir = cm.get_stories_directory()
                 
@@ -562,7 +562,7 @@ class TestConfigManagerGetStoryPrefix:
             
             (config_dir / "FlexiTTS.yaml").write_text(yaml.dump(main_config))
             
-            with patch.dict('os.environ', {'HOME': str(temp_dir)}):
+            with patch.dict('os.environ', {'HOME': str(temp_dir), 'XDG_CONFIG_HOME': str(Path(temp_dir) / '.config')}):
                 cm = ConfigManager()
                 prefix = cm.get_story_prefix()
                 
@@ -572,7 +572,7 @@ class TestConfigManagerGetStoryPrefix:
     def test_get_story_prefix_default(self):
         """Test that default prefix is 'Story-'."""
         with tempfile.TemporaryDirectory() as temp_dir:
-            with patch.dict('os.environ', {'HOME': str(temp_dir)}):
+            with patch.dict('os.environ', {'HOME': str(temp_dir), 'XDG_CONFIG_HOME': str(Path(temp_dir) / '.config')}):
                 cm = ConfigManager()
                 # Load default config
                 cm.load_main_config()
