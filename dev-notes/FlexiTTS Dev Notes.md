@@ -66,6 +66,31 @@ Gather all LLMs emotional choices, and create "instructional strings" that bring
   * Access to a commercial grade LLM
     * Used to generate the required XML representation of the original Chapter document augmented with tags indicating dialogs for the Narrator and other Characters.
 
+## Jev Post-XML Validation (jev_service.py)
+
+After `chapter_to_xml.py` converts text to XML (the LLM assigns characters and
+emotions during that step), `jev_service.py` runs two validations:
+
+  - Character assignment: verifies each dialog speaker against the roster.
+    Case/punctuation differences are normalized locally. Truly unknown
+    speakers are checked by Jev (which character fits the dialog text);
+    applied only at confidence >= 0.80, otherwise left as-is.
+  - Emotion matching: for characters with configured emotions, remaps a
+    dialog's emotion tag to the configured set when Jev matches at
+    confidence >= 0.80; otherwise leaves the tag as-is.
+
+Config (FlexiTTS.yml or story-config.yml), disabled by default:
+
+    Jev:
+      enabled: false
+      api-key-env: TYPESAFE_API_KEY
+      confidence-threshold: 0.80
+
+Without TYPESAFE_API_KEY the run is dry (logs only, no XML changes).
+Emotions are never re-chosen at render time; render-time emotion resolution
+in chapter_xml_to_audio.py is unchanged.
+
+
 ## Scripts
 
   - validate_config.py
