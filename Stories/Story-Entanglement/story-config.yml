@@ -167,3 +167,8 @@ characters:
 
 # Best SoX Approach for Smoothing Plosives / Abrupt Pops
 # highpass 100 0.7 lowshelf -6 150 0.8 compand 0.05,0.2:6:-60/-50/-20 -3 -90 0.05 gain -n -1
+
+# jev:
+#   enabled: true
+#   api-key-env: TYPESAFE_API_KEY
+#   confidence-threshold: 0.80

@@ -269,6 +269,21 @@ def main():
             print(f"  output_path: {output_path}", file=sys.stderr)
             print(f"XML saved to {output_path}")
 
+            # Post-conversion validation via Jev (character assignments +
+            # emotion matching). Emotions are still chosen by the LLM during
+            # this conversion step; Jev only validates/remaps at high
+            # confidence afterward. No-op when jev.enabled is false.
+            try:
+                from jev_service import run_jev_validation
+                jev_result = run_jev_validation(output_path, config)
+                if not jev_result.get("skipped"):
+                    print(f"[RESOURCE-ACCESS] Jev validation", file=sys.stderr)
+                    print(f"  dry: {jev_result.get('dry', True)}", file=sys.stderr)
+                    print(f"  jev: characters={len(jev_result.get('characters', []))} "
+                          f"emotions={len(jev_result.get('emotions', []))}")
+            except Exception as jev_err:
+                print(f"JeV validation skipped (error: {jev_err})")
+
         except Exception as e:
             print(f"Error calling LLM: {e}")
             sys.exit(1)
