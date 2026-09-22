@@ -164,7 +164,14 @@ def validate_character_assignments(
         if not speaker:
             continue
         if speaker.lower() in roster_lower:
-            continue  # exact roster member: fine
+            if speaker == roster_lower[speaker.lower()]:
+                continue  # exact canonical match: fine
+            # right name, wrong case: normalize without Jev
+            canonical = roster_lower[speaker.lower()]
+            dlg.set(attr, canonical)
+            changed.append({"from": speaker, "to": canonical, "how": "roster-normalize"})
+            _log(f"character normalized: '{speaker}' -> '{canonical}'")
+            continue
 
         canonical = _correct_case(speaker, characters)
         if canonical:
@@ -283,15 +290,18 @@ def run_jev_validation(xml_path: Path, config: dict) -> Dict[str, Any]:
         _log("jev.enabled is false: skipping validation")
         return {"skipped": True}
 
-    client: Optional[JevClient] = None
-    if jev_cfg["api_key"]:
-        client = JevClient(jev_cfg["api_base"], jev_cfg["api_key"],
-                           jev_cfg["model"], jev_cfg["timeout"])
-    else:
-        _log("no api key (dry mode): logging-only checks")
+    if not jev_cfg["api_key"]:
+        # No API key configured: Jev actions require it. Log and skip entirely
+        # (the XML is left untouched; no dry-run side effects).
+        _log("no api key configured: jev validation skipped entirely "
+             f"(set {os.getenv('JEV_KEY_HINT', 'TYPESAFE_API_KEY')} to enable)")
+        return {"skipped": True, "reason": "no_api_key"}
+
+    client = JevClient(jev_cfg["api_base"], jev_cfg["api_key"],
+                       jev_cfg["model"], jev_cfg["timeout"])
 
     roster = [str(c.get("name")) for c in config.get("characters", []) if c.get("name")]
-    result = {"skipped": False, "dry": client is None,
+    result = {"skipped": False, "dry": False,
               **validate_character_assignments(xml_path, roster, jev_cfg, client),
               **validate_emotion_tags(xml_path, collect_char_emotions(config), jev_cfg, client)}
     return result

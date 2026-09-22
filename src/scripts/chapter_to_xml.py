@@ -278,7 +278,6 @@ def main():
                 jev_result = run_jev_validation(output_path, config)
                 if not jev_result.get("skipped"):
                     print(f"[RESOURCE-ACCESS] Jev validation", file=sys.stderr)
-                    print(f"  dry: {jev_result.get('dry', True)}", file=sys.stderr)
                     print(f"  jev: characters={len(jev_result.get('characters', []))} "
                           f"emotions={len(jev_result.get('emotions', []))}")
             except Exception as jev_err:
