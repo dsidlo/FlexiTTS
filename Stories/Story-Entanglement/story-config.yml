@@ -171,4 +171,4 @@ characters:
 # jev:
 #   enabled: true
 #   api-key-env: TYPESAFE_API_KEY
-#   confidence-threshold: 0.80
+#   emotion-confidence-threshold: 0.80

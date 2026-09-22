@@ -23,7 +23,7 @@ Config (story-config.yml or FlexiTTS.yml):
     jev:
       enabled: true
       api-key-env: TYPESAFE_API_KEY
-      confidence-threshold: 0.80
+      emotion-confidence-threshold: 0.80
       model: jev-latest
 """
 
@@ -57,12 +57,14 @@ def load_jev_config(config: dict) -> dict:
                 cfg = v
                 break
     key_env = cfg.get("api-key-env", "TYPESAFE_API_KEY")
+    confidence = cfg.get("emotion-confidence-threshold",
+                         cfg.get("confidence-threshold", DEFAULT_CONFIDENCE))
     return {
         "enabled": bool(cfg.get("enabled", False)),
         "api_key": os.getenv(key_env, ""),
         "api_base": cfg.get("api-base", DEFAULT_API_BASE),
         "model": cfg.get("model", DEFAULT_MODEL),
-        "confidence": float(cfg.get("confidence-threshold", DEFAULT_CONFIDENCE)),
+        "confidence": float(confidence),
         "timeout": float(cfg.get("timeout", DEFAULT_TIMEOUT)),
     }
 
@@ -205,8 +207,9 @@ def validate_emotion_tags(
     client: Optional[JevClient] = None,
 ) -> Dict[str, Any]:
     """For characters with configured emotions, remap utterance emotion tags
-    to the configured set when Jev matches at confidence >= threshold.
-    Emotions on characters with no configured emotions are left untouched.
+    to the configured set when Jev matches at confidence >= the
+    emotion-confidence-threshold. Emotions on characters with no configured
+    emotions are left untouched.
     """
     tree = ET.parse(xml_path)
     root = tree.getroot()
