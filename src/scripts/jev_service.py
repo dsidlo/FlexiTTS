@@ -50,32 +50,50 @@ def _log(msg: str) -> None:
 
 def _has_jev_block(config: dict) -> bool:
     return isinstance(config, dict) and any(
-        k.lower() == "jev" and isinstance(v, dict) for k, v in config.items())
+        k.lower() in ("jev", "laya") and isinstance(v, dict)
+        for k, v in config.items())
 
 
-def _find_global_jev_config() -> dict:
-    """Optional global Jev block from config/FlexiTTS.yml (repo) or the XDG
-    ~/.config/FlexiTTS/FlexiTTS.yml. story-config.yml wins when it has its
-    own jev block."""
+def _find_blocks(config: dict) -> Tuple[dict, dict]:
+    """Extract (jev_block, laya_block) from a config dict, case-insensitively."""
+    jev_block: dict = {}
+    laya_block: dict = {}
+    if isinstance(config, dict):
+        for k, v in config.items():
+            lk = k.lower()
+            if lk == "jev" and isinstance(v, dict):
+                jev_block = dict(v)
+            elif k.lower() == "laya" and isinstance(v, dict):
+                laya_block = dict(v)
+    return jev_block, laya_block
+
+
+def _find_global_config_file() -> Optional[Path]:
+    """Global config: XDG ~/.config/FlexiTTS/FlexiTTS.yml (preferred),
+    .yaml legacy fallback, then the repo's config/FlexiTTS.yml."""
     candidates = []
     xdg = os.environ.get("XDG_CONFIG_HOME", str(Path.home() / ".config"))
-    # Same preference order as base_config_manager: .yml first (single-file
-    # standard), .yaml only as a legacy fallback for old installs.
     candidates.append(Path(xdg) / "FlexiTTS" / "FlexiTTS.yml")
     candidates.append(Path(xdg) / "FlexiTTS" / "FlexiTTS.yaml")
     repo_cfg = Path(__file__).resolve().parent.parent.parent / "config" / "FlexiTTS.yml"
     candidates.append(repo_cfg)
     for c in candidates:
-        try:
-            if c.exists():
-                import yaml
-                data = yaml.safe_load(c.read_text()) or {}
-                for k, v in data.items():
-                    if k.lower() == "jev" and isinstance(v, dict):
-                        return v
-        except Exception:
-            continue
-    return {}
+        if c.exists():
+            return c
+    return None
+
+
+def _load_global_blocks() -> Tuple[dict, dict]:
+    """Load (jev_block, laya_block) from the global config file, if any."""
+    path = _find_global_config_file()
+    if not path:
+        return {}, {}
+    try:
+        import yaml
+        data = yaml.safe_load(path.read_text()) or {}
+        return _find_blocks(data)
+    except Exception:
+        return {}, {}
 
 
 def _ensure_env_loaded() -> None:
@@ -97,44 +115,81 @@ def _ensure_env_loaded() -> None:
     os.environ["JEV_ENV_LOADED"] = "1"
 
 
-def load_jev_config(config: dict) -> dict:
-    """Read the jev: block from a story/global config, with defaults.
-    Key lookup is case-insensitive (jev / Jev / JEV all match).
-    Precedence: story-config.yml jev block > FlexiTTS.yml jev block.
+def _normalize_block(block: dict) -> dict:
+    """Case-insensitive sub-key view of a config block."""
+    return {k.lower(): v for k, v in (block or {}).items()}
 
-    backend: jev | laya | auto (default auto).
-      - jev: cloud API; requires api key (skips without one).
-      - laya: local Laya model; requires GPU + free VRAM (min-vram-mb).
-      - auto: laya when the laya package is installed AND a GPU with enough
-        free VRAM is present; otherwise jev when an api key exists; else skip.
+
+def load_validation_config(config: dict) -> dict:
+    """Load merged validation settings.
+
+    Precedence: story-config.yml blocks > FlexiTTS.yml global blocks.
+    Jev is the preferred engine; Laya is the local fallback.
     """
     _ensure_env_loaded()
-    cfg = {}
-    if _has_jev_block(config):
-        for k, v in config.items():
-            if k.lower() == "jev" and isinstance(v, dict):
-                cfg = dict(v)
-                break
-    else:
-        cfg = _find_global_jev_config()
 
-    # Sub-keys are also read case-insensitively (Backend / BACKEND etc.)
-    lc = {k.lower(): v for k, v in cfg.items()}
-    key_env = str(lc.get("api-key-env", "TYPESAFE_API_KEY"))
-    confidence = lc.get("emotion-confidence-threshold",
-                        lc.get("confidence-threshold", DEFAULT_CONFIDENCE))
+    story_jev, story_laya = _find_blocks(config or {})
+    if not story_jev and not story_laya:
+        global_jev, global_laya = _load_global_blocks()
+        jev_block, laya_block = global_jev, global_laya
+    else:
+        jev_block, laya_block = story_jev, story_laya
+
+    j = _normalize_block(jev_block)
+    l = _normalize_block(laya_block)
+
+    def _first(*keys, default=None):
+        for k in keys:
+            if k in j:
+                return j[k]
+        for k in keys:
+            if k in l:
+                return l[k]
+        return default
+
+    key_env = str(_first("api-key-env", default="TYPESAFE_API_KEY"))
+    emotion_key = _first("emotion-confidence-threshold", default=None)
+    if emotion_key is None:
+        emotion_key = _first("confidence-threshold", default=DEFAULT_CONFIDENCE)
+    confidence = float(emotion_key)
+
+    jev_enabled = bool(j.get("enabled", False))
+    laya_enabled = bool(l.get("enabled", False))
+
     return {
-        "enabled": bool(lc.get("enabled", False)),
-        "backend": str(lc.get("backend", "auto")).strip().lower(),
+        "jev": {
+            "enabled": jev_enabled,
+            "api_key": os.getenv(key_env, ""),
+            "api_base": str(j.get("api-base", DEFAULT_API_BASE)),
+            "model": str(j.get("model", DEFAULT_MODEL)),
+            "timeout": float(j.get("timeout", DEFAULT_TIMEOUT)),
+        },
+        "laya": {
+            "enabled": laya_enabled,
+            "model": str(l.get("model", j.get("laya-model", "english"))),
+            "min-vram-mb": int(l.get("min-vram-mb", 1500)),
+            "device": str(l.get("device", "auto")),
+            "confidence": float(l.get("emotion-confidence-threshold",
+                                      l.get("confidence-threshold",
+                                            confidence))),
+        },
+        # validation-wide values (engine-independent)
+        "confidence": confidence,
+        "key_env": key_env,
+        # legacy keys kept for existing tests/callers
+        "enabled": jev_enabled or laya_enabled,
         "api_key": os.getenv(key_env, ""),
-        "api_base": str(lc.get("api-base", DEFAULT_API_BASE)),
-        "model": str(lc.get("model", DEFAULT_MODEL)),
-        "confidence": float(confidence),
-        "timeout": float(lc.get("timeout", DEFAULT_TIMEOUT)),
-        "min-vram-mb": int(lc.get("min-vram-mb", 1500)),
-        "laya-model": str(lc.get("laya-model", "english")),
-        "device": str(lc.get("device", "auto")),
+        "api_base": str(j.get("api-base", DEFAULT_API_BASE)),
+        "model": str(j.get("model", DEFAULT_MODEL)),
+        "timeout": float(j.get("timeout", DEFAULT_TIMEOUT)),
+        "min-vram-mb": int(l.get("min-vram-mb", 1500)),
     }
+
+
+# Backwards-compat alias
+def load_jev_config(config: dict) -> dict:
+    return load_validation_config(config)
+
 
 def gpu_free_vram_mb() -> int:
     """Free VRAM in MB via nvidia-smi; 0 when no NVIDIA GPU is present."""
@@ -227,33 +282,32 @@ def _laya_available(jev_cfg: dict) -> bool:
 
 
 def select_backend(jev_cfg: dict) -> Tuple[Optional[Any], Optional[str]]:
-    """Resolve the backend per config + machine state.
+    """Resolve the engine per the user's conditions:
 
-    Returns (client, backend_name) or (None, None) when nothing qualifies.
-      - backend jev: JevClient (api key required by caller gate)
-      - backend laya: LayaClient (GPU/VRAM checked)
-      - backend auto: laya if available; else jev (caller checks key)
+    1. Jev, if jev.enabled and an api key exists.
+    2. Laya, if laya.enabled and GPU + free VRAM meet min-vram-mb.
+    3. Laya on CPU if laya.enabled and device is explicitly "cpu".
+    4. Otherwise: no engine (caller skips).
     """
-    backend = jev_cfg["backend"]
-    if backend not in ("jev", "laya", "auto"):
-        _log(f"unknown backend '{backend}': treating as auto")
-        backend = "auto"
-    if backend == "laya":
-        if _laya_available(jev_cfg):
-            return LayaClient(jev_cfg["laya-model"], jev_cfg["device"]), "laya"
-        _log("laya unavailable (package/GPU/VRAM); will fall back")
-        return None, None
-    if backend == "jev":
-        return JevClient(jev_cfg["api_base"], jev_cfg["api_key"],
-                         jev_cfg["model"], jev_cfg["timeout"]), "jev"
-    # auto
-    if _laya_available(jev_cfg):
-        return LayaClient(jev_cfg["laya-model"], jev_cfg["device"] if
-                          isinstance(jev_cfg["device"], str) else "auto"), "laya"
-    if jev_cfg["api_key"]:
-        return (JevClient(jev_cfg["api_base"], jev_cfg["api_key"],
-                          jev_cfg["model"], jev_cfg["timeout"]), "jev")
+    jev = jev_cfg["jev"]
+    laya = jev_cfg["laya"]
+
+    if jev["enabled"]:
+        if jev["api_key"]:
+            return (JevClient(jev["api_base"], jev["api_key"],
+                              jev["model"], jev["timeout"]), "jev")
+        _log("jev enabled but no api key; trying laya fallback")
+
+    if laya["enabled"]:
+        if _laya_available(laya):
+            device = laya["device"] if laya["device"] != "auto" else None
+            return LayaClient(laya["model"], device or "auto"), "laya"
+        if str(laya["device"]).lower() == "cpu":
+            return LayaClient(laya["model"], "cpu"), "laya"
+        _log("laya enabled but GPU/VRAM/package unavailable")
+
     return None, None
+
 
 
 class JevClient:
@@ -472,28 +526,15 @@ def run_jev_validation(xml_path: Path, config: dict) -> Dict[str, Any]:
     Live mode requires TYPESAFE_API_KEY (or jev.api-key-env); without it the
     run is a dry pass that logs roster-mismatches but changes nothing.
     """
-    jev_cfg = load_jev_config(config)
+    jev_cfg = load_validation_config(config)
     if not jev_cfg["enabled"]:
-        _log("jev.enabled is false: skipping validation")
+        _log("neither Jev nor Laya enabled: skipping validation")
         return {"skipped": True, "reason": "disabled"}
 
     client, backend = select_backend(jev_cfg)
-
-    if backend == "jev" and not jev_cfg["api_key"]:
-        # Jev cloud requires the api key; skip entirely (XML untouched).
-        _log("backend jev but no api key configured: validation skipped "
-             "(set TYPESAFE_API_KEY to enable, or use the laya backend)")
-        return {"skipped": True, "reason": "no_api_key"}
     if client is None:
-        # auto/laya resolved to nothing: laya unavailable (package/GPU/VRAM)
-        # and no jev api key. Local-first design falls back to laya on CPU
-        # only when explicitly requested (backend: laya, device: cpu).
-        if jev_cfg["backend"] == "laya" and str(jev_cfg["device"]).lower() == "cpu":
-            client, backend = LayaClient(jev_cfg["laya-model"], "cpu"), "laya"
-        else:
-            _log("no usable backend (no laya package/GPU, no jev api key): "
-                 "validation skipped")
-            return {"skipped": True, "reason": "no_backend"}
+        _log("no engine available: jev missing key, laya unavailable")
+        return {"skipped": True, "reason": "no_engine"}
 
     _log(f"backend selected: {backend}")
     roster = [str(c.get("name")) for c in config.get("characters", []) if c.get("name")]

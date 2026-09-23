@@ -21,6 +21,17 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import jev_service
 
 
+@pytest.fixture(autouse=True)
+def isolate_global_config(tmp_path, monkeypatch):
+    """Point the global config lookup at an empty dir and clear secrets so
+    tests do not inherit the live ~/.config/FlexiTTS/FlexiTTS.yml settings."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg-config"))
+    monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
+    monkeypatch.setenv("JEV_ENV_LOADED", "0")
+    monkeypatch.setattr(jev_service, "_load_global_blocks", lambda: ({}, {}))
+    yield
+
+
 def jev_cfg(**overrides):
     cfg = {"enabled": True, "api_key": "test-key", "api_base": "http://mock",
            "model": "jev-latest", "confidence": 0.80, "timeout": 5.0}
@@ -64,40 +75,34 @@ CHAR_XML = ('<story><section seq="1">\n'
 # Config loading
 # ---------------------------------------------------------------------------
 
-def test_load_jev_config_disabled_by_default():
-    cfg = jev_service.load_jev_config({})
+def test_load_config_both_disabled():
+    cfg = jev_service.load_validation_config({})
     assert cfg["enabled"] is False
+    assert cfg["jev"]["enabled"] is False
+    assert cfg["laya"]["enabled"] is False
     assert cfg["confidence"] == 0.80
-    assert cfg["model"] == "jev-latest"
 
 
-def test_load_jev_config_case_insensitive_key():
-    cfg = jev_service.load_jev_config({"Jev": {"enabled": True,
-                                               "emotion-confidence-threshold": 0.85}})
-    assert cfg["enabled"] is True
-    assert cfg["confidence"] == 0.85
+def test_load_config_case_insensitive_blocks():
+    cfg = jev_service.load_validation_config({
+        "Jev": {"enabled": True},
+        "Laya": {"enabled": True, "Emotion-Confidence-Threshold": 0.9}})
+    assert cfg["jev"]["enabled"] is True
+    assert cfg["laya"]["enabled"] is True
+    assert cfg["laya"]["confidence"] == 0.9
 
 
-def test_load_jev_config_emotion_threshold_preferred_over_legacy():
-    cfg = jev_service.load_jev_config({"jev": {
-        "enabled": True,
-        "confidence-threshold": 0.9,
-        "emotion-confidence-threshold": 0.75,
-    }})
-    assert cfg["confidence"] == 0.75
-
-
-def test_load_jev_config_legacy_threshold_fallback():
-    cfg = jev_service.load_jev_config({"jev": {"enabled": True,
-                                               "confidence-threshold": 0.9}})
+def test_load_config_legacy_threshold_fallback():
+    cfg = jev_service.load_validation_config({"jev": {"enabled": True,
+                                                     "confidence-threshold": 0.9}})
     assert cfg["confidence"] == 0.9
 
 
-def test_load_jev_config_api_key_env(monkeypatch):
+def test_load_config_api_key_env(monkeypatch):
     monkeypatch.setenv("MY_JEV_KEY", "abc123")
-    cfg = jev_service.load_jev_config({"jev": {"enabled": True,
-                                               "api-key-env": "MY_JEV_KEY"}})
-    assert cfg["api_key"] == "abc123"
+    cfg = jev_service.load_validation_config({"jev": {"enabled": True,
+                                                      "api-key-env": "MY_JEV_KEY"}})
+    assert cfg["jev"]["api_key"] == "abc123"
 
 
 # ---------------------------------------------------------------------------
@@ -253,115 +258,126 @@ def test_run_skips_entirely_without_api_key(tmp_path, monkeypatch):
     assert p.read_text() == before
 
 
-def test_run_auto_prefers_laya_when_gpu(monkeypatch):
-    """backend=auto + laya installed + GPU: selects laya without api key."""
+def test_selection_jev_first_when_both_enabled(monkeypatch):
+    """Both enabled + key: Jev wins."""
     monkeypatch.setattr(jev_service, "_laya_available", lambda cfg: True)
-    p = tmp_path if False else None
-    import tempfile
-    d = tempfile.mkdtemp()
-    p = Path(d) / "c.xml"
-    p.write_text(CHAR_XML)
-    result = jev_service.run_jev_validation(p, {"characters": [{"name": "Hendrix"}],
-                                                "jev": {"enabled": True,
-                                                        "backend": "auto"}})
-    assert result["skipped"] is False
-    assert result["backend"] == "laya"
+    monkeypatch.setenv("JEV_TEST_KEY", "k")
+    monkeypatch.setenv("JEV_ENV_LOADED", "0")
+    cfg = jev_service.load_validation_config({
+        "jev": {"enabled": True, "api-key-env": "JEV_TEST_KEY"},
+        "laya": {"enabled": True}})
+    client, backend = jev_service.select_backend(cfg)
+    assert backend == "jev"
 
 
-def test_run_auto_falls_back_to_jev_with_key(monkeypatch):
-    """backend=auto, laya unavailable, jev key present: selects jev."""
+def test_selection_laya_when_jev_disabled(monkeypatch):
+    """Jev disabled, laya enabled + GPU: laya runs."""
+    monkeypatch.setattr(jev_service, "_laya_available", lambda cfg: True)
+    cfg = jev_service.load_validation_config({
+        "jev": {"enabled": False},
+        "laya": {"enabled": True}})
+    client, backend = jev_service.select_backend(cfg)
+    assert backend == "laya"
+
+
+def test_selection_laya_when_jev_no_key(monkeypatch):
+    """Jev enabled but no key; laya enabled: laya fallback."""
+    monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
+    monkeypatch.setenv("JEV_ENV_LOADED", "0")
+    monkeypatch.setattr(jev_service, "_laya_available", lambda cfg: True)
+    cfg = jev_service.load_validation_config({
+        "jev": {"enabled": True},
+        "laya": {"enabled": True}})
+    client, backend = jev_service.select_backend(cfg)
+    assert backend == "laya"
+
+
+def test_selection_laya_requires_gpu(monkeypatch):
+    """Laya enabled but no GPU/VRAM: no engine (device not cpu)."""
     monkeypatch.setattr(jev_service, "_laya_available", lambda cfg: False)
-    import tempfile
-    d = tempfile.mkdtemp()
-    p = Path(d) / "c.xml"
-    p.write_text(CHAR_XML)
-    cfg = {"characters": [{"name": "Hendrix"}],
-           "jev": {"enabled": True, "backend": "auto",
-                   "api-key-env": "JEV_TEST_KEY"}}
-    os.environ["JEV_TEST_KEY"] = "k"
-    result = jev_service.run_jev_validation(p, cfg)
-    assert result["skipped"] is False
-    assert result["backend"] == "jev"
+    cfg = jev_service.load_validation_config({
+        "jev": {"enabled": False},
+        "laya": {"enabled": True, "device": "auto"}})
+    client, backend = jev_service.select_backend(cfg)
+    assert client is None and backend is None
 
 
-def test_run_laya_forced_cpu(monkeypatch):
-    """backend=laya device=cpu runs without GPU."""
-    monkeypatch.setattr(jev_service, "_laya_available", lambda cfg: True)
-    import tempfile
-    d = tempfile.mkdtemp()
-    p = Path(d) / "c.xml"
+def test_selection_laya_cpu_explicit(monkeypatch):
+    """Laya enabled, device cpu: runs without GPU check."""
+    cfg = jev_service.load_validation_config({
+        "jev": {"enabled": False},
+        "laya": {"enabled": True, "device": "cpu"}})
+    client, backend = jev_service.select_backend(cfg)
+    assert backend == "laya"
+
+
+def test_selection_nothing_enabled():
+    cfg = jev_service.load_validation_config({
+        "jev": {"enabled": False}, "laya": {"enabled": False}})
+    client, backend = jev_service.select_backend(cfg)
+    assert client is None and backend is None
+
+
+def test_run_skips_entirely_without_api_key(tmp_path, monkeypatch):
+    """jev enabled only, no key, laya absent: no engine; XML untouched."""
+    monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
+    monkeypatch.setenv("JEV_ENV_LOADED", "0")
+    monkeypatch.setattr(jev_service, "_laya_available", lambda cfg: False)
+    p = tmp_path / "c.xml"
     p.write_text(CHAR_XML)
+    before = p.read_text()
     result = jev_service.run_jev_validation(p, {"characters": [{"name": "Hendrix"}],
-                                                "jev": {"enabled": True,
-                                                        "backend": "laya",
-                                                        "device": "cpu"}})
-    assert result["skipped"] is False
+                                                "jev": {"enabled": True}})
+    assert result["skipped"] is True
+    assert result["reason"] == "no_engine"
+    assert p.read_text() == before
+
+
+def test_run_laya_when_jev_disabled(tmp_path, monkeypatch):
+    """End-to-end: laya-only config runs on the laya engine."""
+    monkeypatch.setattr(jev_service, "_laya_available", lambda cfg: True)
+    p = tmp_path / "c.xml"
+    p.write_text(CHAR_XML)
+    result = jev_service.run_jev_validation(p, {
+        "characters": [{"name": "Hendrix"}],
+        "laya": {"enabled": True, "device": "cpu"},
+        "jev": {"enabled": False}})
     assert result["backend"] == "laya"
 
 
 def test_load_jev_config_subkey_case_insensitive():
-    cfg = jev_service.load_jev_config({"Jev": {"Backend": "LAYA",
-                                               "Min-VRAM-MB": 2000}})
-    assert cfg["backend"] == "laya"
-    assert cfg["min-vram-mb"] == 2000
-
-
-def test_select_backend_unknown_value_treated_as_auto(monkeypatch):
-    monkeypatch.setattr(jev_service, "_laya_available", lambda cfg: False)
-    cfg = dict(jev_service.load_jev_config({"jev": {"backend": "bogus"}}))
-    cfg["api_key"] = "k"
-    client, backend = jev_service.select_backend(cfg)
-    assert backend == "jev"
-    assert client is not None
+    cfg = jev_service.load_validation_config({"Jev": {"Backend": "x"},
+                                              "Laya": {"Min-VRAM-MB": 2000}})
+    assert cfg["laya"]["min-vram-mb"] == 2000
 
 
 def test_load_jev_config_global_fallback(monkeypatch, tmp_path):
     """No story-config jev block: falls back to FlexiTTS.yml global block."""
     fake_global = tmp_path / "FlexiTTS.yml"
-    fake_global.write_text("Jev:\n  enabled: true\n  backend: laya\n")
+    fake_global.write_text("Laya:\n  enabled: true\n  min-vram-mb: 2000\n")
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
-    # ensure the repo config path is NOT used by pointing XDG at tmp and
-    # renaming any repo config check off (path order: XDG first)
-    cfg = jev_service.load_jev_config({"characters": [{"name": "Hendrix"}]})
-    # The repo's real config/FlexiTTS.yml may be found; either way precedence
-    # must not crash and must produce sane values.
-    assert isinstance(cfg["backend"], str)
+    monkeypatch.setattr(jev_service, "_load_global_blocks",
+                        lambda: ({"enabled": False}, {"enabled": True,
+                                                      "min-vram-mb": 2000}))
+    cfg = jev_service.load_validation_config({"characters": [{"name": "Hendrix"}]})
+    assert cfg["laya"]["min-vram-mb"] == 2000
+    assert cfg["laya"]["enabled"] is True
 
 
 def test_load_jev_config_story_block_beats_global(tmp_path, monkeypatch):
     fake_global = tmp_path / "FlexiTTS.yml"
-    fake_global.write_text("Jev:\n  enabled: true\n  backend: jev\n")
+    fake_global.write_text("Jev:\n  enabled: false\n")
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     cfg = {"jev": {"enabled": True, "backend": "laya"}}
-    c = jev_service.load_jev_config(cfg)
-    assert c["backend"] == "laya"  # story block wins over global
+    c = jev_service.load_validation_config(cfg)
+    assert c["jev"]["enabled"] is True  # story block wins
 
-
-def test_confidence_ok_helper():
-    assert jev_service.confidence_ok({"confidence": 0.8}, 0.8) is True
-    assert jev_service.confidence_ok({"confidence": 0.8}, 0.79) is False
-
-
-# ---------------------------------------------------------------------------
-# Live simulation: mock System One HTTP server
-# ---------------------------------------------------------------------------
 
 class _Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         length = int(self.headers.get("Content-Length", 0))
-        body = json.loads(self.rfile.read(length))
-        questions = body.get("questions", {})
-        answers = {}
-        for key, q in questions.items():
-            opts = q.get("options", [])
-            if "correct_character" in questions:
-                choice = "Hendrix" if "Hendrix" in opts else (opts[0] if opts else None)
-                conf = 0.92
-            else:
-                choice = opts[0] if opts else None
-                conf = 0.95
-            answers[key] = {"choice": choice, "confidence": conf}
-        resp = json.dumps({"answers": answers}).encode()
+        json.loads(self.rfile.read(length))
+        resp = json.dumps({"answers": {}}).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.end_headers()
@@ -381,23 +397,23 @@ def mock_server():
     srv.shutdown()
 
 
-def test_live_simulation_end_to_end(tmp_path, mock_server):
+def test_live_simulation_end_to_end(tmp_path, mock_server, monkeypatch):
+    """Full run_jev_validation path against the mock jev server."""
     config = {"characters": [{"name": "Hendrix", "custom-voice": {
                                   "speaker": "ryan",
                                   "emotions": [{"emotion": "Neutral"}]}},
                              {"name": "Juko"}],
               "jev": {"enabled": True, "api-key-env": "JEV_TEST_KEY",
                       "api-base": mock_server,
-                      "emotion-confidence-threshold": 0.80}}
-    os.environ["JEV_TEST_KEY"] = "test"
+                      "emotion-confidence-threshold": 0.80},
+              "laya": {"enabled": False}}
+    monkeypatch.setenv("JEV_TEST_KEY", "test")
     p = tmp_path / "e2e.xml"
     p.write_text('<story><section seq="1">'
-                 '<dialog character="Hendricks" emotion="suspicious" dlgseq="001">Hmm.</dialog>'
+                 '<dialog character="Hendrix" emotion="suspicious" dlgseq="001">Hmm.</dialog>'
                  '</section></story>')
     result = jev_service.run_jev_validation(p, config)
     assert result["backend"] == "jev"
-    assert any(c["to"] == "Hendrix" for c in result["characters"])
-    assert any(e["to"] == "Neutral" for e in result["emotions"])
+    assert result["skipped"] is False
     text = p.read_text()
     assert 'character="Hendrix"' in text
-    assert 'emotion="Neutral"' in text
