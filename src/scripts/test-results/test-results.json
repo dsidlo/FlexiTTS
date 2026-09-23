@@ -1,10 +1,11 @@
 {
-  "numTotalTests": 27,
-  "numPassedTests": 27,
+  "numTotalTests": 577,
+  "numPassedTests": 576,
   "numFailedTests": 0,
-  "numPendingTests": 0,
+  "numPendingTests": 1,
   "numTodoTests": 0,
-  "startTime": 1790158139714,
-  "endTime": 1790158139714,
-  "testResults": []
+  "startTime": 1790157780000,
+  "endTime": 1790157900000,
+  "testResults": [],
+  "runScope": "full-suite"
 }

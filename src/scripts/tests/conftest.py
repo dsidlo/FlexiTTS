@@ -204,7 +204,10 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
     # Get start time from session
     starttime = getattr(terminalreporter._session, 'starttime', time.time())
     
-    # Build JSON data matching Vitest format
+    # Build JSON data matching Vitest format.
+    # Full-suite runs update the canonical dashboard numbers; small runs
+    # (single module files) write a separate file so the dashboard never
+    # shows a partial count as if it were the whole suite.
     results = {
         "numTotalTests": total,
         "numPassedTests": passed,
@@ -213,13 +216,20 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
         "numTodoTests": 0,
         "startTime": int(starttime * 1000),
         "endTime": int(time.time() * 1000),
-        "testResults": []
+        "testResults": [],
+        "runScope": "full-suite" if total >= 100 else "partial",
     }
     
-    # Write JSON file
     json_path = test_results_dir / "test-results.json"
-    with open(json_path, 'w') as f:
-        json.dump(results, f, indent=2)
+    if total >= 100:
+        # Full-suite run: canonical numbers the dashboard displays.
+        with open(json_path, 'w') as f:
+            json.dump(results, f, indent=2)
+    else:
+        # Partial run: keep the dashboard's full-suite numbers; store the
+        # partial run alongside for reference.
+        with open(test_results_dir / "last-partial-run.json", 'w') as f:
+            json.dump(results, f, indent=2)
 
 
 def pytest_sessionfinish(session, exitstatus):
