@@ -74,6 +74,8 @@ def get_report_sources(project_root: Path):
 
 
 def inject_css(content: str) -> str:
+    import datetime
+    stamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
     if 'id="dark-theme"' not in content:
         if "</head>" in content:
             content = content.replace("</head>", DARK_THEME_CSS + "</head>", 1)
@@ -81,9 +83,11 @@ def inject_css(content: str) -> str:
             content = ("<html><head>" + DARK_THEME_CSS + "</head>" +
                        content.split("<html>", 1)[-1])
     if 'id="report-nav"' not in content:
-        nav = ('<div class="report-nav">'
-               '<a class="home" href="../index.html">&#8592; Test Dashboard</a>'
-               '</div>')
+        nav = (f'<div class="report-nav">'
+               f'<a class="home" href="../index.html">&#8592; Test Dashboard</a>'
+               f'<span style="color:#94a3b8; margin-left: 24px;">'
+               f'Report generated: {stamp}</span>'
+               f'</div>')
         if "<body>" in content:
             content = content.replace("<body>", "<body>" + nav, 1)
     return content
