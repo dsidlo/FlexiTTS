@@ -207,6 +207,45 @@ def get_schema():
                                 ]
                         }
                 },
+                "jev": {
+                        "type": "object",
+                        "properties": {
+                                "api-base": {
+                                        "type": "string"
+                                },
+                                "api-key-env": {
+                                        "type": "string"
+                                },
+                                "backend": {
+                                        "type": "string"
+                                },
+                                "device": {
+                                        "type": "string"
+                                },
+                                "emotion-confidence-threshold": {
+                                        "type": "number"
+                                },
+                                "enabled": {
+                                        "type": "boolean"
+                                },
+                                "laya-model": {
+                                        "type": "string"
+                                },
+                                "min-vram-mb": {
+                                        "type": "integer"
+                                },
+                                "model": {
+                                        "type": "string"
+                                },
+                                "confidence-threshold": {
+                                        "type": "number"
+                                },
+                                "timeout": {
+                                        "type": "number"
+                                }
+                        },
+                        "additionalProperties": False
+                },
                 "story-audio-post-process": {
                         "type": "object",
                         "properties": {
