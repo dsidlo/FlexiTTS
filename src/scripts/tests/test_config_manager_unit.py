@@ -244,7 +244,7 @@ class TestConfigManagerLoadGlobalConfig:
                 assert config['FlexiTTS']['story-dir-prefix'] == 'Story-'
                 
                 # Verify file was created
-                config_path = Path(temp_dir) / ".config" / "FlexiTTS" / "FlexiTTS.yaml"
+                config_path = Path(temp_dir) / ".config" / "FlexiTTS" / "FlexiTTS.yml"
                 assert config_path.exists()
 
     def test_load_global_config_expands_tilde(self):
