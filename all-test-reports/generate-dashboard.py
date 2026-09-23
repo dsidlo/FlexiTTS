@@ -164,8 +164,16 @@ def _report_rows() -> str:
         exists = (ROOT.parent / rel_path).exists()
         color = "#4fc3f7" if exists else "#6b7280"
         badge = "" if exists else ' <span style="color:#6b7280;">(not generated)</span>'
-        href = f"../{rel_path}"
-        link = f'<a href="{href}" style="color: {color};">{rel_path}</a>{badge}'
+        # Reports under all-test-reports/ are dashboard-relative (no ../);
+        # reports elsewhere in the repo need the ../ prefix.
+        if rel_path.startswith("all-test-reports/"):
+            href = rel_path.removeprefix("all-test-reports/")
+        else:
+            href = f"../{rel_path}"
+        if exists:
+            link = f'<a href="{href}" style="color: {color};">{rel_path}</a>{badge}'
+        else:
+            link = f'<span style="color: #6b7280;">{rel_path}</span>{badge}'
         rows.append(
             '      <tr style="border-bottom: 1px solid #0f3460;">\n'
             f'        <td style="padding: 10px; color: #e2e8f0; font-weight: 600;">{name}</td>\n'
