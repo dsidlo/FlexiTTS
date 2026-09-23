@@ -187,7 +187,7 @@ def generate_dashboard() -> None:
     ui_cov_rel = os.path.relpath(ui_cov_path, ROOT) if ui_cov_path.exists() else ""
 
     scripts_report = os.path.relpath(SCRIPTS_REPORT_DIR / "unit-tests-report.html", ROOT)
-    scripts_cov_path = SCRIPTS_REPORT_DIR / "htmlcov" / "index.html"
+    scripts_cov_path = ROOT / "reports" / "coverage" / "index.html"
     scripts_cov_rel = os.path.relpath(scripts_cov_path, ROOT) if scripts_cov_path.exists() else ""
 
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
