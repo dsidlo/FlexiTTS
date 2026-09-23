@@ -64,20 +64,22 @@ def load_jev_config(config: dict) -> dict:
             if k.lower() == "jev" and isinstance(v, dict):
                 cfg = v
                 break
-    key_env = cfg.get("api-key-env", "TYPESAFE_API_KEY")
-    confidence = cfg.get("emotion-confidence-threshold",
-                         cfg.get("confidence-threshold", DEFAULT_CONFIDENCE))
+    # Sub-keys are also read case-insensitively (Backend / BACKEND etc.)
+    lc = {k.lower(): v for k, v in cfg.items()}
+    key_env = str(lc.get("api-key-env", "TYPESAFE_API_KEY"))
+    confidence = lc.get("emotion-confidence-threshold",
+                        lc.get("confidence-threshold", DEFAULT_CONFIDENCE))
     return {
-        "enabled": bool(cfg.get("enabled", False)),
-        "backend": str(cfg.get("backend", "auto")).strip().lower(),
+        "enabled": bool(lc.get("enabled", False)),
+        "backend": str(lc.get("backend", "auto")).strip().lower(),
         "api_key": os.getenv(key_env, ""),
-        "api_base": cfg.get("api-base", DEFAULT_API_BASE),
-        "model": cfg.get("model", DEFAULT_MODEL),
+        "api_base": str(lc.get("api-base", DEFAULT_API_BASE)),
+        "model": str(lc.get("model", DEFAULT_MODEL)),
         "confidence": float(confidence),
-        "timeout": float(cfg.get("timeout", DEFAULT_TIMEOUT)),
-        "min-vram-mb": int(cfg.get("min-vram-mb", 1500)),
-        "laya-model": cfg.get("laya-model", "english"),
-        "device": cfg.get("device", "auto"),
+        "timeout": float(lc.get("timeout", DEFAULT_TIMEOUT)),
+        "min-vram-mb": int(lc.get("min-vram-mb", 1500)),
+        "laya-model": str(lc.get("laya-model", "english")),
+        "device": str(lc.get("device", "auto")),
     }
 
 
@@ -180,6 +182,9 @@ def select_backend(jev_cfg: dict) -> Tuple[Optional[Any], Optional[str]]:
       - backend auto: laya if available; else jev (caller checks key)
     """
     backend = jev_cfg["backend"]
+    if backend not in ("jev", "laya", "auto"):
+        _log(f"unknown backend '{backend}': treating as auto")
+        backend = "auto"
     if backend == "laya":
         if _laya_available(jev_cfg):
             return LayaClient(jev_cfg["laya-model"], jev_cfg["device"]), "laya"
