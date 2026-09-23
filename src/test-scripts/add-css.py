@@ -94,16 +94,19 @@ def process(source_label: str, input_file: Path, out_dir: Path) -> bool:
     if not input_file.exists():
         print(f"  - {source_label}: no report at {input_file}, skipped")
         return False
-    if input_file.resolve() == out_file.resolve():
-        print(f"  = {source_label}: already processed (in place)")
-        return True
+    in_place = input_file.resolve() == out_file.resolve()
+    if in_place:
+        print(f"  = {source_label}: processing in place")
     try:
         content = input_file.read_text()
         content = inject_css(content)
         out_dir.mkdir(parents=True, exist_ok=True)
-        out_file = out_dir / f"{source_label}-report.html"
-        out_file.write_text(content)
-        print(f"  + {source_label}: {input_file} -> {out_file}")
+        if in_place:
+            input_file.write_text(content)
+            print(f"  + {source_label}: {input_file} (in place)")
+        else:
+            out_file.write_text(content)
+            print(f"  + {source_label}: {input_file} -> {out_file}")
         return True
     except Exception as e:
         print(f"  x {source_label}: {e}")
