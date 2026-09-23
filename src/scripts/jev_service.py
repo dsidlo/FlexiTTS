@@ -59,6 +59,8 @@ def _find_global_jev_config() -> dict:
     own jev block."""
     candidates = []
     xdg = os.environ.get("XDG_CONFIG_HOME", str(Path.home() / ".config"))
+    # Same preference order as base_config_manager: .yaml first, then .yml
+    candidates.append(Path(xdg) / "FlexiTTS" / "FlexiTTS.yaml")
     candidates.append(Path(xdg) / "FlexiTTS" / "FlexiTTS.yml")
     repo_cfg = Path(__file__).resolve().parent.parent.parent / "config" / "FlexiTTS.yml"
     candidates.append(repo_cfg)
