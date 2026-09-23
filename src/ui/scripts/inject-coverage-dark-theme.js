@@ -238,20 +238,37 @@ const indexHtmlPath = path.join(coverageDir, 'index.html');
 if (fs.existsSync(indexHtmlPath)) {
   let indexHtml = fs.readFileSync(indexHtmlPath, 'utf-8');
   
-  // Add nav banner after <h1> if not already present
-  if (!indexHtml.includes('coverage-nav-banner')) {
+  // Extract the istanbul generation timestamp from the page footer and add a
+  // prominent banner with it at the top.
+  const istanbulTime = (indexHtml.match(/at (20\d{2}-\d{2}-\d{2}T[\d:.]+Z)/) || [])[1];
+  const stampText = istanbulTime
+    ? new Date(istanbulTime).toLocaleString('en-US', {
+        timeZone: 'America/Los_Angeles',
+        year: 'numeric', month: 'short', day: 'numeric',
+        hour: '2-digit', minute: '2-digit', second: '2-digit',
+      })
+    : new Date().toLocaleString('en-US', { timeZone: 'America/Los_Angeles' });
+
+  // Add nav banner (with generation date-time) after <h1>; refresh the stamp
+  // on every injection so it always reflects the latest run.
+  const banner = `<div id="coverage-nav-banner" style="background: #3b82f6; color: white; padding: 10px 20px; margin: 10px -20px 20px -20px; text-align: center;">
+      <a href="../test-results.html" style="color: white; text-decoration: none; font-weight: 500;">← Back to Test Results</a>
+      <span style="margin-left: 24px; color: #bfdbfe;">Coverage run: ${stampText}</span>
+    </div>`;
+  if (indexHtml.includes('coverage-nav-banner')) {
+    // replace the existing banner to refresh the stamp
+    indexHtml = indexHtml.replace(
+      /<div id="coverage-nav-banner"[\s\S]*?<\/div>/,
+      banner
+    );
+  } else {
     indexHtml = indexHtml.replace(
       /<h1>All files<\/h1>/,
-      `<h1>All files</h1>
-    <div id="coverage-nav-banner" style="background: #3b82f6; color: white; padding: 10px 20px; margin: 10px -20px 20px -20px; text-align: center;">
-      <a href="../test-results.html" style="color: white; text-decoration: none; font-weight: 500;">← Back to Test Results</a>
-    </div>`
+      `<h1>All files</h1>\n${banner}`
     );
-    fs.writeFileSync(indexHtmlPath, indexHtml);
-    console.log('✅ Navigation banner added to index.html');
-  } else {
-    console.log('ℹ️ Navigation banner already present');
   }
+  fs.writeFileSync(indexHtmlPath, indexHtml);
+  console.log('✅ Nav banner with coverage run date-time added to index.html');
 }
 
 // Find all other HTML files and inject dark theme
