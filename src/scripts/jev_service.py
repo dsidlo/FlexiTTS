@@ -231,23 +231,30 @@ class LayaClient:
             LayaClient._router = Router(preload=True, **kwargs)
         return LayaClient._router
 
+    TOURNAMENT_THRESHOLD = int(os.environ.get("JLISTEN_LAYA_MAX_OPTIONS", "8"))
+    GROUP_SIZE = 4
+    ADVANCE_PER_GROUP = 2
+
     def ask(self, state, questions):
         try:
             router = self._get_router()
             laya_questions = {}
             for key, q in questions.items():
-                if q.get("type") == "choice":
-                    opts = q.get("options") or []
-                    laya_questions[key] = {
-                        "type": "choice",
-                        "instructions": q.get("instruction", ""),
-                        "criteria": {o: o for o in opts},
-                    }
-                else:
-                    laya_questions[key] = dict(q)
+                opts = q.get("options") or []
+                if q.get("type") == "choice" and len(opts) > self.TOURNAMENT_THRESHOLD:
+                    # Two-stage tournament keeps option counts within Laya's
+                    # architectural budget while covering every candidate.
+                    winner, confidence = self._tournament_choice(
+                        router, state, key, q, opts)
+                    return {"answers": {key: {"choice": winner,
+                                              "confidence": confidence}}}
+                laya_questions[key] = {
+                    "type": q.get("type"),
+                    "instructions": q.get("instruction", ""),
+                    "criteria": {o: o for o in opts},
+                }
             t0 = time.time()
-            res = router.predict(state, laya_questions,
-                                 model=self.laya_model)
+            res = router.predict(state, laya_questions, model=self.laya_model)
             _log(f"laya predict {time.time()-t0:.3f}s")
             answers = {}
             for key, a in (res.get("answers") or {}).items():
@@ -263,6 +270,65 @@ class LayaClient:
         except Exception as e:
             _log(f"laya ask failed: {type(e).__name__}: {e}")
             return None
+
+    def _run_choice(self, router, state, instruction: str, options: list,
+                    group_label: str = ""):
+        """Single small choice question; returns (choice, confidence)."""
+        q = {"type": "choice", "instructions": instruction,
+             "criteria": {o: o for o in options}}
+        res = router.predict(state, {"q": q}, model=self.laya_model)
+        a = (res.get("answers") or {}).get("q", {})
+        choice, conf = a.get("choice"), float(a.get("confidence", 0.0))
+        _log(f"laya tournament round: opts={len(options)} -> "
+             f"{choice!r} ({conf:.2f})")
+        return choice, conf
+
+    def _tournament_choice(self, router, state, key, q, options: list):
+        """Grouped rounds + final: every candidate covered exactly once;
+        per-group winners (plus runners-up) advance to a small final round.
+        Returns (best_choice, final_confidence)."""
+        instruction = q.get("instruction", "Which option best matches?")
+        groups = [options[i:i + self.GROUP_SIZE]
+                  for i in range(0, len(options), self.GROUP_SIZE)]
+        _log(f"laya tournament: {len(options)} options -> {len(groups)} groups "
+             f"of <= {self.GROUP_SIZE}")
+        ranked: list = []  # (choice, confidence) from each group
+        assigned = str(state.get("assigned_speaker", ""))
+        for gi, group in enumerate(groups):
+            choice, conf = self._run_choice(router, state, instruction, group)
+            if not choice:
+                continue
+            # Name-similarity tiebreak: Laya's base weights are uncalibrated
+            # (often 0.00 confidence), so boost candidates whose name is close
+            # to the assigned speaker. Ratio 0..1, weighted lightly.
+            boost = 0.0
+            if assigned:
+                import difflib
+                boost = difflib.SequenceMatcher(None, assigned.lower(),
+                                                choice.lower()).ratio() * 0.1
+            ranked.append((choice, conf + boost))
+        if not ranked:
+            return None, 0.0
+        # Reassess: rank round-1 winners by confidence; winners advance, then
+        # fill remaining finalist slots with runners-up until GROUP_SIZE.
+        ranked.sort(key=lambda x: -x[1])
+        finalists = []
+        for choice, _conf in ranked:
+            if choice not in finalists:
+                finalists.append(choice)
+        for gi, group in enumerate(groups):
+            if len(finalists) >= self.GROUP_SIZE:
+                break
+            for o in group:
+                if len(finalists) >= self.GROUP_SIZE:
+                    break
+                if o not in finalists:
+                    finalists.append(o)
+        if len(finalists) == 1:
+            return finalists[0], ranked[0][1]
+        winner, confidence = self._run_choice(router, state, instruction,
+                                              finalists)
+        return winner, confidence
 
 
 def _gpu_ok(min_vram_mb: int) -> bool:
