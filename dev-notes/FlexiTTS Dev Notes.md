@@ -83,20 +83,23 @@ Config (FlexiTTS.yml or story-config.yml), disabled by default:
 
     Jev:
       enabled: false
-      backend: auto            # jev | laya | auto
       api-key-env: TYPESAFE_API_KEY
       emotion-confidence-threshold: 0.80
-      min-vram-mb: 1500        # laya requires this much free GPU VRAM
-      laya-model: english      # english | multilingual | typed-decisions
 
-Backend selection: jev = TypeSafe cloud API (requires the api key, skips
-without it); laya = open-source local model (requires GPU + min-vram-mb of
-free VRAM; falls back to CPU only when device is explicitly set to cpu);
-auto = laya when installed with enough GPU VRAM, else jev when an api key
-exists, else skip entirely. Note: Laya's base weights are uncalibrated;
-confidences can sit below the gate (observed 0.0001 on a roster match),
-in which case the XML is left untouched by design. Calibrate or fine-tune
-Laya for reliable local matching.
+    Laya:
+      enabled: false
+      model: english           # english | multilingual | typed-decisions
+      device: auto             # auto | cpu
+      min-vram-mb: 1500        # free GPU VRAM required
+      emotion-confidence-threshold: 0.80
+
+Engine selection: Jev first (enabled and api key present), then Laya
+(enabled and GPU + VRAM available, or device: cpu), else skip entirely.
+Laya is open-source and local (Apache 2.0, pip install laya). Note: Laya's
+base weights are uncalibrated; confidences can sit below the gate (observed
+0.0001 on a roster match), and choice questions beyond ~20 options hit an
+architectural limit, in which case the XML is left untouched by design.
+Calibrate or fine-tune Laya for reliable local matching.
 Emotions are never re-chosen at render time; render-time emotion resolution
 in chapter_xml_to_audio.py is unchanged.
 
