@@ -159,10 +159,13 @@ def _report_rows() -> str:
     be generated)."""
     rows = []
     for name, desc, rel_path in REPORT_DEFS:
+        # rel_path is repo-root-relative; the dashboard lives in
+        # all-test-reports/, so links need a ../ prefix to resolve.
         exists = (ROOT.parent / rel_path).exists()
         color = "#4fc3f7" if exists else "#6b7280"
         badge = "" if exists else ' <span style="color:#6b7280;">(not generated)</span>'
-        link = f'<a href="{rel_path}" style="color: {color};">{rel_path}</a>{badge}'
+        href = f"../{rel_path}"
+        link = f'<a href="{href}" style="color: {color};">{rel_path}</a>{badge}'
         rows.append(
             '      <tr style="border-bottom: 1px solid #0f3460;">\n'
             f'        <td style="padding: 10px; color: #e2e8f0; font-weight: 600;">{name}</td>\n'
