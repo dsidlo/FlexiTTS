@@ -489,5 +489,5 @@ if __name__ == "__main__":
     args = ap.parse_args()
     with open(args.config) as f:
         cfg = yaml.safe_load(f)
-    result = run_jev_validation(args.xml_path.resolve(), cfg or {})
+    result = run_jev_validation(args.xml_file.resolve(), cfg or {})
     print(json.dumps(result, indent=2))
