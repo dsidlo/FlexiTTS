@@ -117,12 +117,30 @@ def process(source_label: str, input_file: Path, out_dir: Path) -> bool:
         return False
 
 
+def cleanup_stale_reports(project_root: Path) -> None:
+    """Remove stale coverage/report dirs that no run refreshes, so the
+    dashboard never links to outdated data:
+    - src/scripts/test-results/htmlcov  (superseded by all-test-reports/coverage)
+    - htmlcov at repo root (same)
+    """
+    stale = [
+        project_root / "src/scripts/test-results/htmlcov",
+        project_root / "htmlcov",
+    ]
+    for d in stale:
+        if d.exists():
+            import shutil
+            shutil.rmtree(d)
+            print(f"  - removed stale dir: {d}")
+
+
 def main() -> int:
     project_root = get_project_root()
     out_dir = project_root / "all-test-reports" / "reports"
     print("=" * 60)
     print("  Processing pytest reports (dark CSS + nav + dashboard links)")
     print("=" * 60)
+    cleanup_stale_reports(project_root)
 
     processed = 0
     for label, path in get_report_sources(project_root):
