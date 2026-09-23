@@ -195,6 +195,42 @@ def _suite_durations():
     return fmt(py_s), fmt(ui_s), fmt(total if total else None)
 
 
+def _error_count_for(rel_path: str) -> Optional[int]:
+    """Error/failure count for a report row, when knowable:
+    - full-suite: numFailedTests from the canonical test-results.json
+    - other pytest pages: parse the embedded data-jsonblob outcomes
+    Returns None when unknown (UI vitest uses its own JSON; missing files).
+    """
+    def _json_failed(path):
+        try:
+            d = json.loads(Path(path).read_text())
+            return int(d.get("numFailedTests", 0))
+        except Exception:
+            return None
+
+    if "full-suite-report" in rel_path:
+        return _json_failed(SCRIPTS_REPORT_DIR / "test-results.json")
+
+    blob_file = ROOT.parent / rel_path
+    if not blob_file.exists():
+        return None
+    try:
+        content = blob_file.read_text()
+        m = re.search(r'data-jsonblob="([^"]*)"', content)
+        if not m:
+            return None
+        blob = json.loads(html.unescape(m.group(1)))
+        tests = blob.get("tests", {})
+        failed = 0
+        for _k, runs in tests.items():
+            for run in runs:
+                if str(run.get("result", "")).lower() in ("failed", "error"):
+                    failed += 1
+        return failed
+    except Exception:
+        return None
+
+
 def _report_rows() -> str:
     """One consistent table row per report: name, description, clickable path.
     Rows for missing files are dimmed but still shown (so you know what can
@@ -219,10 +255,19 @@ def _report_rows() -> str:
         when = _report_generated_time(rel_path)
         when_cell = (f'<span style="color: #9ca3af; font-size: 0.85em;">{when}</span>'
                      if when else "&nbsp;")
+        errors = _error_count_for(rel_path)
+        if errors is None:
+            err_cell = '&nbsp;'
+        elif errors == 0:
+            err_cell = '<span style="color: #22c55e;">0</span>'
+        else:
+            err_cell = (f'<span style="color: #ef4444; font-weight: 600;">'
+                        f'{errors} error{"s" if errors != 1 else ""}</span>')
         rows.append(
             '      <tr style="border-bottom: 1px solid #0f3460;">\n'
             f'        <td style="padding: 10px; color: #e2e8f0; font-weight: 600;">{name}</td>\n'
             f'        <td style="padding: 10px; color: #9ca3af; font-size: 0.9em;">{desc}</td>\n'
+            f'        <td style="padding: 10px; text-align: center;">{err_cell}</td>\n'
             f'        <td style="padding: 10px; color: #9ca3af; font-size: 0.85em;">{when_cell}</td>\n'
             f'        <td style="padding: 10px; font-family: monospace; font-size: 0.85em;">{link}</td>\n'
             "      </tr>")
@@ -315,7 +360,7 @@ h1 {{ font-size: 2.5em; margin-bottom: 10px; color: #eaeaea; }}
   <div class="summary-grid">
     {_summary_card('🐍', 'Python Tests', scripts_data, scripts_report, scripts_cov_rel)}
     {_summary_card('⚛️', 'UI Tests', ui_data, ui_report, ui_cov_rel)}
-    {_summary_card('🔗', 'Integration Tests', integration_data, scripts_report, scripts_cov_rel)}
+    {_summary_card('🔗', 'Integration Tests (subset of python tests)', integration_data, scripts_report, scripts_cov_rel)}
   </div>
   <div class="section">
     <h2>📁 All Reports</h2>
@@ -327,6 +372,7 @@ h1 {{ font-size: 2.5em; margin-bottom: 10px; color: #eaeaea; }}
       <tr style="border-bottom: 2px solid #1d4ed8;">
         <th style="padding: 10px; text-align: left; color: #4fc3f7;">Report</th>
         <th style="padding: 10px; text-align: left; color: #4fc3f7;">What it shows</th>
+        <th style="padding: 10px; text-align: left; color: #4fc3f7;">Errors</th>
         <th style="padding: 10px; text-align: left; color: #4fc3f7;">Generated</th>
         <th style="padding: 10px; text-align: left; color: #4fc3f7;">Location (click to open)</th>
       </tr>
