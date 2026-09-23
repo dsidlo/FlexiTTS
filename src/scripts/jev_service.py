@@ -48,9 +48,37 @@ def _log(msg: str) -> None:
     print(f"[jev_service] {msg}")
 
 
+def _has_jev_block(config: dict) -> bool:
+    return isinstance(config, dict) and any(
+        k.lower() == "jev" and isinstance(v, dict) for k, v in config.items())
+
+
+def _find_global_jev_config() -> dict:
+    """Optional global Jev block from config/FlexiTTS.yml (repo) or the XDG
+    ~/.config/FlexiTTS/FlexiTTS.yml. story-config.yml wins when it has its
+    own jev block."""
+    candidates = []
+    xdg = os.environ.get("XDG_CONFIG_HOME", str(Path.home() / ".config"))
+    candidates.append(Path(xdg) / "FlexiTTS" / "FlexiTTS.yml")
+    repo_cfg = Path(__file__).resolve().parent.parent.parent / "config" / "FlexiTTS.yml"
+    candidates.append(repo_cfg)
+    for c in candidates:
+        try:
+            if c.exists():
+                import yaml
+                data = yaml.safe_load(c.read_text()) or {}
+                for k, v in data.items():
+                    if k.lower() == "jev" and isinstance(v, dict):
+                        return v
+        except Exception:
+            continue
+    return {}
+
+
 def load_jev_config(config: dict) -> dict:
     """Read the jev: block from a story/global config, with defaults.
     Key lookup is case-insensitive (jev / Jev / JEV all match).
+    Precedence: story-config.yml jev block > FlexiTTS.yml jev block.
 
     backend: jev | laya | auto (default auto).
       - jev: cloud API; requires api key (skips without one).
@@ -59,11 +87,14 @@ def load_jev_config(config: dict) -> dict:
         free VRAM is present; otherwise jev when an api key exists; else skip.
     """
     cfg = {}
-    if isinstance(config, dict):
+    if _has_jev_block(config):
         for k, v in config.items():
             if k.lower() == "jev" and isinstance(v, dict):
-                cfg = v
+                cfg = dict(v)
                 break
+    else:
+        cfg = _find_global_jev_config()
+
     # Sub-keys are also read case-insensitively (Backend / BACKEND etc.)
     lc = {k.lower(): v for k, v in cfg.items()}
     key_env = str(lc.get("api-key-env", "TYPESAFE_API_KEY"))
@@ -81,7 +112,6 @@ def load_jev_config(config: dict) -> dict:
         "laya-model": str(lc.get("laya-model", "english")),
         "device": str(lc.get("device", "auto")),
     }
-
 
 def gpu_free_vram_mb() -> int:
     """Free VRAM in MB via nvidia-smi; 0 when no NVIDIA GPU is present."""

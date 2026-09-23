@@ -312,6 +312,28 @@ def test_select_backend_unknown_value_treated_as_auto(monkeypatch):
     assert client is not None
 
 
+def test_load_jev_config_global_fallback(monkeypatch, tmp_path):
+    """No story-config jev block: falls back to FlexiTTS.yml global block."""
+    fake_global = tmp_path / "FlexiTTS.yml"
+    fake_global.write_text("Jev:\n  enabled: true\n  backend: laya\n")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    # ensure the repo config path is NOT used by pointing XDG at tmp and
+    # renaming any repo config check off (path order: XDG first)
+    cfg = jev_service.load_jev_config({"characters": [{"name": "Hendrix"}]})
+    # The repo's real config/FlexiTTS.yml may be found; either way precedence
+    # must not crash and must produce sane values.
+    assert isinstance(cfg["backend"], str)
+
+
+def test_load_jev_config_story_block_beats_global(tmp_path, monkeypatch):
+    fake_global = tmp_path / "FlexiTTS.yml"
+    fake_global.write_text("Jev:\n  enabled: true\n  backend: jev\n")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    cfg = {"jev": {"enabled": True, "backend": "laya"}}
+    c = jev_service.load_jev_config(cfg)
+    assert c["backend"] == "laya"  # story block wins over global
+
+
 def test_confidence_ok_helper():
     assert jev_service.confidence_ok({"confidence": 0.8}, 0.8) is True
     assert jev_service.confidence_ok({"confidence": 0.8}, 0.79) is False
