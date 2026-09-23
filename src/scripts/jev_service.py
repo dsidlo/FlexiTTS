@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import urllib.request
 import urllib.error
 from pathlib import Path
@@ -49,7 +50,14 @@ def _log(msg: str) -> None:
 
 def load_jev_config(config: dict) -> dict:
     """Read the jev: block from a story/global config, with defaults.
-    Key lookup is case-insensitive (jev / Jev / JEV all match)."""
+    Key lookup is case-insensitive (jev / Jev / JEV all match).
+
+    backend: jev | laya | auto (default auto).
+      - jev: cloud API; requires api key (skips without one).
+      - laya: local Laya model; requires GPU + free VRAM (min-vram-mb).
+      - auto: laya when the laya package is installed AND a GPU with enough
+        free VRAM is present; otherwise jev when an api key exists; else skip.
+    """
     cfg = {}
     if isinstance(config, dict):
         for k, v in config.items():
@@ -61,12 +69,133 @@ def load_jev_config(config: dict) -> dict:
                          cfg.get("confidence-threshold", DEFAULT_CONFIDENCE))
     return {
         "enabled": bool(cfg.get("enabled", False)),
+        "backend": str(cfg.get("backend", "auto")).strip().lower(),
         "api_key": os.getenv(key_env, ""),
         "api_base": cfg.get("api-base", DEFAULT_API_BASE),
         "model": cfg.get("model", DEFAULT_MODEL),
         "confidence": float(confidence),
         "timeout": float(cfg.get("timeout", DEFAULT_TIMEOUT)),
+        "min-vram-mb": int(cfg.get("min-vram-mb", 1500)),
+        "laya-model": cfg.get("laya-model", "english"),
+        "device": cfg.get("device", "auto"),
     }
+
+
+def gpu_free_vram_mb() -> int:
+    """Free VRAM in MB via nvidia-smi; 0 when no NVIDIA GPU is present."""
+    try:
+        import subprocess
+        out = subprocess.run(["nvidia-smi", "--query-gpu=memory.free",
+                              "--format=csv,noheader,nounits"],
+                             capture_output=True, text=True, timeout=5)
+        if out.returncode == 0 and out.stdout.strip():
+            # first GPU's free memory
+            return int(out.stdout.strip().splitlines()[0])
+    except Exception:
+        pass
+    return 0
+
+
+class LayaClient:
+    """Local Laya (System 1) adapter. Same ask() contract as JevClient.
+
+    Maps Jev-style choice questions (options: [...]) to Laya criteria
+    ({opt: opt}) and normalizes the response into
+    {"answers": {key: {"choice": ..., "confidence": ...}}}.
+    """
+
+    _router = None  # class-level singleton: keep model resident
+
+    def __init__(self, laya_model: str = "english", device: str = "auto"):
+        self.laya_model = laya_model
+        self.device = device
+
+    def _get_router(self):
+        if LayaClient._router is None:
+            import warnings
+            warnings.filterwarnings("ignore")
+            from laya import Router
+            kwargs = {}
+            if self.device == "cpu":
+                kwargs["device"] = "cpu"
+            LayaClient._router = Router(preload=True, **kwargs)
+        return LayaClient._router
+
+    def ask(self, state, questions):
+        try:
+            router = self._get_router()
+            laya_questions = {}
+            for key, q in questions.items():
+                if q.get("type") == "choice":
+                    opts = q.get("options") or []
+                    laya_questions[key] = {
+                        "type": "choice",
+                        "instructions": q.get("instruction", ""),
+                        "criteria": {o: o for o in opts},
+                    }
+                else:
+                    laya_questions[key] = dict(q)
+            t0 = time.time()
+            res = router.predict(state, laya_questions,
+                                 model=self.laya_model)
+            _log(f"laya predict {time.time()-t0:.3f}s")
+            answers = {}
+            for key, a in (res.get("answers") or {}).items():
+                conf = a.get("confidence", 0.0)
+                if "choice" in a:
+                    answers[key] = {"choice": a["choice"], "confidence": conf}
+                elif "noul" in a:
+                    answers[key] = {"choice": bool(a["noul"] >= 0.5),
+                                    "confidence": a["noul"]}
+                elif "score" in a:
+                    answers[key] = {"score": a.get("score"), "confidence": conf}
+            return {"answers": answers}
+        except Exception as e:
+            _log(f"laya ask failed: {type(e).__name__}: {e}")
+            return None
+
+
+def _gpu_ok(min_vram_mb: int) -> bool:
+    free = gpu_free_vram_mb()
+    ok = free >= min_vram_mb
+    _log(f"gpu check: free={free}MB required={min_vram_mb}MB -> {ok}")
+    return ok
+
+
+def _laya_available(jev_cfg: dict) -> bool:
+    try:
+        import laya  # noqa: F401
+    except ImportError:
+        _log("laya package not installed")
+        return False
+    return _gpu_ok(int(jev_cfg["min-vram-mb"]))
+
+
+def select_backend(jev_cfg: dict) -> Tuple[Optional[Any], Optional[str]]:
+    """Resolve the backend per config + machine state.
+
+    Returns (client, backend_name) or (None, None) when nothing qualifies.
+      - backend jev: JevClient (api key required by caller gate)
+      - backend laya: LayaClient (GPU/VRAM checked)
+      - backend auto: laya if available; else jev (caller checks key)
+    """
+    backend = jev_cfg["backend"]
+    if backend == "laya":
+        if _laya_available(jev_cfg):
+            return LayaClient(jev_cfg["laya-model"], jev_cfg["device"]), "laya"
+        _log("laya unavailable (package/GPU/VRAM); will fall back")
+        return None, None
+    if backend == "jev":
+        return JevClient(jev_cfg["api_base"], jev_cfg["api_key"],
+                         jev_cfg["model"], jev_cfg["timeout"]), "jev"
+    # auto
+    if _laya_available(jev_cfg):
+        return LayaClient(jev_cfg["laya-model"], jev_cfg["device"] if
+                          isinstance(jev_cfg["device"], str) else "auto"), "laya"
+    if jev_cfg["api_key"]:
+        return (JevClient(jev_cfg["api_base"], jev_cfg["api_key"],
+                          jev_cfg["model"], jev_cfg["timeout"]), "jev")
+    return None, None
 
 
 class JevClient:
@@ -288,20 +417,29 @@ def run_jev_validation(xml_path: Path, config: dict) -> Dict[str, Any]:
     jev_cfg = load_jev_config(config)
     if not jev_cfg["enabled"]:
         _log("jev.enabled is false: skipping validation")
-        return {"skipped": True}
+        return {"skipped": True, "reason": "disabled"}
 
-    if not jev_cfg["api_key"]:
-        # No API key configured: Jev actions require it. Log and skip entirely
-        # (the XML is left untouched; no dry-run side effects).
-        _log("no api key configured: jev validation skipped entirely "
-             f"(set {os.getenv('JEV_KEY_HINT', 'TYPESAFE_API_KEY')} to enable)")
+    client, backend = select_backend(jev_cfg)
+
+    if backend == "jev" and not jev_cfg["api_key"]:
+        # Jev cloud requires the api key; skip entirely (XML untouched).
+        _log("backend jev but no api key configured: validation skipped "
+             "(set TYPESAFE_API_KEY to enable, or use the laya backend)")
         return {"skipped": True, "reason": "no_api_key"}
+    if client is None:
+        # auto/laya resolved to nothing: laya unavailable (package/GPU/VRAM)
+        # and no jev api key. Local-first design falls back to laya on CPU
+        # only when explicitly requested (backend: laya, device: cpu).
+        if jev_cfg["backend"] == "laya" and str(jev_cfg["device"]).lower() == "cpu":
+            client, backend = LayaClient(jev_cfg["laya-model"], "cpu"), "laya"
+        else:
+            _log("no usable backend (no laya package/GPU, no jev api key): "
+                 "validation skipped")
+            return {"skipped": True, "reason": "no_backend"}
 
-    client = JevClient(jev_cfg["api_base"], jev_cfg["api_key"],
-                       jev_cfg["model"], jev_cfg["timeout"])
-
+    _log(f"backend selected: {backend}")
     roster = [str(c.get("name")) for c in config.get("characters", []) if c.get("name")]
-    result = {"skipped": False, "dry": False,
+    result = {"skipped": False, "backend": backend,
               **validate_character_assignments(xml_path, roster, jev_cfg, client),
               **validate_emotion_tags(xml_path, collect_char_emotions(config), jev_cfg, client)}
     return result

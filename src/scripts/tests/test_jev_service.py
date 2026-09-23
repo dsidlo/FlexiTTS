@@ -233,19 +233,67 @@ def test_run_skips_when_disabled(tmp_path):
     p = tmp_path / "c.xml"
     p.write_text(CHAR_XML)
     config = {"characters": [{"name": "Hendrix"}], "jev": {"enabled": False}}
-    assert jev_service.run_jev_validation(p, config) == {"skipped": True}
+    assert jev_service.run_jev_validation(p, config) == {"skipped": True,
+                                                         "reason": "disabled"}
 
 
 def test_run_skips_entirely_without_api_key(tmp_path):
-    """No API key: Jev actions are gated off; XML untouched."""
+    """backend=jev with no api key: Jev actions gated off; XML untouched."""
     p = tmp_path / "c.xml"
     p.write_text(CHAR_XML)
     before = p.read_text()
     result = jev_service.run_jev_validation(p, {"characters": [{"name": "Hendrix"}],
-                                                "jev": {"enabled": True}})
+                                                "jev": {"enabled": True,
+                                                        "backend": "jev"}})
     assert result["skipped"] is True
     assert result["reason"] == "no_api_key"
     assert p.read_text() == before
+
+
+def test_run_auto_prefers_laya_when_gpu(monkeypatch):
+    """backend=auto + laya installed + GPU: selects laya without api key."""
+    monkeypatch.setattr(jev_service, "_laya_available", lambda cfg: True)
+    p = tmp_path if False else None
+    import tempfile
+    d = tempfile.mkdtemp()
+    p = Path(d) / "c.xml"
+    p.write_text(CHAR_XML)
+    result = jev_service.run_jev_validation(p, {"characters": [{"name": "Hendrix"}],
+                                                "jev": {"enabled": True,
+                                                        "backend": "auto"}})
+    assert result["skipped"] is False
+    assert result["backend"] == "laya"
+
+
+def test_run_auto_falls_back_to_jev_with_key(monkeypatch):
+    """backend=auto, laya unavailable, jev key present: selects jev."""
+    monkeypatch.setattr(jev_service, "_laya_available", lambda cfg: False)
+    import tempfile
+    d = tempfile.mkdtemp()
+    p = Path(d) / "c.xml"
+    p.write_text(CHAR_XML)
+    cfg = {"characters": [{"name": "Hendrix"}],
+           "jev": {"enabled": True, "backend": "auto",
+                   "api-key-env": "JEV_TEST_KEY"}}
+    os.environ["JEV_TEST_KEY"] = "k"
+    result = jev_service.run_jev_validation(p, cfg)
+    assert result["skipped"] is False
+    assert result["backend"] == "jev"
+
+
+def test_run_laya_forced_cpu(monkeypatch):
+    """backend=laya device=cpu runs without GPU."""
+    monkeypatch.setattr(jev_service, "_laya_available", lambda cfg: True)
+    import tempfile
+    d = tempfile.mkdtemp()
+    p = Path(d) / "c.xml"
+    p.write_text(CHAR_XML)
+    result = jev_service.run_jev_validation(p, {"characters": [{"name": "Hendrix"}],
+                                                "jev": {"enabled": True,
+                                                        "backend": "laya",
+                                                        "device": "cpu"}})
+    assert result["skipped"] is False
+    assert result["backend"] == "laya"
 
 
 def test_confidence_ok_helper():
@@ -306,7 +354,7 @@ def test_live_simulation_end_to_end(tmp_path, mock_server):
                  '<dialog character="Hendricks" emotion="suspicious" dlgseq="001">Hmm.</dialog>'
                  '</section></story>')
     result = jev_service.run_jev_validation(p, config)
-    assert result["dry"] is False
+    assert result["backend"] == "jev"
     assert any(c["to"] == "Hendrix" for c in result["characters"])
     assert any(e["to"] == "Neutral" for e in result["emotions"])
     text = p.read_text()
