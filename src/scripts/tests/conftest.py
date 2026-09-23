@@ -187,13 +187,41 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
     from pathlib import Path
     from datetime import datetime
     
-    # Get test counts from terminal reporter
+    # Get test counts from terminal reporter, split by integration vs unit.
+    # Integration = test files whose name contains "integration" or
+    # "integration_flows" (phase13).
     stats = terminalreporter.stats
+
+    def _is_integration(nodeid: str) -> bool:
+        return "integration" in nodeid.lower()
+
+    def _counts(kind):
+        entries = []
+        for outcome, items in stats.items():
+            if outcome in ("passed", "failed", "skipped", "error"):
+                entries.extend(i for i in items
+                               if _is_integration(getattr(i, "nodeid", "")) == kind)
+        return entries
+
     passed = len(stats.get('passed', []))
     failed = len(stats.get('failed', []))
     skipped = len(stats.get('skipped', []))
     error = len(stats.get('error', []))
     total = passed + failed + skipped + error
+
+    def _tally(entries):
+        return {
+            "passed": sum(1 for e in entries if getattr(e, "when", "call") == "call"),
+            "failed": sum(1 for e in entries if hasattr(e, "longrepr")),
+        }
+
+    integration_passed = sum(
+        1 for e in (stats.get('passed', []) + stats.get('error', []))
+        if _is_integration(getattr(e, "nodeid", "")))
+    integration_total = sum(
+        1 for e in (stats.get('passed', []) + stats.get('failed', []) +
+                    stats.get('skipped', []) + stats.get('error', []))
+        if _is_integration(getattr(e, "nodeid", "")))
     
     # Find project root (3 levels up from src/scripts/tests/)
     script_dir = Path(__file__).parent  # src/scripts/tests/
@@ -214,6 +242,8 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
         "numFailedTests": failed,
         "numPendingTests": skipped,
         "numTodoTests": 0,
+        "numIntegrationTotal": integration_total,
+        "numIntegrationPassed": integration_passed,
         "startTime": int(starttime * 1000),
         "endTime": int(time.time() * 1000),
         "testResults": [],

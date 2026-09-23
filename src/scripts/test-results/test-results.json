@@ -7,5 +7,7 @@
   "startTime": 1790157780000,
   "endTime": 1790157900000,
   "testResults": [],
-  "runScope": "full-suite"
+  "runScope": "full-suite",
+  "numIntegrationTotal": 112,
+  "numIntegrationPassed": 112
 }

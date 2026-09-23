@@ -203,6 +203,25 @@ def generate_dashboard() -> None:
     ui_data = _read_json(UI_REPORT_DIR / "test-results.json")
     scripts_data = _read_json(SCRIPTS_REPORT_DIR / "test-results.json")
 
+    # Integration summary: split from the full-suite run's counts.
+    integration_data = None
+    if scripts_data and scripts_data.get("numIntegrationTotal"):
+        integration_data = {
+            "numTotalTests": scripts_data["numIntegrationTotal"],
+            "numPassedTests": scripts_data.get("numIntegrationPassed", 0),
+            "numFailedTests": (scripts_data["numIntegrationTotal"]
+                               - scripts_data.get("numIntegrationPassed", 0)),
+            "startTime": scripts_data.get("startTime"),
+            "endTime": scripts_data.get("endTime"),
+            "testResults": [],
+        }
+        # unit = total minus integration
+        scripts_data = dict(scripts_data)
+        scripts_data["numTotalTests"] = (scripts_data["numTotalTests"]
+                                         - scripts_data["numIntegrationTotal"])
+        scripts_data["numPassedTests"] = (scripts_data["numPassedTests"]
+                                          - integration_data["numPassedTests"])
+
     ui_report = os.path.relpath(UI_REPORT_DIR / "test-results.html", ROOT)
     ui_cov_path = UI_REPORT_DIR / "coverage" / "index.html"
     ui_cov_rel = os.path.relpath(ui_cov_path, ROOT) if ui_cov_path.exists() else ""
@@ -261,8 +280,9 @@ h1 {{ font-size: 2.5em; margin-bottom: 10px; color: #eaeaea; }}
     <p class="timestamp">Generated: {timestamp}</p>
   </header>
   <div class="summary-grid">
-    {_summary_card('⚛️', 'UI Tests', ui_data, ui_report, ui_cov_rel)}
     {_summary_card('🐍', 'Python Tests', scripts_data, scripts_report, scripts_cov_rel)}
+    {_summary_card('⚛️', 'UI Tests', ui_data, ui_report, ui_cov_rel)}
+    {_summary_card('🔗', 'Integration Tests', integration_data, scripts_report, scripts_cov_rel)}
   </div>
   <div class="section">
     <h2>📁 All Reports</h2>
