@@ -65,6 +65,7 @@ def get_project_root():
 def get_report_sources(project_root: Path):
     """(source_label, input_path, output_name) for every known report location."""
     return [
+        ("full-suite", project_root / "all-test-reports/reports/full-suite-report.html"),
         ("scripts-unit", project_root / "src/scripts/test-reports/pytest-report.html"),
         ("src-root", project_root / "src/test-reports/pytest-report.html"),
         ("repo-root", project_root / "test-reports/pytest-report.html"),
@@ -89,9 +90,13 @@ def inject_css(content: str) -> str:
 
 
 def process(source_label: str, input_file: Path, out_dir: Path) -> bool:
+    out_file = out_dir / f"{source_label}-report.html"
     if not input_file.exists():
         print(f"  - {source_label}: no report at {input_file}, skipped")
         return False
+    if input_file.resolve() == out_file.resolve():
+        print(f"  = {source_label}: already processed (in place)")
+        return True
     try:
         content = input_file.read_text()
         content = inject_css(content)

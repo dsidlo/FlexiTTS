@@ -109,6 +109,7 @@ def _summary_card(icon: str, title: str, data: Optional[Dict[str, Any]], report_
 def _pytest_report_rows() -> str:
     """Rows for every processed pytest HTML report in all-test-reports/reports/."""
     known = [
+        ("full-suite", "Full Test Suite (576 tests, incl. integration)"),
         ("scripts-unit", "Python Unit Tests (src/scripts)"),
         ("tests-dir", "Tests Directory Runs"),
         ("src-root", "src/ Root Runs"),
