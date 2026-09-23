@@ -8,6 +8,7 @@ Generates all-test-reports/index.html with links and summaries from:
 
 import json
 import os
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -148,10 +149,26 @@ REPORT_DEFS = [
 ]
 
 
+def _report_generated_time(rel_path: str) -> str:
+    """Extract when the report was generated, from file mtime or embedded
+    timestamps (istanbul coverage pages embed one)."""
+    p = ROOT.parent / rel_path
+    if not p.exists():
+        return ""
+    try:
+        content = p.read_text()
+        m = re.search(r'at (20\d{2}-\d{2}-\d{2}T[\d:.]+Z)', content)
+        if m:
+            return m.group(1).replace("T", " ").rstrip("Z") + " UTC"
+    except Exception:
+        pass
+    return datetime.fromtimestamp(p.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
+
+
 def _report_rows() -> str:
     """One consistent table row per report: name, description, clickable path.
     Rows for missing files are dimmed but still shown (so you know what can
-    be generated)."""
+    be generated). Each row also shows when the report was generated."""
     rows = []
     for name, desc, rel_path in REPORT_DEFS:
         # rel_path is repo-root-relative; the dashboard lives in
@@ -169,10 +186,14 @@ def _report_rows() -> str:
             link = f'<a href="{href}" style="color: {color};">{rel_path}</a>{badge}'
         else:
             link = f'<span style="color: #6b7280;">{rel_path}</span>{badge}'
+        when = _report_generated_time(rel_path)
+        when_cell = (f'<span style="color: #9ca3af; font-size: 0.85em;">{when}</span>'
+                     if when else "&nbsp;")
         rows.append(
             '      <tr style="border-bottom: 1px solid #0f3460;">\n'
             f'        <td style="padding: 10px; color: #e2e8f0; font-weight: 600;">{name}</td>\n'
             f'        <td style="padding: 10px; color: #9ca3af; font-size: 0.9em;">{desc}</td>\n'
+            f'        <td style="padding: 10px; color: #9ca3af; font-size: 0.85em;">{when_cell}</td>\n'
             f'        <td style="padding: 10px; font-family: monospace; font-size: 0.85em;">{link}</td>\n'
             "      </tr>")
     return "\n".join(rows)
@@ -253,6 +274,7 @@ h1 {{ font-size: 2.5em; margin-bottom: 10px; color: #eaeaea; }}
       <tr style="border-bottom: 2px solid #1d4ed8;">
         <th style="padding: 10px; text-align: left; color: #4fc3f7;">Report</th>
         <th style="padding: 10px; text-align: left; color: #4fc3f7;">What it shows</th>
+        <th style="padding: 10px; text-align: left; color: #4fc3f7;">Generated</th>
         <th style="padding: 10px; text-align: left; color: #4fc3f7;">Location (click to open)</th>
       </tr>
 {_report_rows()}
