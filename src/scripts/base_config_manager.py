@@ -3,7 +3,7 @@
 Base FlexiTTS Configuration Manager
 
 Handles loading and management of FlexiTTS configuration from:
-- ~/.config/FlexiTTS/FlexiTTS.yaml (main config)
+- ~/.config/FlexiTTS/FlexiTTS.yml (main config)
 - Story-specific story-config.yml files (in each Story-* directory)
 
 SECURITY NOTES:
@@ -94,19 +94,20 @@ class ConfigManager:
         home_dir = Path.home()
         config_home = os.environ.get('XDG_CONFIG_HOME', home_dir / '.config')
         
-        # Prefer .yaml for compatibility with existing tests/config, then .yml
-        config_path_yaml = Path(config_home) / 'FlexiTTS' / 'FlexiTTS.yaml'
+        # Single config file standard: FlexiTTS.yml (checked first).
+        # .yaml is only a legacy fallback for old installs.
         config_path_yml = Path(config_home) / 'FlexiTTS' / 'FlexiTTS.yml'
-        
-        if config_path_yaml.exists():
-            print(f"[RESOURCE-ACCESS] Found config file: {config_path_yaml}", file=sys.stderr)
-            return config_path_yaml.resolve()
-        elif config_path_yml.exists():
+        config_path_yaml = Path(config_home) / 'FlexiTTS' / 'FlexiTTS.yaml'
+
+        if config_path_yml.exists():
             print(f"[RESOURCE-ACCESS] Found config file: {config_path_yml}", file=sys.stderr)
             return config_path_yml.resolve()
-        else:
-            print(f"[RESOURCE-ACCESS] Config file not found, defaulting to: {config_path_yaml}", file=sys.stderr)
+        elif config_path_yaml.exists():
+            print(f"[RESOURCE-ACCESS] Found config file: {config_path_yaml}", file=sys.stderr)
             return config_path_yaml.resolve()
+        else:
+            print(f"[RESOURCE-ACCESS] Config file not found, defaulting to: {config_path_yml}", file=sys.stderr)
+            return config_path_yml.resolve()
 
     def _sanitize_path(self, path: Union[str, Path]) -> Path:
         """
@@ -192,7 +193,7 @@ class ConfigManager:
 
     def load_main_config(self, force_reload: bool = False) -> Dict[str, Any]:
         """
-        Load main FlexiTTS configuration from ~/.config/FlexiTTS/FlexiTTS.yaml
+        Load main FlexiTTS configuration from ~/.config/FlexiTTS/FlexiTTS.yml
 
         Args:
             force_reload: If True, reload from disk even if already loaded
@@ -256,7 +257,7 @@ class ConfigManager:
 
     def save_main_config(self) -> None:
         """
-        Save main FlexiTTS configuration to ~/.config/FlexiTTS/FlexiTTS.yaml
+        Save main FlexiTTS configuration to ~/.config/FlexiTTS/FlexiTTS.yml
 
         Raises:
             ConfigError: If configuration cannot be saved

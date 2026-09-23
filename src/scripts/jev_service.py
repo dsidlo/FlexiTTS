@@ -59,9 +59,10 @@ def _find_global_jev_config() -> dict:
     own jev block."""
     candidates = []
     xdg = os.environ.get("XDG_CONFIG_HOME", str(Path.home() / ".config"))
-    # Same preference order as base_config_manager: .yaml first, then .yml
-    candidates.append(Path(xdg) / "FlexiTTS" / "FlexiTTS.yaml")
+    # Same preference order as base_config_manager: .yml first (single-file
+    # standard), .yaml only as a legacy fallback for old installs.
     candidates.append(Path(xdg) / "FlexiTTS" / "FlexiTTS.yml")
+    candidates.append(Path(xdg) / "FlexiTTS" / "FlexiTTS.yaml")
     repo_cfg = Path(__file__).resolve().parent.parent.parent / "config" / "FlexiTTS.yml"
     candidates.append(repo_cfg)
     for c in candidates:
@@ -77,6 +78,25 @@ def _find_global_jev_config() -> dict:
     return {}
 
 
+def _ensure_env_loaded() -> None:
+    """Load ~/.env once so api-key-env resolution works without dotenv callers."""
+    if os.getenv("JEV_ENV_LOADED"):
+        return
+    env_path = Path.home() / ".env"
+    if env_path.exists():
+        try:
+            from dotenv import load_dotenv
+            load_dotenv(dotenv_path=env_path)
+        except ImportError:
+            # minimal parser fallback: KEY=VALUE lines
+            for line in env_path.read_text().splitlines():
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    k, _, v = line.partition("=")
+                    os.environ.setdefault(k.strip(), v.strip())
+    os.environ["JEV_ENV_LOADED"] = "1"
+
+
 def load_jev_config(config: dict) -> dict:
     """Read the jev: block from a story/global config, with defaults.
     Key lookup is case-insensitive (jev / Jev / JEV all match).
@@ -88,6 +108,7 @@ def load_jev_config(config: dict) -> dict:
       - auto: laya when the laya package is installed AND a GPU with enough
         free VRAM is present; otherwise jev when an api key exists; else skip.
     """
+    _ensure_env_loaded()
     cfg = {}
     if _has_jev_block(config):
         for k, v in config.items():

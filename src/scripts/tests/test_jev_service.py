@@ -237,8 +237,11 @@ def test_run_skips_when_disabled(tmp_path):
                                                          "reason": "disabled"}
 
 
-def test_run_skips_entirely_without_api_key(tmp_path):
+def test_run_skips_entirely_without_api_key(tmp_path, monkeypatch):
     """backend=jev with no api key: Jev actions gated off; XML untouched."""
+    # ~/.env may legitimately contain a real key; force the no-key condition.
+    monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
+    monkeypatch.setenv("JEV_ENV_LOADED", "0")
     p = tmp_path / "c.xml"
     p.write_text(CHAR_XML)
     before = p.read_text()
