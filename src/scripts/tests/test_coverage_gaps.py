@@ -107,11 +107,22 @@ class TestRoundTrip:
         return data
 
     def test_load_roundtrip_returns_data_and_yaml(self, tmp_path):
+        """ruamel path returns a YAML instance; the ImportError fallback
+        (ruamel not installed, e.g. CI) returns (data, None). Both are valid."""
         cfg = tmp_path / "story-config.yml"
         data = self._write_config(cfg)
         loaded, ryaml = flexitts_bridge._load_roundtrip(cfg)
         assert loaded["characters"] == data["characters"]
-        assert ryaml is not None
+        # ryaml present when ruamel is installed; None on the fallback path
+        try:
+            import ruamel.yaml  # noqa: F401
+            ruamel_available = True
+        except ImportError:
+            ruamel_available = False
+        if ruamel_available:
+            assert ryaml is not None
+        else:
+            assert ryaml is None
 
     def test_load_roundtrip_missing_file_raises(self, tmp_path):
         import pytest
