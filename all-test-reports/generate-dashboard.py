@@ -165,6 +165,36 @@ def _report_generated_time(rel_path: str) -> str:
     return datetime.fromtimestamp(p.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
 
 
+def _suite_durations():
+    """(python_dur, ui_dur, total_dur) formatted strings from the
+    test-results.json files."""
+    def _dur_seconds(data):
+        if not data:
+            return None
+        if data.get("startTime") and data.get("endTime") and data["endTime"] > data["startTime"]:
+            return (data["endTime"] - data["startTime"]) / 1000
+        spans = [(tr.get("startTime"), tr.get("endTime"))
+                 for tr in data.get("testResults", [])
+                 if tr.get("startTime") and tr.get("endTime")]
+        if spans:
+            return max(0.0, (max(e for _, e in spans) - min(s for s, _ in spans)) / 1000)
+        return None
+
+    scripts_data = _read_json(SCRIPTS_REPORT_DIR / "test-results.json")
+    ui_data = _read_json(UI_REPORT_DIR / "test-results.json")
+
+    py_s = _dur_seconds(scripts_data)
+    ui_s = _dur_seconds(ui_data)
+
+    def fmt(s):
+        if s is None:
+            return "N/A"
+        return f"{s:.1f}s" if s < 60 else f"{int(s // 60)}m {int(s % 60)}s"
+
+    total = (py_s or 0) + (ui_s or 0)
+    return fmt(py_s), fmt(ui_s), fmt(total if total else None)
+
+
 def _report_rows() -> str:
     """One consistent table row per report: name, description, clickable path.
     Rows for missing files are dimmed but still shown (so you know what can
@@ -231,6 +261,7 @@ def generate_dashboard() -> None:
     scripts_cov_rel = os.path.relpath(scripts_cov_path, ROOT) if scripts_cov_path.exists() else ""
 
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    py_dur, ui_dur, total_dur = _suite_durations()
 
     html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -278,6 +309,8 @@ h1 {{ font-size: 2.5em; margin-bottom: 10px; color: #eaeaea; }}
     <h1>🧪 FlexiTTS Test Report Dashboard</h1>
     <p class="subtitle">Unified Test & Coverage Reports</p>
     <p class="timestamp">Generated: {timestamp}</p>
+    <p class="timestamp" style="color: #fbbf24;">Last full test run runtime:
+       Python {py_dur} &nbsp;+&nbsp; UI {ui_dur} &nbsp;=&nbsp; Total ~{total_dur}</p>
   </header>
   <div class="summary-grid">
     {_summary_card('🐍', 'Python Tests', scripts_data, scripts_report, scripts_cov_rel)}
