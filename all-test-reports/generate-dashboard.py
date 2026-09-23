@@ -6,6 +6,7 @@ Generates all-test-reports/index.html with links and summaries from:
   - src/scripts/test-results/
 """
 
+import html
 import json
 import os
 import re
@@ -210,6 +211,8 @@ def _error_count_for(rel_path: str) -> Optional[int]:
 
     if "full-suite-report" in rel_path:
         return _json_failed(SCRIPTS_REPORT_DIR / "test-results.json")
+    if "test-results.html" in rel_path:
+        return _json_failed(UI_REPORT_DIR / "test-results.json")
 
     blob_file = ROOT.parent / rel_path
     if not blob_file.exists():
