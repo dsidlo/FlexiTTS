@@ -360,7 +360,7 @@ h1 {{ font-size: 2.5em; margin-bottom: 10px; color: #eaeaea; }}
   <div class="summary-grid">
     {_summary_card('🐍', 'Python Tests', scripts_data, scripts_report, scripts_cov_rel)}
     {_summary_card('⚛️', 'UI Tests', ui_data, ui_report, ui_cov_rel)}
-    {_summary_card('🔗', 'Integration Tests (subset of python tests)', integration_data, scripts_report, scripts_cov_rel)}
+    {_summary_card('🔗', 'Integration Tests <span style="font-size: 0.55em; color: #9ca3af; font-weight: 400;">(subset of python tests)</span>', integration_data, scripts_report, scripts_cov_rel)}
   </div>
   <div class="section">
     <h2>📁 All Reports</h2>
