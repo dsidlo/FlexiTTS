@@ -788,6 +788,11 @@ def validate_story_config(story_path: str):
     return enhanced_config_manager.validate_story_config(story_path)
 
 
+def get_stories_directory():
+    """Legacy: Get the stories directory Path"""
+    return enhanced_config_manager.get_stories_directory()
+
+
 if __name__ == "__main__":
     # Test the enhanced configuration manager
     try:
