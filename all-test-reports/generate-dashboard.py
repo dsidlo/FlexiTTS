@@ -16,6 +16,7 @@ from typing import Any, Dict, Optional
 ROOT = Path(__file__).resolve().parent
 UI_REPORT_DIR = ROOT / "../src/ui/test-reports"
 SCRIPTS_REPORT_DIR = ROOT / "../src/scripts/test-results"
+REPORTS_DIR = ROOT / "reports"
 OUTPUT_FILE = ROOT / "index.html"
 
 
@@ -105,6 +106,29 @@ def _summary_card(icon: str, title: str, data: Optional[Dict[str, Any]], report_
     """
 
 
+def _pytest_report_rows() -> str:
+    """Rows for every processed pytest HTML report in all-test-reports/reports/."""
+    known = [
+        ("scripts-unit", "Python Unit Tests (src/scripts)"),
+        ("tests-dir", "Tests Directory Runs"),
+        ("src-root", "src/ Root Runs"),
+        ("repo-root", "Repo Root Runs"),
+    ]
+    out = []
+    for slug, title in known:
+        path = REPORTS_DIR / f"{slug}-report.html"
+        if not path.exists():
+            continue
+        rel = os.path.relpath(path, ROOT)
+        out.append(
+            '      <tr style="border-bottom: 1px solid #0f3460;">\n'
+            f'        <td style="padding: 12px; color: #4fc3f7;">{title}</td>\n'
+            f'        <td style="padding: 12px;">'
+            f'<a href="{rel}" class="link-btn">Open Report</a></td>\n'
+            "      </tr>")
+    return "\n".join(out)
+
+
 def generate_dashboard() -> None:
     ui_data = _read_json(UI_REPORT_DIR / "test-results.json")
     scripts_data = _read_json(SCRIPTS_REPORT_DIR / "test-results.json")
@@ -177,6 +201,7 @@ h1 {{ font-size: 2.5em; margin-bottom: 10px; color: #eaeaea; }}
       <tr style="border-bottom: 1px solid #0f3460;"><td style="padding: 12px; color: #4fc3f7;">UI Coverage</td><td style="padding: 12px; color: #9ca3af;"><code>src/ui/test-reports/coverage/index.html</code></td></tr>
       <tr style="border-bottom: 1px solid #0f3460;"><td style="padding: 12px; color: #4fc3f7;">Python Test Report</td><td style="padding: 12px; color: #9ca3af;"><code>src/scripts/test-results/unit-tests-report.html</code></td></tr>
       <tr><td style="padding: 12px; color: #4fc3f7;">Python Coverage</td><td style="padding: 12px; color: #9ca3af;"><code>src/scripts/test-results/htmlcov/index.html</code></td></tr>
+{_pytest_report_rows()}
     </table>
   </div>
   <footer class="footer">
