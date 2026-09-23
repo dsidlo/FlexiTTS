@@ -296,6 +296,22 @@ def test_run_laya_forced_cpu(monkeypatch):
     assert result["backend"] == "laya"
 
 
+def test_load_jev_config_subkey_case_insensitive():
+    cfg = jev_service.load_jev_config({"Jev": {"Backend": "LAYA",
+                                               "Min-VRAM-MB": 2000}})
+    assert cfg["backend"] == "laya"
+    assert cfg["min-vram-mb"] == 2000
+
+
+def test_select_backend_unknown_value_treated_as_auto(monkeypatch):
+    monkeypatch.setattr(jev_service, "_laya_available", lambda cfg: False)
+    cfg = dict(jev_service.load_jev_config({"jev": {"backend": "bogus"}}))
+    cfg["api_key"] = "k"
+    client, backend = jev_service.select_backend(cfg)
+    assert backend == "jev"
+    assert client is not None
+
+
 def test_confidence_ok_helper():
     assert jev_service.confidence_ok({"confidence": 0.8}, 0.8) is True
     assert jev_service.confidence_ok({"confidence": 0.8}, 0.79) is False
